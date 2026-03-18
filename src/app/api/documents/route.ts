@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { embedAndStore } from "@/lib/ai";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -135,6 +136,18 @@ export async function POST(request: NextRequest) {
         console.error("Cross-link maintenance record failed:", e);
       }
     }
+
+    // Embed document for semantic search (async, don't block response)
+    const embeddingContent = [
+      document.title,
+      document.category?.name || "",
+      document.aiSummary || document.description || "",
+      document.aiExtractedText || "",
+    ].filter(Boolean).join(" | ");
+
+    embedAndStore("document", document.id, embeddingContent).catch((e) =>
+      console.error("Document embedding failed:", e)
+    );
 
     return NextResponse.json(document);
   } catch (error) {

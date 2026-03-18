@@ -5,10 +5,12 @@ import { generateId } from "./utils";
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
 
 const ALLOWED_TYPES = [
+  // Images
   "image/jpeg",
   "image/png",
   "image/webp",
   "image/heic",
+  // Documents
   "application/pdf",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -18,9 +20,36 @@ const ALLOWED_TYPES = [
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "text/plain",
   "text/csv",
+  // Audio
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/mp4",
+  "audio/m4a",
+  "audio/x-m4a",
+  "audio/ogg",
+  "audio/webm",
+  // Video
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/x-msvideo",
 ];
 
-const MAX_SIZE = 20 * 1024 * 1024; // 20MB
+const MAX_SIZE = 100 * 1024 * 1024; // 100MB for audio/video
+
+export function isAudioType(type: string): boolean {
+  return type.startsWith("audio/");
+}
+
+export function isVideoType(type: string): boolean {
+  return type.startsWith("video/");
+}
+
+export function isMediaType(type: string): boolean {
+  return isAudioType(type) || isVideoType(type);
+}
 
 export async function saveUploadedFile(file: File) {
   if (!ALLOWED_TYPES.includes(file.type)) {
@@ -28,7 +57,7 @@ export async function saveUploadedFile(file: File) {
   }
 
   if (file.size > MAX_SIZE) {
-    throw new Error("File too large (max 20MB)");
+    throw new Error("File too large (max 100MB)");
   }
 
   await mkdir(UPLOAD_DIR, { recursive: true });

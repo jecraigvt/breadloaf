@@ -181,6 +181,18 @@ model Expense {
   @@index([date])
 }
 
+model Embedding {
+  id         String   @id @default(cuid())
+  sourceType String   // document, expense, maintenance, bulletin, meeting
+  sourceId   String
+  content    String   // the text that was embedded (for reference)
+  vector     String   // JSON array of floats
+  createdAt  DateTime @default(now())
+
+  @@unique([sourceType, sourceId])
+  @@index([sourceType])
+}
+
 model PantryItem {
   id        String   @id @default(cuid())
   name      String

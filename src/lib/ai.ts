@@ -3,6 +3,76 @@ import { prisma } from "@/lib/prisma";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
+// ─── Model Routing ─────────────────────────────────────────────
+// Flash Lite 3.1: quick actions (grocery, expenses, etc.) — $0.25/$1.50 per 1M tokens
+// Flash 3: general chat, document processing — $0.50/$3.00 per 1M tokens
+// Pro 3.1: complex analysis, deep reasoning — $2-4/$12-18 per 1M tokens
+const MODELS = {
+  lite: "gemini-3.1-flash-lite-preview",
+  flash: "gemini-3-flash-preview",
+  pro: "gemini-3.1-pro-preview",
+  embedding: "gemini-embedding-2-preview",
+} as const;
+
+// ─── Embedding Functions ───────────────────────────────────────
+export async function generateEmbedding(text: string): Promise<number[]> {
+  const model = genAI.getGenerativeModel({ model: MODELS.embedding });
+  const result = await model.embedContent(text);
+  return result.embedding.values;
+}
+
+export async function embedAndStore(
+  sourceType: string,
+  sourceId: string,
+  content: string
+): Promise<void> {
+  if (!content.trim() || !process.env.GOOGLE_AI_API_KEY) return;
+
+  try {
+    const vector = await generateEmbedding(content.slice(0, 5000));
+    await prisma.embedding.upsert({
+      where: { sourceType_sourceId: { sourceType, sourceId } },
+      update: { content: content.slice(0, 2000), vector: JSON.stringify(vector) },
+      create: { sourceType, sourceId, content: content.slice(0, 2000), vector: JSON.stringify(vector) },
+    });
+  } catch (err) {
+    console.error(`[Embedding] Failed to embed ${sourceType}:${sourceId}:`, err);
+  }
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0, magA = 0, magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
+}
+
+export async function semanticSearch(
+  query: string,
+  limit = 10,
+  sourceType?: string
+): Promise<{ sourceType: string; sourceId: string; content: string; score: number }[]> {
+  const queryVector = await generateEmbedding(query);
+
+  const where = sourceType ? { sourceType } : {};
+  const allEmbeddings = await prisma.embedding.findMany({ where });
+
+  const scored = allEmbeddings
+    .map((e) => ({
+      sourceType: e.sourceType,
+      sourceId: e.sourceId,
+      content: e.content,
+      score: cosineSimilarity(queryVector, JSON.parse(e.vector)),
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+  return scored.filter((s) => s.score > 0.3);
+}
+
 interface CategorizationResult {
   suggestedCategory: string;
   title: string;
@@ -16,12 +86,66 @@ interface CategorizationResult {
   maintenanceVendor?: string | null;
 }
 
+// Process audio/video files — extract transcript, summary, key facts
+export async function processMediaFile(
+  base64Data: string,
+  mimeType: string,
+  existingCategories: string[]
+): Promise<CategorizationResult> {
+  const model = genAI.getGenerativeModel({ model: MODELS.flash });
+
+  const isAudio = mimeType.startsWith("audio/");
+  const mediaType = isAudio ? "audio recording" : "video";
+
+  const result = await model.generateContent([
+    {
+      inlineData: {
+        mimeType: mimeType as string,
+        data: base64Data,
+      },
+    },
+    {
+      text: `You are processing a ${mediaType} for the Craig family property archive at Breadloaf Hill, Vermont. The property is owned as an S-Corp by four Craig brothers (Tom, Jim, Sandy, Greg), with Ethan (Jim's son) now on the board.
+
+Analyze this ${mediaType} and return ONLY valid JSON (no markdown fences):
+{
+  "suggestedCategory": "one of: ${existingCategories.join(", ")}",
+  "title": "descriptive title for this ${mediaType}",
+  "summary": "comprehensive summary — capture ALL key facts, decisions, action items, dollar amounts, names mentioned, topics discussed. This is what the family assistant will reference, so be thorough.",
+  "extractedText": "full transcript or detailed description of everything said/shown. Include speaker names if identifiable, timestamps of key moments, and exact quotes for important decisions.",
+  "tags": ["relevant", "search", "tags"],
+  "confidence": 0.0 to 1.0
+}
+
+For board meetings: capture all votes, motions, decisions, assignments, deadlines, and financial discussions.
+For property walkthroughs: note condition of structures, items needing attention, any damage or improvements.
+Be extremely thorough — extract every useful detail.`,
+    },
+  ]);
+
+  const text = result.response.text();
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    return JSON.parse(text);
+  } catch {
+    return {
+      suggestedCategory: isAudio ? "Meeting Minutes" : "Other",
+      title: `${isAudio ? "Audio Recording" : "Video"} — ${new Date().toLocaleDateString()}`,
+      summary: text.slice(0, 500),
+      extractedText: text,
+      tags: [],
+      confidence: 0.5,
+    };
+  }
+}
+
 export async function categorizeDocument(
   imageBase64: string,
   fileType: string,
   existingCategories: string[]
 ): Promise<CategorizationResult> {
-  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+  const model = genAI.getGenerativeModel({ model: MODELS.flash });
 
   const mimeType = fileType as "image/jpeg" | "image/png" | "image/webp";
 
@@ -92,7 +216,7 @@ export async function scanPantryItems(
   imageBase64: string,
   fileType: string
 ): Promise<ScannedPantryItem[]> {
-  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+  const model = genAI.getGenerativeModel({ model: MODELS.flash });
 
   const mimeType = fileType as "image/jpeg" | "image/png" | "image/webp";
 
@@ -423,48 +547,100 @@ async function executeToolFunction(
   }
 }
 
+// Classify query intent to pick the right model
+type QueryIntent = "action" | "lookup" | "analysis";
+function classifyIntent(message: string): QueryIntent {
+  const lower = message.toLowerCase();
+  // Action patterns — quick tool calls
+  const actionPatterns = [
+    /^add\s/i, /^log\s/i, /^post\s/i, /^sign\s?me/i, /^put\s/i,
+    /to the (grocery|shopping|pantry|bulletin|board)/i,
+    /^record\s/i, /^note\s/i, /^mark\s/i,
+  ];
+  if (actionPatterns.some((p) => p.test(lower))) return "action";
+
+  // Analysis patterns — need Pro model
+  const analysisPatterns = [
+    /how much.*spend/i, /summar/i, /analyz/i, /compar/i, /what.*should/i,
+    /recommend/i, /explain/i, /break\s?down/i, /trend/i, /budget/i,
+    /what did we decide/i, /help me understand/i, /what are our options/i,
+    /plan\s/i, /strategy/i, /advise/i, /review/i,
+  ];
+  if (analysisPatterns.some((p) => p.test(lower))) return "analysis";
+
+  return "lookup";
+}
+
 export async function chatWithAssistant(
   messages: { role: "user" | "model"; content: string }[],
   username?: string
 ): Promise<string> {
-  // Find relevant documents based on the latest user message
   const lastUserMessage = messages.filter((m) => m.role === "user").pop();
   let documentContext = "";
 
+  // Use semantic search if embeddings exist, fall back to keyword search
   if (lastUserMessage) {
-    // Search for relevant docs
-    const searchTerms = lastUserMessage.content
-      .split(/\s+/)
-      .filter((w) => w.length > 3);
-    const docs = await prisma.document.findMany({
-      where: {
-        OR: searchTerms.flatMap((term) => [
-          { title: { contains: term } },
-          { aiSummary: { contains: term } },
-          { aiExtractedText: { contains: term } },
-          { tags: { contains: term } },
-        ]),
-      },
-      include: { category: true },
-      take: 10,
-    });
+    try {
+      const semanticResults = await semanticSearch(lastUserMessage.content, 8);
+      if (semanticResults.length > 0) {
+        // Fetch full document details for semantic matches
+        const docIds = semanticResults
+          .filter((r) => r.sourceType === "document")
+          .map((r) => r.sourceId);
+        const docs = docIds.length > 0
+          ? await prisma.document.findMany({
+              where: { id: { in: docIds } },
+              include: { category: true },
+            })
+          : [];
 
-    // Also get recent documents for general context
-    const recentDocs = await prisma.document.findMany({
-      include: { category: true },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-    });
+        const docMap = new Map(docs.map((d) => [d.id, d]));
+        const parts: string[] = [];
 
-    const relevantDocs = docs.length > 0 ? docs : recentDocs;
+        for (const result of semanticResults) {
+          if (result.sourceType === "document" && docMap.has(result.sourceId)) {
+            const d = docMap.get(result.sourceId)!;
+            parts.push(
+              `[${d.category?.name || "Uncategorized"}] "${d.title}" (${new Date(d.createdAt).toLocaleDateString()}): ${d.aiSummary || d.description || "No summary"}${d.aiExtractedText ? `\nDetails: ${d.aiExtractedText.slice(0, 1500)}` : ""}`
+            );
+          } else {
+            // Non-document matches (expenses, maintenance, etc.)
+            parts.push(`[${result.sourceType}] ${result.content}`);
+          }
+        }
+        documentContext = parts.join("\n\n");
+      }
+    } catch {
+      // Semantic search failed — fall back to keyword search
+    }
 
-    if (relevantDocs.length > 0) {
-      documentContext = relevantDocs
-        .map(
-          (d) =>
-            `[${d.category?.name || "Uncategorized"}] "${d.title}" (${new Date(d.createdAt).toLocaleDateString()}): ${d.aiSummary || d.description || "No summary"}${d.aiExtractedText ? `\nDetails: ${d.aiExtractedText.slice(0, 1500)}` : ""}`
-        )
-        .join("\n");
+    // Fallback: keyword search if semantic search returned nothing
+    if (!documentContext) {
+      const searchTerms = lastUserMessage.content
+        .split(/\s+/)
+        .filter((w) => w.length > 3);
+      const docs = await prisma.document.findMany({
+        where: searchTerms.length > 0 ? {
+          OR: searchTerms.flatMap((term) => [
+            { title: { contains: term } },
+            { aiSummary: { contains: term } },
+            { aiExtractedText: { contains: term } },
+            { tags: { contains: term } },
+          ]),
+        } : undefined,
+        include: { category: true },
+        orderBy: { createdAt: "desc" },
+        take: 15,
+      });
+
+      if (docs.length > 0) {
+        documentContext = docs
+          .map(
+            (d) =>
+              `[${d.category?.name || "Uncategorized"}] "${d.title}" (${new Date(d.createdAt).toLocaleDateString()}): ${d.aiSummary || d.description || "No summary"}${d.aiExtractedText ? `\nDetails: ${d.aiExtractedText.slice(0, 1500)}` : ""}`
+          )
+          .join("\n");
+      }
     }
   }
 
@@ -577,8 +753,12 @@ export async function chatWithAssistant(
           .join("\n")
       : `No expenses recorded for ${currentYear}.`;
 
+  // Route to the right model based on query intent
+  const intent = lastUserMessage ? classifyIntent(lastUserMessage.content) : "lookup";
+  const selectedModel = intent === "action" ? MODELS.lite : intent === "analysis" ? MODELS.pro : MODELS.flash;
+
   const model = genAI.getGenerativeModel({
-    model: "gemini-3-flash-preview",
+    model: selectedModel,
     systemInstruction: `You are Jarvis Craig — the Craig family's all-knowing property assistant for Breadloaf Hill. You serve as the central knowledge hub for 4 family branches and 20+ family members who share a Vermont property at 3995 Vermont Route 125, Ripton, VT.
 
 Your job is to make sure anyone in the family can get the information they need — whether it's about upcoming visits, property finances, where things are, what maintenance has been done, corporate documents, or local recommendations. You know the property, the people, the documents, the expenses, and the day-to-day operations. You are thorough, specific, and proactive — if you have relevant info, share it even if they didn't explicitly ask.

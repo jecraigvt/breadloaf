@@ -14,6 +14,8 @@ import {
   Wrench,
   Link2,
   ChevronDown,
+  Mic,
+  Video,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -260,8 +262,8 @@ export default function UploadPage() {
   return (
     <div>
       <Header
-        title="Scan Document"
-        subtitle="Capture or upload a document to the archive"
+        title="Add to Archive"
+        subtitle="Upload documents, recordings, videos, or link a URL"
       />
 
       <div className="max-w-lg mx-auto px-4 py-6 space-y-6">
@@ -399,11 +401,22 @@ export default function UploadPage() {
             )}
             {!preview && (
               <div className="rounded-xl border border-stone-200 p-8 text-center">
-                <FileText size={48} className="mx-auto text-stone-400 mb-2" />
+                {file.type.startsWith("audio/") ? (
+                  <Mic size={48} className="mx-auto text-purple-400 mb-2" />
+                ) : file.type.startsWith("video/") ? (
+                  <Video size={48} className="mx-auto text-blue-400 mb-2" />
+                ) : (
+                  <FileText size={48} className="mx-auto text-stone-400 mb-2" />
+                )}
                 <p className="text-stone-600 font-medium">{file.name}</p>
                 <p className="text-stone-400 text-sm">
                   {(file.size / 1024 / 1024).toFixed(1)} MB
                 </p>
+                {(file.type.startsWith("audio/") || file.type.startsWith("video/")) && (
+                  <p className="text-green-600 text-xs mt-2 font-medium">
+                    Jarvis will transcribe and analyze this {file.type.startsWith("audio/") ? "recording" : "video"}
+                  </p>
+                )}
               </div>
             )}
 

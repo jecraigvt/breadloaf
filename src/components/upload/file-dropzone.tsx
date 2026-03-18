@@ -32,8 +32,15 @@ export function FileDropzone({ onFile }: FileDropzoneProps) {
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
       "text/plain": [".txt"],
       "text/csv": [".csv"],
+      "audio/mpeg": [".mp3"],
+      "audio/wav": [".wav"],
+      "audio/mp4": [".m4a"],
+      "audio/x-m4a": [".m4a"],
+      "video/mp4": [".mp4"],
+      "video/quicktime": [".mov"],
+      "video/webm": [".webm"],
     },
-    maxSize: 20 * 1024 * 1024,
+    maxSize: 100 * 1024 * 1024,
     multiple: false,
   });
 
@@ -62,9 +69,9 @@ export function FileDropzone({ onFile }: FileDropzoneProps) {
           <FileImage size={14} /> Images
         </span>
         <span className="flex items-center gap-1">
-          <FileText size={14} /> PDF, Word, Excel
+          <FileText size={14} /> PDF, Word, Excel, Audio, Video
         </span>
-        <span>Max 20MB</span>
+        <span>Max 100MB</span>
       </div>
     </div>
   );
