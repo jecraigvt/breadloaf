@@ -49,7 +49,15 @@ Analyze this document and return ONLY valid JSON (no markdown fences, no extra t
 }
 
 Be specific with the title. Extract dates, names, amounts, and other key details in the summary.
-If the document is a receipt, invoice, or record related to property maintenance, repairs, or services, extract the cost, date, and vendor into the maintenance fields.`,
+If the document is a receipt, invoice, or record related to property maintenance, repairs, or services, extract the cost, date, and vendor into the maintenance fields.
+
+This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Greg Craig). Categorization hints:
+- K-1 forms, Schedule K-1 → "K-1 Forms"
+- Meeting minutes, resolutions, votes → "Meeting Minutes"
+- Articles of incorporation, bylaws, annual reports, state filings → "Corporate Filings"
+- P&L, balance sheets, income statements, financial reports → "Financial Statements"
+- Bank statements, account statements → "Bank Statements"
+- Capital account statements, shareholder equity → "Capital Accounts"`,
     },
   ]);
 
@@ -259,6 +267,48 @@ const assistantTools: FunctionDeclarationsTool[] = [
           required: ["name"],
         },
       },
+      {
+        name: "add_expense",
+        description:
+          "Log a property expense for the S-Corp. Use when someone reports a cost, bill, payment, or purchase for the property.",
+        parameters: {
+          type: SchemaType.OBJECT,
+          properties: {
+            date: {
+              type: SchemaType.STRING,
+              description: "Date of the expense in YYYY-MM-DD format",
+            },
+            amount: {
+              type: SchemaType.NUMBER,
+              description: "Dollar amount of the expense",
+            },
+            description: {
+              type: SchemaType.STRING,
+              description: "What the expense was for",
+            },
+            category: {
+              type: SchemaType.STRING,
+              description:
+                "Category: utilities, maintenance, insurance, taxes, improvements, supplies, professional-services, other",
+            },
+            type: {
+              type: SchemaType.STRING,
+              description:
+                "Type: operating (regular costs) or capital (improvements that add value)",
+            },
+            paidBy: {
+              type: SchemaType.STRING,
+              description:
+                "Who paid: Tom, Jim, Sandy, Greg, or Shared",
+            },
+            vendor: {
+              type: SchemaType.STRING,
+              description: "Vendor or company name if known",
+            },
+          },
+          required: ["date", "amount", "description"],
+        },
+      },
     ],
   },
 ];
@@ -345,6 +395,29 @@ async function executeToolFunction(
         item: { id: item.id, name: item.name },
       };
     }
+    case "add_expense": {
+      const expenseDate = new Date(args.date as string);
+      const expense = await prisma.expense.create({
+        data: {
+          date: expenseDate,
+          amount: parseFloat(String(args.amount)),
+          description: args.description as string,
+          category: (args.category as string) || "other",
+          type: (args.type as string) || "operating",
+          paidBy: (args.paidBy as string) || username || "Shared",
+          vendor: (args.vendor as string) || undefined,
+          fiscalYear: expenseDate.getFullYear(),
+        },
+      });
+      return {
+        success: true,
+        expense: {
+          id: expense.id,
+          amount: expense.amount,
+          description: expense.description,
+        },
+      };
+    }
     default:
       return { error: `Unknown function: ${name}` };
   }
@@ -396,7 +469,8 @@ export async function chatWithAssistant(
   }
 
   // Get upcoming stays and room info
-  const [upcomingStays, rooms, groceryItems, pantryItems, upcomingDinners, recentMaintenance] =
+  const currentYear = new Date().getFullYear();
+  const [upcomingStays, rooms, groceryItems, pantryItems, upcomingDinners, recentMaintenance, recentExpenses, expenseSummary] =
     await Promise.all([
       prisma.stay.findMany({
         where: { checkOut: { gte: new Date() } },
@@ -422,6 +496,16 @@ export async function chatWithAssistant(
       prisma.maintenanceRecord.findMany({
         orderBy: { performedAt: "desc" },
         take: 10,
+      }),
+      prisma.expense.findMany({
+        where: { fiscalYear: currentYear },
+        orderBy: { date: "desc" },
+        take: 15,
+      }),
+      prisma.expense.aggregate({
+        where: { fiscalYear: currentYear },
+        _sum: { amount: true },
+        _count: true,
       }),
     ]);
 
@@ -482,6 +566,17 @@ export async function chatWithAssistant(
           .join("\n")
       : "No maintenance records yet.";
 
+  const expenseContext =
+    recentExpenses.length > 0
+      ? `${currentYear} total: $${expenseSummary._sum.amount?.toFixed(2) || "0.00"} (${expenseSummary._count} expenses)\nRecent:\n` +
+        recentExpenses
+          .map(
+            (e) =>
+              `- ${new Date(e.date).toLocaleDateString()}: $${e.amount.toFixed(2)} — ${e.description} [${e.category}] paid by ${e.paidBy}`
+          )
+          .join("\n")
+      : `No expenses recorded for ${currentYear}.`;
+
   const model = genAI.getGenerativeModel({
     model: "gemini-3-flash-preview",
     systemInstruction: `You are the Breadloaf Hill property assistant — a knowledgeable, friendly AI that helps the Craig family manage their Vermont property at 3995 Vermont Route 125, Ripton, VT.
@@ -507,7 +602,13 @@ ${dinnerContext}
 RECENT MAINTENANCE:
 ${maintenanceContext}
 
+EXPENSES (${currentYear}):
+${expenseContext}
+
 ${documentContext ? `DOCUMENTS IN ARCHIVE:\n${documentContext}` : "The document archive is currently empty."}
+
+PROPERTY OWNERSHIP:
+The property is owned by an S-Corp with four equal shareholders: Tom Craig, Jim Craig, Sandy Craig, and Greg Craig. All expenses are split equally (25% each).
 
 CAPABILITIES:
 You can perform actions for the family using your tools:
@@ -516,10 +617,12 @@ You can perform actions for the family using your tools:
 - Post messages to the bulletin board
 - Sign up to cook dinner on a date
 - Add items to the pantry inventory
+- Log property expenses (with category, who paid, operating vs capital)
 
 When users ask you to add or manage items, use the appropriate tool. Confirm what you've done in your response.
 If a request is ambiguous, ask for clarification before taking action.
 For the grocery list, infer a reasonable category when possible (produce, dairy, meat, bakery, pantry, frozen, beverages, household, other).
+For expenses, infer the category and type (operating vs capital) when possible. Capital expenses are improvements that add value (renovations, new equipment). Operating expenses are regular costs (utilities, insurance, maintenance).
 
 Guidelines:
 - Be warm and helpful, like a trusted family advisor

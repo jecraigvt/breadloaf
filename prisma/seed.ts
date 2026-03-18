@@ -14,6 +14,12 @@ const categories = [
   { name: "Correspondence", slug: "correspondence", icon: "Mail", color: "pink" },
   { name: "Receipts", slug: "receipts", icon: "DollarSign", color: "emerald" },
   { name: "Photos", slug: "photos", icon: "Camera", color: "sky" },
+  { name: "Meeting Minutes", slug: "meeting-minutes", icon: "FileText", color: "slate" },
+  { name: "Corporate Filings", slug: "corporate-filings", icon: "Building", color: "indigo" },
+  { name: "Financial Statements", slug: "financial-statements", icon: "BarChart", color: "emerald" },
+  { name: "K-1 Forms", slug: "k1-forms", icon: "FileSpreadsheet", color: "violet" },
+  { name: "Bank Statements", slug: "bank-statements", icon: "Landmark", color: "cyan" },
+  { name: "Capital Accounts", slug: "capital-accounts", icon: "PiggyBank", color: "amber" },
   { name: "Other", slug: "other", icon: "Folder", color: "gray" },
 ];
 

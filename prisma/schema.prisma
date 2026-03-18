@@ -158,6 +158,27 @@ model DinnerSignup {
   @@index([date])
 }
 
+model Expense {
+  id          String   @id @default(cuid())
+  date        DateTime
+  amount      Float
+  description String
+  category    String   @default("other") // utilities, maintenance, insurance, taxes, improvements, supplies, professional-services, other
+  type        String   @default("operating") // operating, capital
+  paidBy      String   @default("Shared") // Tom, Jim, Sandy, Greg, Shared
+  vendor      String?
+  documentId  String?  // optional link to a scanned receipt/document
+  notes       String?
+  fiscalYear  Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([fiscalYear])
+  @@index([category])
+  @@index([paidBy])
+  @@index([date])
+}
+
 model PantryItem {
   id        String   @id @default(cuid())
   name      String

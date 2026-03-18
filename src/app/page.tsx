@@ -26,6 +26,7 @@ import {
   MapPin,
   Contact,
   ChefHat,
+  DollarSign,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { HeroBanner } from "@/components/layout/hero-banner";
@@ -147,6 +148,20 @@ export default async function HomePage() {
               </div>
             </Link>
 
+            {/* Finances */}
+            <Link
+              href="/expenses"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-3 min-h-[150px] sm:min-h-[170px] shadow-md"
+            >
+              <img src="/photos/hero-drone-landscape.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <DollarSign size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Finances</h3>
+                <p className="text-white/80 text-sm">Expenses & splits</p>
+              </div>
+            </Link>
+
             {/* 4. Rooms — with photo background */}
             <Link
               href="/stays"
@@ -222,7 +237,7 @@ export default async function HomePage() {
               href="/checklists"
               className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-6 min-h-[150px] sm:min-h-[170px] shadow-md"
             >
-              <img src="/photos/hero-drone-house.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <img src="/photos/barn-exterior.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
               <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
                 <ClipboardCheck size={22} className="text-white mb-2 drop-shadow" />
@@ -264,7 +279,7 @@ export default async function HomePage() {
               href="/documents"
               className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-6 min-h-[150px] sm:min-h-[170px] shadow-md"
             >
-              <img src="/photos/hero-drone-landscape.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <img src="/photos/summer-meadow.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
               <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
                 <FolderOpen size={22} className="text-white mb-2 drop-shadow" />
@@ -280,7 +295,7 @@ export default async function HomePage() {
               href="/upload"
               className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-6 min-h-[150px] sm:min-h-[170px] shadow-md"
             >
-              <img src="/photos/summer-meadow.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <img src="/photos/hero-drone-house.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
               <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
                 <Camera size={22} className="text-white mb-2 drop-shadow" />
