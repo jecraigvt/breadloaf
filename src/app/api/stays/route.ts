@@ -35,6 +35,31 @@ export async function GET(request: NextRequest) {
     },
   });
 
+  // Also fetch stays with no room assigned (e.g., events synced from Google Calendar)
+  const unassignedStays = await prisma.stay.findMany({
+    where: {
+      roomId: null,
+      ...(Object.keys(where).length > 0 ? where : {}),
+    },
+    orderBy: { checkIn: "asc" },
+  });
+
+  // Add a virtual "Unassigned" entry if there are unassigned stays
+  if (unassignedStays.length > 0) {
+    rooms.push({
+      id: "unassigned",
+      name: "No Room Assigned",
+      slug: "unassigned",
+      type: "other",
+      minCapacity: 0,
+      maxCapacity: 0,
+      hasCrib: false,
+      description: "Events and visits without a room assignment",
+      sortOrder: 999,
+      stays: unassignedStays,
+    } as typeof rooms[0]);
+  }
+
   return NextResponse.json(rooms);
 }
 
