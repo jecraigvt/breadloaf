@@ -179,16 +179,9 @@ export async function syncFromGoogleCalendar(): Promise<{
     for (const event of events) {
       if (!event.id || !event.summary) continue;
 
-      // Only process events that look like Breadloaf stays
-      const isBreadloafEvent =
-        event.summary.includes("at Breadloaf Hill") ||
-        event.location?.includes("Breadloaf Hill");
-
-      if (!isBreadloafEvent) continue;
-
       googleEventIds.add(event.id);
 
-      // Parse guest name from summary
+      // Use event title as guest/event name, strip " at Breadloaf Hill" if present
       const guestName = event.summary.replace(" at Breadloaf Hill", "").trim();
       const checkIn = event.start?.date
         ? new Date(event.start.date + "T00:00:00")
