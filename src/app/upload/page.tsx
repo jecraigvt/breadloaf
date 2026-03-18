@@ -49,7 +49,10 @@ export default function UploadPage() {
   const [linkTitle, setLinkTitle] = useState("");
   const [linkCategory, setLinkCategory] = useState("");
   const [linkDescription, setLinkDescription] = useState("");
+  const [linkContentSummary, setLinkContentSummary] = useState("");
+  const [linkPageText, setLinkPageText] = useState("");
   const [savingLink, setSavingLink] = useState(false);
+  const [analyzingLink, setAnalyzingLink] = useState(false);
   const [categories, setCategories] = useState<{ name: string; slug: string }[]>([]);
 
   // Fetch categories for the link form
@@ -63,6 +66,30 @@ export default function UploadPage() {
     } catch {
       // ignore
     }
+  };
+
+  // Auto-analyze URL when pasted
+  const analyzeLink = async (url: string) => {
+    if (!url.trim() || !url.startsWith("http")) return;
+    setAnalyzingLink(true);
+    try {
+      const res = await fetch("/api/documents/analyze-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.title) setLinkTitle(data.title);
+        if (data.categorySlug) setLinkCategory(data.categorySlug);
+        if (data.description) setLinkDescription(data.description);
+        if (data.contentSummary) setLinkContentSummary(data.contentSummary);
+        if (data.pageText) setLinkPageText(data.pageText);
+      }
+    } catch {
+      // Analysis failed — user can fill in manually
+    }
+    setAnalyzingLink(false);
   };
 
   const handleSaveLink = async () => {
@@ -83,7 +110,8 @@ export default function UploadPage() {
           fileSize: 0,
           categorySlug: linkCategory || undefined,
           tags: [],
-          aiSummary: linkDescription.trim() || undefined,
+          aiSummary: linkContentSummary || linkDescription.trim() || undefined,
+          aiExtractedText: linkPageText || undefined,
           uploadedBy,
         }),
       });
@@ -224,6 +252,8 @@ export default function UploadPage() {
     setLinkTitle("");
     setLinkCategory("");
     setLinkDescription("");
+    setLinkContentSummary("");
+    setLinkPageText("");
     setStep("select");
   };
 
@@ -274,18 +304,37 @@ export default function UploadPage() {
                 type="url"
                 value={linkUrl}
                 onChange={(e) => setLinkUrl(e.target.value)}
+                onPaste={(e) => {
+                  const pasted = e.clipboardData.getData("text");
+                  if (pasted.startsWith("http")) {
+                    setTimeout(() => analyzeLink(pasted), 100);
+                  }
+                }}
+                onBlur={() => {
+                  if (linkUrl.startsWith("http") && !linkTitle) {
+                    analyzeLink(linkUrl);
+                  }
+                }}
                 placeholder="https://docs.google.com/..."
                 className="w-full px-4 py-3 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 autoFocus
               />
             </div>
+
+            {analyzingLink && (
+              <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl p-3">
+                <Loader2 size={18} className="animate-spin text-green-600" />
+                <span className="text-sm text-green-700">Analyzing document...</span>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-stone-700 mb-1">Title</label>
               <input
                 type="text"
                 value={linkTitle}
                 onChange={(e) => setLinkTitle(e.target.value)}
-                placeholder="e.g., 2025 Bylaws"
+                placeholder={analyzingLink ? "Detecting..." : "e.g., 2025 Bylaws"}
                 className="w-full px-4 py-3 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
               />
             </div>
@@ -296,19 +345,19 @@ export default function UploadPage() {
                 onChange={(e) => setLinkCategory(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
               >
-                <option value="">Select a category...</option>
+                <option value="">{analyzingLink ? "Detecting..." : "Select a category..."}</option>
                 {categories.map((c) => (
                   <option key={c.slug} value={c.slug}>{c.name}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">Description (optional)</label>
+              <label className="block text-sm font-medium text-stone-700 mb-1">Description</label>
               <input
                 type="text"
                 value={linkDescription}
                 onChange={(e) => setLinkDescription(e.target.value)}
-                placeholder="Brief description of this document"
+                placeholder={analyzingLink ? "Generating..." : "Brief description of this document"}
                 className="w-full px-4 py-3 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
               />
             </div>
@@ -331,7 +380,7 @@ export default function UploadPage() {
               </button>
               <button
                 onClick={handleSaveLink}
-                disabled={!linkUrl.trim() || !linkTitle.trim() || savingLink}
+                disabled={!linkUrl.trim() || !linkTitle.trim() || savingLink || analyzingLink}
                 className="flex-1 py-3 rounded-xl bg-green-700 text-white font-medium hover:bg-green-800 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {savingLink ? <Loader2 size={18} className="animate-spin" /> : <Link2 size={18} />}
