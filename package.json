@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma migrate deploy && prisma db seed && next build",
-    "start": "next start",
+    "build": "next build",
+    "start": "prisma migrate deploy && prisma db seed && next start",
     "lint": "next lint",
     "db:migrate": "npx prisma migrate dev",
     "db:seed": "npx tsx prisma/seed.ts",
