@@ -1,10 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  createCalendarEvent,
+  syncFromGoogleCalendar,
+} from "@/lib/google-calendar";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const from = searchParams.get("from");
   const to = searchParams.get("to");
+  const sync = searchParams.get("sync");
+
+  // Trigger Google Calendar sync if requested
+  if (sync === "true") {
+    const stats = await syncFromGoogleCalendar();
+    if (stats.created > 0 || stats.updated > 0 || stats.deleted > 0) {
+      console.log("Calendar sync:", stats);
+    }
+  }
 
   const where: Record<string, unknown> = {};
   if (from || to) {
@@ -48,6 +61,11 @@ export async function POST(request: NextRequest) {
       },
       include: { room: true },
     });
+
+    // Sync to Google Calendar (non-blocking)
+    createCalendarEvent(stay).catch((err) =>
+      console.error("Calendar sync failed:", err)
+    );
 
     return NextResponse.json(stay);
   } catch (error) {

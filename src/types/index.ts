@@ -56,6 +56,7 @@ export interface StayType {
   checkOut: Date;
   notes: string | null;
   status: string;
+  googleEventId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

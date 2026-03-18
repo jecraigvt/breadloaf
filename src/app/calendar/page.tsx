@@ -75,9 +75,10 @@ export default function CalendarPage() {
   const [notes, setNotes] = useState("");
   const [status, setStatus] = useState("confirmed");
 
-  const fetchRooms = useCallback(async () => {
+  const fetchRooms = useCallback(async (sync = false) => {
     try {
-      const res = await fetch("/api/stays");
+      const url = sync ? "/api/stays?sync=true" : "/api/stays";
+      const res = await fetch(url);
       const data = await res.json();
       setRooms(data);
     } catch (err) {
@@ -88,7 +89,8 @@ export default function CalendarPage() {
   }, []);
 
   useEffect(() => {
-    fetchRooms();
+    // Sync from Google Calendar on first load
+    fetchRooms(true);
   }, [fetchRooms]);
 
   // All stays flattened with room info

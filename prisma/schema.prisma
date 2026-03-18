@@ -70,16 +70,17 @@ model Room {
 }
 
 model Stay {
-  id        String   @id @default(cuid())
-  guestName String
-  roomId    String?
-  room      Room?    @relation(fields: [roomId], references: [id])
-  checkIn   DateTime
-  checkOut  DateTime
-  notes     String?
-  status    String   @default("confirmed") // confirmed, tentative, requested
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id @default(cuid())
+  guestName     String
+  roomId        String?
+  room          Room?    @relation(fields: [roomId], references: [id])
+  checkIn       DateTime
+  checkOut      DateTime
+  notes         String?
+  status        String   @default("confirmed") // confirmed, tentative, requested
+  googleEventId String?  @unique
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@index([roomId])
   @@index([checkIn])
