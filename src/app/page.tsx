@@ -88,7 +88,25 @@ export default async function HomePage() {
         {/* Hub Grid */}
         <section className="mb-10">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
-            {/* 1. Calendar — with photo background */}
+            {/* 1. Assistant */}
+            <Link
+              href="/assistant"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-1 min-h-[150px] sm:min-h-[170px] shadow-md"
+            >
+              <img
+                src="/photos/hilltop-view.jpg"
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <MessageCircle size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Assistant</h3>
+                <p className="text-white/80 text-sm">Ask about the property</p>
+              </div>
+            </Link>
+
+            {/* 2. Calendar */}
             <Link
               href="/calendar"
               className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-1 min-h-[150px] sm:min-h-[170px] shadow-md"
@@ -213,24 +231,6 @@ export default async function HomePage() {
                 </span>
               </div>
             </a>
-
-            {/* 7. Assistant — with photo background */}
-            <Link
-              href="/assistant"
-              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-6 min-h-[150px] sm:min-h-[170px] shadow-md"
-            >
-              <img
-                src="/photos/hilltop-view.jpg"
-                alt=""
-                className="absolute inset-0 w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
-              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
-                <MessageCircle size={22} className="text-white mb-2 drop-shadow" />
-                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Assistant</h3>
-                <p className="text-white/80 text-sm">Ask about the property</p>
-              </div>
-            </Link>
 
             {/* 8. Checklists */}
             <Link
