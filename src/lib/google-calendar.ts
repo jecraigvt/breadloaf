@@ -188,11 +188,17 @@ export async function syncFromGoogleCalendar(): Promise<{
         : event.start?.dateTime
         ? new Date(event.start.dateTime)
         : null;
-      const checkOut = event.end?.date
-        ? new Date(event.end.date + "T00:00:00")
-        : event.end?.dateTime
-        ? new Date(event.end.dateTime)
-        : null;
+      // Google Calendar all-day event end dates are exclusive (day after last day)
+      // Subtract 1 day so a single-day event shows as 1 day, not 2
+      let checkOut: Date | null = null;
+      if (event.end?.date) {
+        const endDate = new Date(event.end.date + "T00:00:00");
+        endDate.setDate(endDate.getDate() - 1);
+        // If single-day event, checkOut = checkIn
+        checkOut = endDate < checkIn! ? checkIn : endDate;
+      } else if (event.end?.dateTime) {
+        checkOut = new Date(event.end.dateTime);
+      }
 
       if (!checkIn || !checkOut) continue;
 
