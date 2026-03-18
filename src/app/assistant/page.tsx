@@ -88,8 +88,8 @@ export default function AssistantPage() {
   return (
     <div className="flex flex-col h-screen">
       <Header
-        title="Property Assistant"
-        subtitle="Ask about your documents, property, and more"
+        title="Jarvis Craig"
+        subtitle="Your family property assistant"
       />
 
       {/* Chat Messages */}
@@ -101,11 +101,12 @@ export default function AssistantPage() {
           <div className="text-center py-12">
             <Mountain size={48} className="mx-auto text-green-200 mb-4" />
             <h2 className="text-lg font-semibold text-stone-700">
-              Breadloaf Hill Assistant
+              Jarvis Craig
             </h2>
             <p className="text-stone-400 text-sm mt-2 max-w-xs mx-auto">
-              Ask me anything about the property, or ask me to add items to
-              the grocery list, log maintenance, post to the board, and more.
+              Your family property hub — I know about visits, rooms, documents,
+              expenses, supplies, and everything Breadloaf Hill. Ask me anything
+              or tell me to do something.
             </p>
             <div className="flex flex-wrap gap-2 justify-center mt-6">
               {[

@@ -101,8 +101,8 @@ export default async function HomePage() {
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
               <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
                 <MessageCircle size={22} className="text-white mb-2 drop-shadow" />
-                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Assistant</h3>
-                <p className="text-white/80 text-sm">Ask about the property</p>
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Jarvis Craig</h3>
+                <p className="text-white/80 text-sm">Ask me anything</p>
               </div>
             </Link>
 
