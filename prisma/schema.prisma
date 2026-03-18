@@ -132,14 +132,15 @@ model MaintenanceRecord {
 }
 
 model FamilyMember {
-  id       String  @id @default(cuid())
-  name     String
-  email    String?
-  phone    String?
-  birthday String?
-  branch   String? // which Craig brother's family
-  relation String? // e.g. "spouse", "child", "grandchild"
-  notes    String?
+  id        String  @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  birthday  String?
+  branch    String? // which Craig brother's family
+  relation  String? // e.g. "spouse", "child", "grandchild"
+  boardRole String? // e.g. "President", "Treasurer", "Secretary", "Member"
+  notes     String?
 
   @@index([branch])
 }

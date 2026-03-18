@@ -16,6 +16,7 @@ import {
   ChevronUp,
   UserPlus,
   Save,
+  Shield,
 } from "lucide-react";
 
 interface FamilyMember {
@@ -26,6 +27,7 @@ interface FamilyMember {
   birthday: string | null;
   branch: string | null;
   relation: string | null;
+  boardRole: string | null;
   notes: string | null;
 }
 
@@ -56,6 +58,14 @@ const RELATIONS = [
   "other",
 ];
 
+const BOARD_ROLES = [
+  "President",
+  "Vice President",
+  "Treasurer",
+  "Secretary",
+  "Member",
+];
+
 const emptyForm = {
   name: "",
   email: "",
@@ -63,6 +73,7 @@ const emptyForm = {
   birthday: "",
   branch: "",
   relation: "",
+  boardRole: "",
   notes: "",
 };
 
@@ -106,6 +117,7 @@ export default function FamilyPage() {
             birthday: form.birthday.trim() || null,
             branch: form.branch || null,
             relation: form.relation || null,
+            boardRole: form.boardRole || null,
             notes: form.notes.trim() || null,
           }),
         });
@@ -120,6 +132,7 @@ export default function FamilyPage() {
             birthday: form.birthday.trim() || null,
             branch: form.branch || null,
             relation: form.relation || null,
+            boardRole: form.boardRole || null,
             notes: form.notes.trim() || null,
           }),
         });
@@ -145,6 +158,7 @@ export default function FamilyPage() {
       birthday: member.birthday || "",
       branch: member.branch || "",
       relation: member.relation || "",
+      boardRole: member.boardRole || "",
       notes: member.notes || "",
     });
     setShowForm(true);
@@ -271,6 +285,22 @@ export default function FamilyPage() {
                     <option key={r} value={r}>
                       {r.charAt(0).toUpperCase() + r.slice(1)}
                     </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-stone-600 mb-1">
+                  Board Role
+                </label>
+                <select
+                  value={form.boardRole}
+                  onChange={(e) => setForm({ ...form, boardRole: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-stone-300 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
+                >
+                  <option value="">None</option>
+                  {BOARD_ROLES.map((r) => (
+                    <option key={r} value={r}>{r}</option>
                   ))}
                 </select>
               </div>
@@ -454,8 +484,14 @@ function MemberCard({
 
         {/* Info */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-medium text-stone-800">{member.name}</h3>
+            {member.boardRole && (
+              <span className="inline-flex items-center gap-1 text-xs bg-indigo-100 text-indigo-700 rounded-full px-2 py-0.5 font-medium">
+                <Shield size={10} />
+                {member.boardRole}
+              </span>
+            )}
             {member.relation && (
               <span className="text-xs bg-stone-100 text-stone-500 rounded-full px-2 py-0.5 capitalize">
                 {member.relation}
