@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { chatWithAssistant } from "@/lib/ai";
+import { syncFromGoogleCalendar } from "@/lib/google-calendar";
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,6 +9,9 @@ export async function POST(request: NextRequest) {
     if (!messages || !Array.isArray(messages)) {
       return new Response("Messages array required", { status: 400 });
     }
+
+    // Sync calendar before responding so assistant has latest data
+    await syncFromGoogleCalendar().catch(() => {});
 
     const result = await chatWithAssistant(messages);
 

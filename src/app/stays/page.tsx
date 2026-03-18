@@ -84,7 +84,7 @@ export default function StaysPage() {
 
   const fetchRooms = useCallback(async () => {
     try {
-      const res = await fetch("/api/stays");
+      const res = await fetch("/api/stays?sync=true");
       const data = await res.json();
       setRooms(data);
     } catch (err) {

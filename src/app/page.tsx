@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { syncFromGoogleCalendar } from "@/lib/google-calendar";
 import Link from "next/link";
 import {
   Camera,
@@ -39,6 +40,9 @@ function getSeasonLabel(): string {
 }
 
 export default async function HomePage() {
+  // Sync calendar on homepage load
+  await syncFromGoogleCalendar().catch(() => {});
+
   const [docCount, recentDocs, categories, bulletinMessages] =
     await Promise.all([
       prisma.document.count(),
