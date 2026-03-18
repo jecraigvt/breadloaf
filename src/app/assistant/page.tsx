@@ -109,10 +109,10 @@ export default function AssistantPage() {
             </p>
             <div className="flex flex-wrap gap-2 justify-center mt-6">
               {[
+                "What can you help with?",
                 "Add paper towels to the grocery list",
                 "Who's coming to visit next?",
-                "What's on the grocery list?",
-                "Sign me up to cook burgers Friday",
+                "How much have we spent this year?",
               ].map((q) => (
                 <button
                   key={q}
