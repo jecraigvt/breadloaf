@@ -95,7 +95,7 @@ export default function AssistantPage() {
       {/* Chat Messages */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto chat-scroll px-4 py-4 space-y-4 pb-24"
+        className="flex-1 overflow-y-auto chat-scroll px-4 py-4 space-y-4 pb-36"
       >
         {messages.length === 0 && (
           <div className="text-center py-12">
