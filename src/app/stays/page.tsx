@@ -22,8 +22,8 @@ import {
   HelpCircle,
   Trash2,
 } from "lucide-react";
-import { RoomWithStays, StayType } from "@/types";
-import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, isSameDay, isWithinInterval, parseISO } from "date-fns";
+import { RoomWithStays } from "@/types";
+import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isToday, isWithinInterval } from "date-fns";
 
 const roomTypeIcons: Record<string, typeof Home> = {
   bedroom: BedDouble,

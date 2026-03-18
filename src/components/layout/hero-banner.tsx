@@ -35,8 +35,6 @@ export function HeroBanner({ greeting, seasonLabel, docCount, boardCount }: Hero
     return () => clearInterval(interval);
   }, [nextImage]);
 
-  const current = heroImages[currentIndex];
-
   return (
     <header className="relative overflow-hidden min-h-[320px] sm:min-h-[400px]">
       {/* Background images — preload all, show current */}
