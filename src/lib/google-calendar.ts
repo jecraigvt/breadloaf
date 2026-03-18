@@ -13,13 +13,11 @@ function getCalendarClient(): calendar_v3.Calendar | null {
 
   try {
     const key = JSON.parse(credentials);
-    const auth = new google.auth.JWT(
-      key.client_email,
-      undefined,
-      key.private_key,
-      SCOPES
-    );
-    return google.calendar({ version: "v3", auth });
+    const auth = new google.auth.GoogleAuth({
+      credentials: key,
+      scopes: SCOPES,
+    });
+    return google.calendar({ version: "v3", auth: auth as unknown as string });
   } catch (err) {
     console.error("Failed to initialize Google Calendar client:", err);
     return null;
