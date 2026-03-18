@@ -130,23 +130,22 @@ export function CameraCapture({ onCapture }: CameraCaptureProps) {
         </button>
       )}
 
-      {isStreaming && (
-        <div className="relative rounded-xl overflow-hidden bg-black camera-overlay">
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full"
+      {/* Video always rendered so ref is available; hidden when not streaming */}
+      <div className={`relative rounded-xl overflow-hidden bg-black camera-overlay ${isStreaming ? "" : "hidden"}`}>
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className="w-full"
+        />
+        <div className="absolute bottom-4 left-0 right-0 flex justify-center">
+          <button
+            onClick={capture}
+            className="w-16 h-16 rounded-full bg-white border-4 border-green-700 shadow-lg active:scale-95 transition-transform"
           />
-          <div className="absolute bottom-4 left-0 right-0 flex justify-center">
-            <button
-              onClick={capture}
-              className="w-16 h-16 rounded-full bg-white border-4 border-green-700 shadow-lg active:scale-95 transition-transform"
-            />
-          </div>
         </div>
-      )}
+      </div>
 
       {capturedImage && (
         <div className="space-y-3">
