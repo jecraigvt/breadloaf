@@ -133,7 +133,7 @@ function LoginContent() {
           {family ? (
             <div className="py-4">
               <p className="text-green-700 font-semibold text-lg">
-                Welcome, {family}!
+                Welcome, {family} Craigs!
               </p>
               <Loader2
                 size={20}
