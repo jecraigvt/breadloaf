@@ -62,12 +62,23 @@ export async function POST(request: NextRequest) {
       include: { room: true },
     });
 
-    // Sync to Google Calendar (non-blocking)
-    createCalendarEvent(stay).catch((err) =>
-      console.error("Calendar sync failed:", err)
-    );
+    // Sync to Google Calendar
+    try {
+      const eventId = await createCalendarEvent(stay);
+      if (eventId) {
+        console.log("Calendar event created:", eventId);
+      }
+    } catch (err) {
+      console.error("Calendar sync failed:", err);
+    }
 
-    return NextResponse.json(stay);
+    // Re-fetch to include googleEventId
+    const updatedStay = await prisma.stay.findUnique({
+      where: { id: stay.id },
+      include: { room: true },
+    });
+
+    return NextResponse.json(updatedStay || stay);
   } catch (error) {
     console.error("Stay creation error:", error);
     return NextResponse.json(
