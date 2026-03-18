@@ -48,15 +48,15 @@ const BRANCH_COLORS: Record<string, { bg: string; text: string; avatar: string; 
   "Extended": { bg: "bg-stone-50", text: "text-stone-600", avatar: "bg-stone-500", border: "border-stone-200" },
 };
 
-const RELATIONS = [
-  "spouse",
-  "child",
-  "grandchild",
-  "sibling",
-  "parent",
-  "in-law",
-  "partner",
-  "other",
+const GENERATIONS = [
+  "Founder",
+  "Spouse",
+  "Son",
+  "Daughter",
+  "Cousin",
+  "Ummm...cousin?",
+  "Grandchild",
+  "Friend of the family",
 ];
 
 const OFFICER_ROLES = [
@@ -275,7 +275,7 @@ export default function FamilyPage() {
 
               <div>
                 <label className="block text-sm font-medium text-stone-600 mb-1">
-                  Relation
+                  Generation
                 </label>
                 <select
                   value={form.relation}
@@ -284,10 +284,10 @@ export default function FamilyPage() {
                   }
                   className="w-full px-3 py-2 rounded-lg border border-stone-300 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
                 >
-                  <option value="">Select relation...</option>
-                  {RELATIONS.map((r) => (
-                    <option key={r} value={r}>
-                      {r.charAt(0).toUpperCase() + r.slice(1)}
+                  <option value="">Select...</option>
+                  {GENERATIONS.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
                     </option>
                   ))}
                 </select>
