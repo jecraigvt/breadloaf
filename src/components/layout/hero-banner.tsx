@@ -5,9 +5,9 @@ import { TreePine, Mountain } from "lucide-react";
 
 const heroImages = [
   { src: "/photos/hero-drone-house.jpg", alt: "Breadloaf Hill from above", position: "object-center" },
-  { src: "/photos/hero-rainbow.jpg", alt: "Rainbow over Breadloaf Hill", position: "object-center" },
-  { src: "/photos/hero-mountains.jpg", alt: "Mountain view from Breadloaf Hill", position: "object-center" },
-  { src: "/photos/hero-drone-landscape.jpg", alt: "The view from Breadloaf Hill", position: "object-center" },
+  { src: "/photos/hero-rainbow.jpg", alt: "Rainbow over Breadloaf Hill", position: "object-bottom" },
+  { src: "/photos/lawn-games.jpg", alt: "Family games on the lawn", position: "object-center" },
+  { src: "/photos/bonfire.jpg", alt: "Bonfire night at Breadloaf Hill", position: "object-center" },
   { src: "/photos/family-group.jpg", alt: "The Craig family at Breadloaf Hill", position: "object-top" },
 ];
 
