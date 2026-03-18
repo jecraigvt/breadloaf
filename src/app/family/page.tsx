@@ -28,6 +28,7 @@ interface FamilyMember {
   branch: string | null;
   relation: string | null;
   boardRole: string | null;
+  isBoardMember: boolean;
   notes: string | null;
 }
 
@@ -58,12 +59,11 @@ const RELATIONS = [
   "other",
 ];
 
-const BOARD_ROLES = [
+const OFFICER_ROLES = [
   "President",
   "Vice President",
   "Treasurer",
   "Secretary",
-  "Member",
 ];
 
 const emptyForm = {
@@ -74,6 +74,7 @@ const emptyForm = {
   branch: "",
   relation: "",
   boardRole: "",
+  isBoardMember: false,
   notes: "",
 };
 
@@ -118,6 +119,7 @@ export default function FamilyPage() {
             branch: form.branch || null,
             relation: form.relation || null,
             boardRole: form.boardRole || null,
+            isBoardMember: form.isBoardMember,
             notes: form.notes.trim() || null,
           }),
         });
@@ -133,6 +135,7 @@ export default function FamilyPage() {
             branch: form.branch || null,
             relation: form.relation || null,
             boardRole: form.boardRole || null,
+            isBoardMember: form.isBoardMember,
             notes: form.notes.trim() || null,
           }),
         });
@@ -159,6 +162,7 @@ export default function FamilyPage() {
       branch: member.branch || "",
       relation: member.relation || "",
       boardRole: member.boardRole || "",
+      isBoardMember: member.isBoardMember || false,
       notes: member.notes || "",
     });
     setShowForm(true);
@@ -291,18 +295,48 @@ export default function FamilyPage() {
 
               <div>
                 <label className="block text-sm font-medium text-stone-600 mb-1">
-                  Board Role
+                  Officer Role(s)
                 </label>
-                <select
-                  value={form.boardRole}
-                  onChange={(e) => setForm({ ...form, boardRole: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-stone-300 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
+                <div className="flex flex-wrap gap-1.5">
+                  {OFFICER_ROLES.map((role) => {
+                    const roles = form.boardRole ? form.boardRole.split(", ") : [];
+                    const isActive = roles.includes(role);
+                    return (
+                      <button
+                        key={role}
+                        type="button"
+                        onClick={() => {
+                          const updated = isActive
+                            ? roles.filter((r) => r !== role)
+                            : [...roles, role];
+                          setForm({ ...form, boardRole: updated.join(", ") || "" });
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                          isActive
+                            ? "bg-amber-100 text-amber-700 border-amber-300"
+                            : "bg-white text-stone-500 border-stone-200 hover:border-amber-300"
+                        }`}
+                      >
+                        {role}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 sm:pt-6">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, isBoardMember: !form.isBoardMember })}
+                  className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+                    form.isBoardMember
+                      ? "bg-indigo-600 border-indigo-600 text-white"
+                      : "border-stone-300 hover:border-indigo-400"
+                  }`}
                 >
-                  <option value="">None</option>
-                  {BOARD_ROLES.map((r) => (
-                    <option key={r} value={r}>{r}</option>
-                  ))}
-                </select>
+                  {form.isBoardMember && <Shield size={12} />}
+                </button>
+                <label className="text-sm font-medium text-stone-600">Board Member</label>
               </div>
 
               <div>
@@ -486,9 +520,14 @@ function MemberCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-medium text-stone-800">{member.name}</h3>
-            {member.boardRole && (
+            {member.isBoardMember && (
               <span className="inline-flex items-center gap-1 text-xs bg-indigo-100 text-indigo-700 rounded-full px-2 py-0.5 font-medium">
                 <Shield size={10} />
+                Board
+              </span>
+            )}
+            {member.boardRole && (
+              <span className="text-xs bg-amber-100 text-amber-700 rounded-full px-2 py-0.5 font-medium">
                 {member.boardRole}
               </span>
             )}

@@ -139,7 +139,8 @@ model FamilyMember {
   birthday  String?
   branch    String? // which Craig brother's family
   relation  String? // e.g. "spouse", "child", "grandchild"
-  boardRole String? // e.g. "President", "Treasurer", "Secretary", "Member"
+  boardRole     String?  // officer role: President, VP, Treasurer, Secretary
+  isBoardMember Boolean @default(false)
   notes     String?
 
   @@index([branch])
