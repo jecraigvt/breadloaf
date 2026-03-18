@@ -107,18 +107,55 @@ export async function chatWithAssistant(
     }
   }
 
+  // Get upcoming stays and room info
+  const upcomingStays = await prisma.stay.findMany({
+    where: { checkOut: { gte: new Date() } },
+    include: { room: true },
+    orderBy: { checkIn: "asc" },
+    take: 30,
+  });
+
+  const rooms = await prisma.room.findMany({
+    orderBy: { sortOrder: "asc" },
+  });
+
+  const stayContext = upcomingStays.length > 0
+    ? upcomingStays
+        .map(
+          (s) =>
+            `${s.guestName} — ${new Date(s.checkIn).toLocaleDateString()} to ${new Date(s.checkOut).toLocaleDateString()} | Room: ${s.room?.name || "Not assigned"} | Status: ${s.status}${s.notes ? ` | Notes: ${s.notes}` : ""}`
+        )
+        .join("\n")
+    : "No upcoming visits scheduled.";
+
+  const roomList = rooms
+    .map(
+      (r) =>
+        `${r.name} (${r.type}) — sleeps ${r.minCapacity}-${r.maxCapacity}${r.hasCrib ? ", crib available" : ""} | ${r.description || ""}`
+    )
+    .join("\n");
+
   const model = genAI.getGenerativeModel({
     model: "gemini-3-flash-preview",
-    systemInstruction: `You are the Breadloaf Hill property assistant — a knowledgeable, friendly AI that helps the family manage their Vermont property. You have access to the family's document archive.
+    systemInstruction: `You are the Breadloaf Hill property assistant — a knowledgeable, friendly AI that helps the Craig family manage their Vermont property. You have access to the family's document archive, the visit calendar, and room information.
 
-${documentContext ? `Here are the relevant documents in the archive:\n${documentContext}` : "The document archive is currently empty. Encourage the family to start scanning and uploading documents!"}
+Today's date is ${new Date().toLocaleDateString()}.
+
+UPCOMING VISITS:
+${stayContext}
+
+ROOMS & ACCOMMODATIONS:
+${roomList}
+
+${documentContext ? `DOCUMENTS IN ARCHIVE:\n${documentContext}` : "The document archive is currently empty. Encourage the family to start scanning and uploading documents!"}
 
 Guidelines:
 - Be warm and helpful, like a trusted family advisor
-- Reference specific documents when answering questions
-- If you don't have relevant documents, say so and suggest what documents might help
+- Reference specific visits, rooms, and documents when answering questions
+- Help with questions like "who's coming next month?", "which rooms are available for the 4th of July?", "when is the next visit?"
 - Help with property management questions, maintenance schedules, tax info, etc.
-- You can help organize, summarize, and find information across all archived documents`,
+- You can suggest room assignments based on group size and availability
+- If you don't have relevant info, say so and suggest what might help`,
   });
 
   const chat = model.startChat({
