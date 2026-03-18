@@ -161,6 +161,8 @@ export async function syncFromGoogleCalendar(): Promise<{
 
   try {
     // Fetch upcoming events from Google Calendar
+    const calId = getCalendarId();
+    console.log(`[Calendar Sync] Syncing from calendar: ${calId}`);
     const now = new Date();
     const threeMonthsAgo = new Date(now);
     threeMonthsAgo.setMonth(now.getMonth() - 3);
@@ -174,6 +176,10 @@ export async function syncFromGoogleCalendar(): Promise<{
     });
 
     const events = response.data.items || [];
+    console.log(`[Calendar Sync] Fetched ${events.length} events from Google Calendar`);
+    for (const e of events.slice(0, 5)) {
+      console.log(`[Calendar Sync] Event: "${e.summary}" | ${e.start?.date || e.start?.dateTime} - ${e.end?.date || e.end?.dateTime} | ID: ${e.id}`);
+    }
     const googleEventIds = new Set<string>();
 
     for (const event of events) {
@@ -256,7 +262,7 @@ export async function syncFromGoogleCalendar(): Promise<{
       }
     }
   } catch (err) {
-    console.error("Failed to sync from Google Calendar:", err);
+    console.error("[Calendar Sync] FAILED:", err);
   }
 
   return stats;
