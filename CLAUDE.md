@@ -27,6 +27,7 @@ Family hub website for the Craig family property at 3995 Vermont Route 125, Ript
 - `GOOGLE_AI_API_KEY` — Gemini API key
 - `GOOGLE_SERVICE_ACCOUNT_KEY` — Full JSON key for calendar service account
 - `GOOGLE_CALENDAR_ID` — Google Calendar ID (tomgilcraig@gmail.com)
+- `FAMILY_PINS` — Per-family auth PINs (format: `Tom:1234,Jim:5678,Sandy:9012,Greg:3456`)
 
 ## Local Development
 ```bash
@@ -37,33 +38,42 @@ npm run dev
 ```
 
 ## Deployment
+**IMPORTANT: `git push` alone does NOT deploy.** Railway is NOT connected to GitHub for auto-deploy. You MUST run `railway up` after every commit to deploy.
 ```bash
-railway up          # Upload and deploy
-railway logs        # Check runtime logs
-railway logs --build # Check build logs
+git push origin main   # Push to GitHub (backup/history only)
+railway up             # REQUIRED — this is what actually deploys to Railway
+railway logs           # Check runtime logs
+railway logs --build   # Check build logs
 ```
+The correct deploy workflow is: `git add/commit` → `git push origin main` → `railway up`
+
 Migrations and seed run at startup (`npm start` script).
 
 ## Database
 - Run `npx prisma migrate dev` locally for new migrations
 - Production migrations are in `prisma/migrations/` as raw SQL
-- Seed data: 12 document categories, 11 rooms, 44 checklist items, 28 pantry items, 3 sample dinners
+- Seed data: 18 document categories (including S-Corp: Meeting Minutes, Corporate Filings, Financial Statements, K-1 Forms, Bank Statements, Capital Accounts), 11 rooms, 44 checklist items, 28 pantry items, 3 sample dinners
 
 ## Project Structure
 ```
+src/
+  middleware.ts           # PIN-based auth — gates all routes except /login and /api/auth
+
 src/app/
-  page.tsx              # Homepage hub with rotating photo hero
+  page.tsx              # Homepage hub with photo cards
+  login/                # PIN entry page (per-family auth)
   calendar/             # Visit calendar (month/list view, Google Calendar sync)
   stays/                # Room assignments and booking
   weather/              # Live weather from Open-Meteo
-  grocery/              # Shopping list (quick add, categories, check off)
+  grocery/              # Unified Supplies page (Shopping List + In Stock tabs, pantry scanning)
   dinners/              # Dinner sign-up (who's cooking which night)
-  pantry/               # Pantry inventory (track what's in stock)
+  pantry/               # Legacy pantry page (still works, but main access is via /grocery In Stock tab)
+  expenses/             # S-Corp expense tracker with financial dashboard and family splits
   checklists/           # Opening/closing checklists for seasonal use
   bulletin/             # Family message board
-  assistant/            # AI property assistant (Gemini, calendar-aware)
+  assistant/            # AI property assistant (Gemini, function-calling for actions)
   documents/            # Document archive with AI categorization
-  upload/               # Document scanner (camera + file upload)
+  upload/               # Document scanner (camera + file upload + link by URL)
   maintenance/          # Maintenance log with timeline view
   emergency/            # Emergency contacts (tap-to-call)
   guide/                # Local guide (swimming, hikes, restaurants)
@@ -77,14 +87,14 @@ src/components/
     header.tsx          # Page header with back-to-home link
   upload/
     camera-capture.tsx  # Camera interface for document scanning
-    file-dropzone.tsx   # Drag-and-drop file upload
+    file-dropzone.tsx   # Drag-and-drop file upload (images, PDF, Word, Excel, CSV)
 
 src/lib/
   prisma.ts             # Prisma client singleton
-  ai.ts                 # Gemini AI (document categorization + assistant)
+  ai.ts                 # Gemini AI (categorization, assistant with function-calling, pantry scanning)
   google-calendar.ts    # Two-way Google Calendar sync service
   utils.ts              # Formatting helpers
-  upload.ts             # File upload handling
+  upload.ts             # File upload handling (images, PDF, Word, Excel, CSV, TXT)
 ```
 
 ## Property Details
@@ -95,12 +105,11 @@ src/lib/
 - **Google Calendar:** Shared via service account breadloaf-hill@reader-7c045.iam.gserviceaccount.com
 - **Photo album:** iCloud shared album (847 photos)
 
-## Deployment
-- **Auto-deploy:** Connected to GitHub repo `jecraigvt/breadloaf`, branch `main`. Every push auto-deploys.
-- **Manual:** `railway up` from CLI if needed
+## Deployment Details
+- **`railway up` is the ONLY way to deploy.** GitHub pushes do NOT trigger deploys.
 - **Logs:** `railway logs` (runtime), `railway logs --build` (build)
-- **Known issue:** Railway caches build layers aggressively. If new pages don't appear, touch `next.config.mjs` to bust the cache.
 - **`.railwayignore`** excludes Photos/ dir, screenshots, and service account key from uploads.
+- After deploy, check `railway logs` to confirm the app started and migrations ran.
 
 ## Conventions
 - Use `"use client"` for interactive pages, server components for static/data pages
@@ -112,9 +121,12 @@ src/lib/
 - Google Calendar sync uses GoogleAuth (not JWT) — see `src/lib/google-calendar.ts`
 - Calendar sync runs on homepage, calendar page, stays page, and assistant message
 
+## Conventions
+- PIN auth via FAMILY_PINS env var; middleware skips auth when env var is unset (local dev)
+- S-Corp with 4 equal shareholders (Tom, Jim, Sandy, Greg Craig) — expenses split 25% each
+
 ## Future Roadmap
-- **AI assistant with write access** — let users ask the assistant to add items to grocery list, local guide, maintenance log, family directory, etc. via function-calling
-- **Smart document cross-linking** — scanning a maintenance receipt auto-creates a maintenance log entry with cost extracted
 - **Smart Home dashboard** — monitor devices at the property
 - **Starlink monitoring** — internet speed/uptime dashboard
-- **Accounting/expense tracking** — split property costs among the four families
+- **Recipe book** — family favorites at the property
+- **Nature/wildlife log**
