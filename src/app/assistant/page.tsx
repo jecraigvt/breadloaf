@@ -33,10 +33,14 @@ export default function AssistantPage() {
     setLoading(true);
 
     try {
+      const storedName =
+        typeof window !== "undefined"
+          ? localStorage.getItem("breadloaf-username") || ""
+          : "";
       const res = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newMessages }),
+        body: JSON.stringify({ messages: newMessages, username: storedName }),
       });
 
       if (!res.ok) throw new Error("Failed to get response");
@@ -100,15 +104,15 @@ export default function AssistantPage() {
               Breadloaf Hill Assistant
             </h2>
             <p className="text-stone-400 text-sm mt-2 max-w-xs mx-auto">
-              Ask me anything about the property — documents, maintenance
-              history, tax records, or any property management questions.
+              Ask me anything about the property, or ask me to add items to
+              the grocery list, log maintenance, post to the board, and more.
             </p>
             <div className="flex flex-wrap gap-2 justify-center mt-6">
               {[
-                "What documents do we have on file?",
-                "When was the last inspection?",
-                "Summarize our tax records",
-                "What maintenance is due?",
+                "Add paper towels to the grocery list",
+                "Who's coming to visit next?",
+                "What's on the grocery list?",
+                "Sign me up to cook burgers Friday",
               ].map((q) => (
                 <button
                   key={q}

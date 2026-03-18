@@ -108,6 +108,34 @@ export async function POST(request: NextRequest) {
       include: { category: true },
     });
 
+    // Cross-link: auto-create maintenance record for maintenance/receipt documents
+    const categoryName = document.category?.name?.toLowerCase() || "";
+    const isMaintenance =
+      categoryName === "maintenance" || categoryName === "receipts";
+    const { maintenanceCost, maintenanceDate, maintenanceVendor } = body;
+
+    if (isMaintenance && (maintenanceCost || maintenanceVendor)) {
+      try {
+        await prisma.maintenanceRecord.create({
+          data: {
+            title: title || "Maintenance Receipt",
+            description: aiSummary || description || undefined,
+            category: categoryName === "receipts" ? "other" : undefined,
+            performedBy: maintenanceVendor || undefined,
+            performedAt: maintenanceDate
+              ? new Date(maintenanceDate)
+              : new Date(),
+            cost: maintenanceCost
+              ? parseFloat(String(maintenanceCost))
+              : undefined,
+          },
+        });
+      } catch (e) {
+        // Don't fail the document save if cross-linking fails
+        console.error("Cross-link maintenance record failed:", e);
+      }
+    }
+
     return NextResponse.json(document);
   } catch (error) {
     console.error("Create document error:", error);

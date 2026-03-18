@@ -29,8 +29,12 @@ export function CameraCapture({ onCapture }: CameraCaptureProps) {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play();
-          setIsStreaming(true);
+          videoRef.current
+            ?.play()
+            .then(() => setIsStreaming(true))
+            .catch(() =>
+              setError("Could not start camera preview. Try again.")
+            );
         };
       }
     } catch {

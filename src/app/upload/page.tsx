@@ -11,6 +11,7 @@ import {
   FolderOpen,
   FileText,
   X,
+  Wrench,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -22,6 +23,9 @@ interface CategorizationResult {
   summary: string;
   tags: string[];
   confidence: number;
+  maintenanceCost?: number | null;
+  maintenanceDate?: string | null;
+  maintenanceVendor?: string | null;
 }
 
 export default function UploadPage() {
@@ -136,6 +140,9 @@ export default function UploadPage() {
           aiSummary: result.summary,
           aiExtractedText: "",
           uploadedBy,
+          maintenanceCost: result.maintenanceCost,
+          maintenanceDate: result.maintenanceDate,
+          maintenanceVendor: result.maintenanceVendor,
         }),
       });
 
@@ -294,6 +301,26 @@ export default function UploadPage() {
                     {tag}
                   </span>
                 ))}
+              </div>
+            )}
+
+            {(result.maintenanceCost || result.maintenanceVendor) && (
+              <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
+                <div className="flex items-center gap-2 text-orange-800 text-sm font-medium">
+                  <Wrench size={16} />
+                  Maintenance record will be auto-created
+                </div>
+                <div className="text-orange-700 text-xs mt-1 space-y-0.5">
+                  {result.maintenanceVendor && (
+                    <p>Vendor: {result.maintenanceVendor}</p>
+                  )}
+                  {result.maintenanceCost && (
+                    <p>Cost: ${result.maintenanceCost.toFixed(2)}</p>
+                  )}
+                  {result.maintenanceDate && (
+                    <p>Date: {new Date(result.maintenanceDate).toLocaleDateString()}</p>
+                  )}
+                </div>
               </div>
             )}
 

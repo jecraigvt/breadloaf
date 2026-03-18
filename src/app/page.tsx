@@ -26,7 +26,6 @@ import {
   MapPin,
   Contact,
   ChefHat,
-  Package,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { HeroBanner } from "@/components/layout/hero-banner";
@@ -109,49 +108,43 @@ export default async function HomePage() {
             {/* 2. Weather */}
             <Link
               href="/weather"
-              className="hub-card-starlink rounded-2xl p-5 sm:p-6 card-hover border border-sky-200/50 animate-fade-in-up delay-2"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-2 min-h-[150px] sm:min-h-[170px] shadow-md"
             >
-              <div className="w-11 h-11 rounded-xl bg-sky-500 flex items-center justify-center mb-4 shadow-sm">
-                <CloudSun size={22} className="text-white" />
+              <img src="/photos/winter-mountains.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <CloudSun size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Weather</h3>
+                <p className="text-white/80 text-sm">Forecast</p>
               </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Weather</h3>
-              <p className="text-stone-500 text-sm">Forecast</p>
             </Link>
 
-            {/* 3. Grocery & Supplies */}
+            {/* 3. Supplies */}
             <Link
               href="/grocery"
-              className="hub-card-assistant rounded-2xl p-5 sm:p-6 card-hover border border-amber-200/50 animate-fade-in-up delay-3"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-3 min-h-[150px] sm:min-h-[170px] shadow-md"
             >
-              <div className="w-11 h-11 rounded-xl bg-amber-600 flex items-center justify-center mb-4 shadow-sm">
-                <ShoppingCart size={22} className="text-white" />
+              <img src="/photos/barn-exterior.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <ShoppingCart size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Supplies</h3>
+                <p className="text-white/80 text-sm">Shop & pantry</p>
               </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Supplies</h3>
-              <p className="text-stone-500 text-sm">Shopping list</p>
             </Link>
 
-            {/* Dinner Sign-up */}
+            {/* Dinners */}
             <Link
               href="/dinners"
-              className="hub-card-assistant rounded-2xl p-5 sm:p-6 card-hover border border-amber-200/50 animate-fade-in-up delay-3"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-3 min-h-[150px] sm:min-h-[170px] shadow-md"
             >
-              <div className="w-11 h-11 rounded-xl bg-orange-500 flex items-center justify-center mb-4 shadow-sm">
-                <ChefHat size={22} className="text-white" />
+              <img src="/photos/family-dinner.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <ChefHat size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Dinners</h3>
+                <p className="text-white/80 text-sm">Who's cooking?</p>
               </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Dinners</h3>
-              <p className="text-stone-500 text-sm">Who's cooking?</p>
-            </Link>
-
-            {/* Pantry Inventory */}
-            <Link
-              href="/pantry"
-              className="hub-card-documents rounded-2xl p-5 sm:p-6 card-hover border border-green-200/50 animate-fade-in-up delay-3"
-            >
-              <div className="w-11 h-11 rounded-xl bg-teal-600 flex items-center justify-center mb-4 shadow-sm">
-                <Package size={22} className="text-white" />
-              </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Pantry</h3>
-              <p className="text-stone-500 text-sm">What's in stock</p>
             </Link>
 
             {/* 4. Rooms — with photo background */}
@@ -175,13 +168,15 @@ export default async function HomePage() {
             {/* 5. Board */}
             <Link
               href="/bulletin"
-              className="hub-card-assistant rounded-2xl p-5 sm:p-6 card-hover border border-amber-200/50 animate-fade-in-up delay-5"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-5 min-h-[150px] sm:min-h-[170px] shadow-md"
             >
-              <div className="w-11 h-11 rounded-xl bg-amber-500 flex items-center justify-center mb-4 shadow-sm">
-                <Megaphone size={22} className="text-white" />
+              <img src="/photos/family-group.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <Megaphone size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Board</h3>
+                <p className="text-white/80 text-sm">Family messages</p>
               </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Board</h3>
-              <p className="text-stone-500 text-sm">Family messages</p>
             </Link>
 
             {/* 6. Photos */}
@@ -189,17 +184,19 @@ export default async function HomePage() {
               href="https://www.icloud.com/sharedalbum/#B2X5nhQSTTixIx"
               target="_blank"
               rel="noopener noreferrer"
-              className="hub-card-photos rounded-2xl p-5 sm:p-6 card-hover border border-purple-200/50 animate-fade-in-up delay-6"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-6 min-h-[150px] sm:min-h-[170px] shadow-md"
             >
-              <div className="w-11 h-11 rounded-xl bg-purple-500 flex items-center justify-center mb-4 shadow-sm">
-                <Image size={22} className="text-white" />
+              <img src="/photos/lawn-games.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <Image size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Photos</h3>
+                <p className="text-white/80 text-sm">Family album</p>
+                <span className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-white/70">
+                  <ExternalLink size={11} />
+                  iCloud
+                </span>
               </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Photos</h3>
-              <p className="text-stone-500 text-sm">Family album</p>
-              <span className="inline-flex items-center gap-1 mt-2 text-xs font-medium text-purple-600">
-                <ExternalLink size={11} />
-                iCloud
-              </span>
             </a>
 
             {/* 7. Assistant — with photo background */}
@@ -223,87 +220,101 @@ export default async function HomePage() {
             {/* 8. Checklists */}
             <Link
               href="/checklists"
-              className="hub-card-documents rounded-2xl p-5 sm:p-6 card-hover border border-green-200/50 animate-fade-in-up delay-6"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-6 min-h-[150px] sm:min-h-[170px] shadow-md"
             >
-              <div className="w-11 h-11 rounded-xl bg-green-600 flex items-center justify-center mb-4 shadow-sm">
-                <ClipboardCheck size={22} className="text-white" />
+              <img src="/photos/hero-drone-house.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <ClipboardCheck size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Checklists</h3>
+                <p className="text-white/80 text-sm">Open & close</p>
               </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Checklists</h3>
-              <p className="text-stone-500 text-sm">Open & close</p>
             </Link>
 
             {/* 9. Local Guide */}
             <Link
               href="/guide"
-              className="hub-card-photos rounded-2xl p-5 sm:p-6 card-hover border border-purple-200/50 animate-fade-in-up delay-6"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-6 min-h-[150px] sm:min-h-[170px] shadow-md"
             >
-              <div className="w-11 h-11 rounded-xl bg-purple-500 flex items-center justify-center mb-4 shadow-sm">
-                <MapPin size={22} className="text-white" />
+              <img src="/photos/swimming-hole.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <MapPin size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Local Guide</h3>
+                <p className="text-white/80 text-sm">Things to do</p>
               </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Local Guide</h3>
-              <p className="text-stone-500 text-sm">Things to do</p>
             </Link>
 
             {/* 10. Family Directory */}
             <Link
               href="/family"
-              className="hub-card-smart rounded-2xl p-5 sm:p-6 card-hover border border-blue-200/50 animate-fade-in-up delay-6"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-6 min-h-[150px] sm:min-h-[170px] shadow-md"
             >
-              <div className="w-11 h-11 rounded-xl bg-blue-500 flex items-center justify-center mb-4 shadow-sm">
-                <Contact size={22} className="text-white" />
+              <img src="/photos/bonfire.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <Contact size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Family</h3>
+                <p className="text-white/80 text-sm">Directory</p>
               </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Family</h3>
-              <p className="text-stone-500 text-sm">Directory</p>
             </Link>
 
             {/* 11. Documents */}
             <Link
               href="/documents"
-              className="hub-card-documents rounded-2xl p-5 sm:p-6 card-hover border border-green-200/50 animate-fade-in-up delay-6"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-6 min-h-[150px] sm:min-h-[170px] shadow-md"
             >
-              <div className="w-11 h-11 rounded-xl bg-green-600 flex items-center justify-center mb-4 shadow-sm">
-                <FolderOpen size={22} className="text-white" />
+              <img src="/photos/hero-drone-landscape.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <FolderOpen size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Documents</h3>
+                <p className="text-white/80 text-sm">
+                  {docCount > 0 ? `${docCount} files archived` : "Property archive"}
+                </p>
               </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Documents</h3>
-              <p className="text-stone-500 text-sm">
-                {docCount > 0 ? `${docCount} files archived` : "Property archive"}
-              </p>
             </Link>
 
             {/* 12. Scan */}
             <Link
               href="/upload"
-              className="hub-card-documents rounded-2xl p-5 sm:p-6 card-hover border border-green-200/50 animate-fade-in-up delay-6"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-6 min-h-[150px] sm:min-h-[170px] shadow-md"
             >
-              <div className="w-11 h-11 rounded-xl bg-green-700 flex items-center justify-center mb-4 shadow-sm">
-                <Camera size={22} className="text-white" />
+              <img src="/photos/summer-meadow.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <Camera size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Scan</h3>
+                <p className="text-white/80 text-sm">Upload documents</p>
               </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Scan</h3>
-              <p className="text-stone-500 text-sm">Upload documents</p>
             </Link>
 
             {/* 13. Maintenance */}
             <Link
               href="/maintenance"
-              className="hub-card-bulletin rounded-2xl p-5 sm:p-6 card-hover border border-rose-200/50 animate-fade-in-up delay-6"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-6 min-h-[150px] sm:min-h-[170px] shadow-md"
             >
-              <div className="w-11 h-11 rounded-xl bg-stone-600 flex items-center justify-center mb-4 shadow-sm">
-                <Wrench size={22} className="text-white" />
+              <img src="/photos/hero-rainbow.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <Wrench size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Maintenance</h3>
+                <p className="text-white/80 text-sm">Service log</p>
               </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Maintenance</h3>
-              <p className="text-stone-500 text-sm">Service log</p>
             </Link>
 
             {/* 14. Emergency */}
             <Link
               href="/emergency"
-              className="hub-card-bulletin rounded-2xl p-5 sm:p-6 card-hover border border-red-200/50 animate-fade-in-up delay-6"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-6 min-h-[150px] sm:min-h-[170px] shadow-md"
             >
-              <div className="w-11 h-11 rounded-xl bg-red-500 flex items-center justify-center mb-4 shadow-sm">
-                <AlertTriangle size={22} className="text-white" />
+              <img src="/photos/hero-mountains.jpg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <AlertTriangle size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Emergency</h3>
+                <p className="text-white/80 text-sm">Contacts & info</p>
               </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Emergency</h3>
-              <p className="text-stone-500 text-sm">Contacts & info</p>
             </Link>
 
             {/* 15. Smart Home - Coming Soon */}

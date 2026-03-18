@@ -4,7 +4,7 @@ import { syncFromGoogleCalendar } from "@/lib/google-calendar";
 
 export async function POST(request: NextRequest) {
   try {
-    const { messages } = await request.json();
+    const { messages, username } = await request.json();
 
     if (!messages || !Array.isArray(messages)) {
       return new Response("Messages array required", { status: 400 });
@@ -13,31 +13,11 @@ export async function POST(request: NextRequest) {
     // Sync calendar before responding so assistant has latest data
     await syncFromGoogleCalendar().catch(() => {});
 
-    const result = await chatWithAssistant(messages);
+    const responseText = await chatWithAssistant(messages, username);
 
-    // Stream the response
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          for await (const chunk of result.stream) {
-            const text = chunk.text();
-            if (text) {
-              controller.enqueue(encoder.encode(text));
-            }
-          }
-          controller.close();
-        } catch (error) {
-          console.error("Stream error:", error);
-          controller.error(error);
-        }
-      },
-    });
-
-    return new Response(stream, {
+    return new Response(responseText, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
-        "Transfer-Encoding": "chunked",
       },
     });
   } catch (error) {
