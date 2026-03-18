@@ -5,8 +5,8 @@ import { TreePine, Mountain } from "lucide-react";
 
 const heroImages = [
   { src: "/photos/hero-drone-house.jpg", alt: "Breadloaf Hill from above", position: "object-center" },
-  { src: "/photos/hero-rainbow.jpg", alt: "Rainbow over Breadloaf Hill", position: "object-top" },
-  { src: "/photos/hero-mountains.jpg", alt: "Mountain view from Breadloaf Hill", position: "object-bottom" },
+  { src: "/photos/hero-rainbow.jpg", alt: "Rainbow over Breadloaf Hill", position: "object-center" },
+  { src: "/photos/hero-mountains.jpg", alt: "Mountain view from Breadloaf Hill", position: "object-center" },
   { src: "/photos/hero-drone-landscape.jpg", alt: "The view from Breadloaf Hill", position: "object-center" },
   { src: "/photos/family-group.jpg", alt: "The Craig family at Breadloaf Hill", position: "object-top" },
 ];
@@ -36,7 +36,7 @@ export function HeroBanner({ greeting, seasonLabel, docCount, boardCount }: Hero
   }, [nextImage]);
 
   return (
-    <header className="relative overflow-hidden min-h-[320px] sm:min-h-[400px]">
+    <header className="relative overflow-hidden h-[70vh] min-h-[420px] max-h-[700px]">
       {/* Background images — preload all, show current */}
       {heroImages.map((img, i) => (
         <div
@@ -53,34 +53,34 @@ export function HeroBanner({ greeting, seasonLabel, docCount, boardCount }: Hero
         </div>
       ))}
 
-      {/* Gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/60 z-[1]" />
+      {/* Gradient overlay — lighter in middle to let photo breathe */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/10 to-black/60 z-[1]" />
 
-      {/* Content */}
-      <div className="max-w-5xl mx-auto px-4 pt-10 pb-20 sm:pt-14 sm:pb-28 relative z-10 flex flex-col justify-end min-h-[320px] sm:min-h-[400px]">
-        <div className="flex items-end justify-between">
+      {/* Content pinned to bottom */}
+      <div className="absolute bottom-0 left-0 right-0 z-10 px-4 pb-10 sm:pb-14">
+        <div className="max-w-5xl mx-auto flex items-end justify-between">
           <div>
             <div className="flex items-center gap-2 mb-2">
               <TreePine size={16} className="text-green-300" />
-              <span className="text-green-300/90 text-sm font-medium tracking-wide uppercase">
+              <span className="text-green-300/90 text-sm font-medium tracking-wide uppercase drop-shadow">
                 {seasonLabel}
               </span>
             </div>
             <h1 className="text-4xl sm:text-5xl font-bold tracking-tight mb-2 text-white drop-shadow-lg">
               Breadloaf Hill
             </h1>
-            <p className="text-white/80 text-lg mb-3">
+            <p className="text-white/85 text-lg mb-3 drop-shadow">
               {greeting}! Welcome to your family hub.
             </p>
             <div className="flex items-center gap-6 text-sm">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-green-400 pulse-dot" />
-                <span className="text-white/70">{docCount} documents archived</span>
+                <span className="text-white/70 drop-shadow">{docCount} documents archived</span>
               </div>
               {boardCount > 0 && (
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-amber-400 pulse-dot" />
-                  <span className="text-white/70">{boardCount} board updates</span>
+                  <span className="text-white/70 drop-shadow">{boardCount} board updates</span>
                 </div>
               )}
             </div>
@@ -93,7 +93,7 @@ export function HeroBanner({ greeting, seasonLabel, docCount, boardCount }: Hero
       </div>
 
       {/* Image indicator dots */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2">
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2">
         {heroImages.map((_, i) => (
           <button
             key={i}
