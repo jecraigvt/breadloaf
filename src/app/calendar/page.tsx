@@ -11,12 +11,10 @@ import {
   Clock,
   HelpCircle,
   CalendarDays,
-  Users,
   ExternalLink,
   Download,
   Share2,
   BedDouble,
-  ArrowRight,
   Trash2,
 } from "lucide-react";
 import { RoomWithStays, StayType } from "@/types";
