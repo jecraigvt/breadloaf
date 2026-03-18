@@ -49,14 +49,10 @@ const BRANCH_COLORS: Record<string, { bg: string; text: string; avatar: string; 
 };
 
 const GENERATIONS = [
-  "Founder",
-  "Spouse",
-  "Son",
-  "Daughter",
-  "Cousin",
-  "Ummm...cousin?",
-  "Grandchild",
-  "Friend of the family",
+  "Founders",
+  "Sons",
+  "Cousins",
+  "Ummm...cousins?",
 ];
 
 const OFFICER_ROLES = [
