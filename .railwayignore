@@ -1,0 +1,8 @@
+node_modules
+.next
+Photos
+*.db
+*.db-journal
+screenshot-*.png
+hero-*.png
+service-account-key.json
