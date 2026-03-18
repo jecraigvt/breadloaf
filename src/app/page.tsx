@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import {
-  Mountain,
   Camera,
   MessageCircle,
   FolderOpen,
@@ -13,9 +12,7 @@ import {
   CalendarDays,
   BedDouble,
   Image,
-  Wifi,
   Smartphone,
-  TreePine,
   ChevronRight,
   Clock,
   ExternalLink,
