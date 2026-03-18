@@ -3,12 +3,12 @@
 @tailwind utilities;
 
 :root {
-  --background: #fafaf9;
+  --background: #faf9f7;
   --foreground: #1c1917;
-  --primary: #166534;
+  --primary: #2d5a27;
   --primary-light: #dcfce7;
-  --accent: #854d0e;
-  --accent-light: #fef9c3;
+  --accent: #b45309;
+  --accent-light: #fef3c7;
   --muted: #78716c;
   --border: #e7e5e4;
   --card: #ffffff;
@@ -43,4 +43,111 @@ input, select, textarea {
   border: 2px dashed rgba(255,255,255,0.5);
   border-radius: 8px;
   pointer-events: none;
+}
+
+/* Hero gradient with mountain silhouette feel */
+.hero-gradient {
+  background:
+    linear-gradient(180deg,
+      rgba(15, 45, 15, 0.95) 0%,
+      rgba(30, 70, 30, 0.9) 30%,
+      rgba(45, 90, 39, 0.85) 60%,
+      rgba(60, 110, 50, 0.8) 100%
+    );
+}
+
+.hero-bg {
+  background-image:
+    radial-gradient(ellipse 120% 60% at 50% 100%, rgba(34,80,34,0.4) 0%, transparent 70%),
+    radial-gradient(ellipse 80% 40% at 20% 90%, rgba(34,80,34,0.3) 0%, transparent 60%),
+    radial-gradient(ellipse 80% 40% at 80% 85%, rgba(34,80,34,0.3) 0%, transparent 60%),
+    linear-gradient(180deg, #1a3a1a 0%, #2d5a27 40%, #3d7a35 70%, #4a8a42 100%);
+}
+
+/* Subtle card hover lift */
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1), 0 4px 10px -6px rgba(0, 0, 0, 0.05);
+}
+
+/* Hub card gradient overlays */
+.hub-card-documents {
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+}
+.hub-card-photos {
+  background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+}
+.hub-card-assistant {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+}
+.hub-card-bulletin {
+  background: linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%);
+}
+.hub-card-smart {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+}
+.hub-card-starlink {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+}
+
+/* Shimmer animation for coming soon cards */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.coming-soon-shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+/* Gentle fade in */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s ease-out forwards;
+}
+
+/* Stagger delays */
+.delay-1 { animation-delay: 0.1s; opacity: 0; }
+.delay-2 { animation-delay: 0.2s; opacity: 0; }
+.delay-3 { animation-delay: 0.3s; opacity: 0; }
+.delay-4 { animation-delay: 0.4s; opacity: 0; }
+.delay-5 { animation-delay: 0.5s; opacity: 0; }
+.delay-6 { animation-delay: 0.6s; opacity: 0; }
+
+/* Glass effect */
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Pulse dot for status indicators */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* Hide scrollbar for photo strip */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }

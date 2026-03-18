@@ -55,3 +55,33 @@ model ChatMessage {
 
   @@index([sessionId])
 }
+
+model Room {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  slug        String  @unique
+  type        String  // bedroom, annex, loft, cabin, tent, offsite
+  minCapacity Int
+  maxCapacity Int
+  hasCrib     Boolean @default(false)
+  description String?
+  sortOrder   Int     @default(0)
+  stays       Stay[]
+}
+
+model Stay {
+  id        String   @id @default(cuid())
+  guestName String
+  roomId    String?
+  room      Room?    @relation(fields: [roomId], references: [id])
+  checkIn   DateTime
+  checkOut  DateTime
+  notes     String?
+  status    String   @default("confirmed") // confirmed, tentative, requested
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([roomId])
+  @@index([checkIn])
+  @@index([checkOut])
+}

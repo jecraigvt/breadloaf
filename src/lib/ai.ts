@@ -17,7 +17,7 @@ export async function categorizeDocument(
   fileType: string,
   existingCategories: string[]
 ): Promise<CategorizationResult> {
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
 
   const mimeType = fileType as "image/jpeg" | "image/png" | "image/webp";
 
@@ -108,7 +108,7 @@ export async function chatWithAssistant(
   }
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-3-flash-preview",
     systemInstruction: `You are the Breadloaf Hill property assistant — a knowledgeable, friendly AI that helps the family manage their Vermont property. You have access to the family's document archive.
 
 ${documentContext ? `Here are the relevant documents in the archive:\n${documentContext}` : "The document archive is currently empty. Encourage the family to start scanning and uploading documents!"}

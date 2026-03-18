@@ -10,10 +10,36 @@ import {
   FileText,
   Tag,
   Calendar,
+  CalendarDays,
+  BedDouble,
+  Image,
+  Wifi,
+  Smartphone,
+  TreePine,
+  ChevronRight,
+  Clock,
+  ExternalLink,
+  Users,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { HeroBanner } from "@/components/layout/hero-banner";
 
 export const dynamic = "force-dynamic";
+
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function getSeasonLabel(): string {
+  const month = new Date().getMonth();
+  if (month >= 2 && month <= 4) return "Spring on the hill";
+  if (month >= 5 && month <= 7) return "Summer at Breadloaf";
+  if (month >= 8 && month <= 10) return "Autumn in Vermont";
+  return "Winter at Breadloaf";
+}
 
 export default async function HomePage() {
   const [docCount, recentDocs, categories, bulletinMessages] =
@@ -22,7 +48,7 @@ export default async function HomePage() {
       prisma.document.findMany({
         include: { category: true },
         orderBy: { createdAt: "desc" },
-        take: 5,
+        take: 4,
       }),
       prisma.category.findMany({
         include: { _count: { select: { documents: true } } },
@@ -39,198 +65,330 @@ export default async function HomePage() {
   );
 
   return (
-    <div>
-      {/* Hero */}
-      <header className="bg-gradient-to-br from-green-800 to-green-900 text-white px-4 py-10">
-        <div className="max-w-lg mx-auto">
-          <div className="flex items-center gap-3 mb-4">
-            <Mountain size={32} className="text-green-300" />
-            <div>
-              <h1 className="text-3xl font-bold">Breadloaf Hill</h1>
-              <p className="text-green-300 text-sm">Vermont Family Property</p>
-            </div>
-          </div>
-          <p className="text-green-200">
-            Your family property archive and assistant. Scan documents, browse
-            records, and get answers about the property.
-          </p>
-        </div>
-      </header>
+    <div className="min-h-screen">
+      {/* Hero with rotating photos */}
+      <HeroBanner
+        greeting={getGreeting()}
+        seasonLabel={getSeasonLabel()}
+        docCount={docCount}
+        boardCount={bulletinMessages.length}
+      />
 
-      <div className="max-w-lg mx-auto px-4 py-6 space-y-6">
-        {/* Quick Actions */}
-        <div className="grid grid-cols-2 gap-3">
-          <Link
-            href="/upload"
-            className="flex items-center gap-3 bg-green-700 text-white rounded-xl p-4 hover:bg-green-800 transition-colors"
-          >
-            <Camera size={24} />
-            <div>
-              <p className="font-semibold">Scan</p>
-              <p className="text-green-200 text-xs">Upload a document</p>
-            </div>
-          </Link>
-          <Link
-            href="/assistant"
-            className="flex items-center gap-3 bg-amber-600 text-white rounded-xl p-4 hover:bg-amber-700 transition-colors"
-          >
-            <MessageCircle size={24} />
-            <div>
-              <p className="font-semibold">Ask</p>
-              <p className="text-amber-200 text-xs">Property assistant</p>
-            </div>
-          </Link>
-        </div>
+      <div className="max-w-5xl mx-auto px-4 -mt-8 relative z-20 pb-24">
+        {/* Hub Grid */}
+        <section className="mb-10">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+            {/* Calendar — with photo background */}
+            <Link
+              href="/calendar"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-1 min-h-[150px] sm:min-h-[170px] shadow-md"
+            >
+              <img
+                src="/photos/sunset-deck.jpg"
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <CalendarDays size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Calendar</h3>
+                <p className="text-white/80 text-sm">Plan visits</p>
+              </div>
+            </Link>
 
-        {/* Stats */}
-        <div className="bg-white rounded-xl border border-stone-200 p-4">
-          <div className="flex items-center justify-between">
-            <div className="text-center flex-1">
-              <p className="text-2xl font-bold text-stone-800">{docCount}</p>
-              <p className="text-xs text-stone-500">Documents</p>
-            </div>
-            <div className="w-px h-10 bg-stone-200" />
-            <div className="text-center flex-1">
-              <p className="text-2xl font-bold text-stone-800">
-                {categoriesWithDocs.length}
-              </p>
-              <p className="text-xs text-stone-500">Categories</p>
-            </div>
-            <div className="w-px h-10 bg-stone-200" />
-            <div className="text-center flex-1">
-              <p className="text-2xl font-bold text-stone-800">
-                {bulletinMessages.length}
-              </p>
-              <p className="text-xs text-stone-500">Messages</p>
-            </div>
-          </div>
-        </div>
+            {/* Rooms — with photo background */}
+            <Link
+              href="/stays"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-2 min-h-[150px] sm:min-h-[170px] shadow-md"
+            >
+              <img
+                src="/photos/house-interior.jpg"
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <BedDouble size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Rooms</h3>
+                <p className="text-white/80 text-sm">Pick your room</p>
+              </div>
+            </Link>
 
-        {/* Recent Documents */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-stone-800 flex items-center gap-2">
-              <FileText size={18} />
-              Recent Documents
-            </h2>
+            {/* Assistant — with photo background */}
+            <Link
+              href="/assistant"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-3 min-h-[150px] sm:min-h-[170px] shadow-md"
+            >
+              <img
+                src="/photos/hilltop-view.jpg"
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <MessageCircle size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Assistant</h3>
+                <p className="text-white/80 text-sm">Ask about the property</p>
+              </div>
+            </Link>
+
+            {/* Documents */}
             <Link
               href="/documents"
-              className="text-green-700 text-sm flex items-center gap-1"
+              className="hub-card-documents rounded-2xl p-5 sm:p-6 card-hover border border-green-200/50 animate-fade-in-up delay-4"
             >
-              View all <ArrowRight size={14} />
+              <div className="w-11 h-11 rounded-xl bg-green-600 flex items-center justify-center mb-4 shadow-sm">
+                <FolderOpen size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Documents</h3>
+              <p className="text-stone-500 text-sm">
+                {docCount > 0 ? `${docCount} files archived` : "Property archive"}
+              </p>
             </Link>
-          </div>
 
-          {recentDocs.length === 0 ? (
-            <div className="bg-stone-50 rounded-xl p-8 text-center">
-              <FolderOpen size={32} className="mx-auto text-stone-300 mb-2" />
-              <p className="text-stone-500 text-sm">No documents yet</p>
-              <Link
-                href="/upload"
-                className="text-green-700 text-sm font-medium mt-1 inline-block"
-              >
-                Scan your first document
-              </Link>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {recentDocs.map((doc) => (
-                <Link
-                  key={doc.id}
-                  href={`/documents/${doc.id}`}
-                  className="flex items-center gap-3 bg-white rounded-xl border border-stone-200 p-3 hover:shadow-sm transition-shadow"
-                >
-                  {doc.fileType.startsWith("image/") ? (
-                    <div className="w-12 h-12 rounded-lg bg-stone-100 flex-shrink-0 overflow-hidden">
-                      <img
-                        src={doc.filePath}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  ) : (
-                    <div className="w-12 h-12 rounded-lg bg-stone-50 flex-shrink-0 flex items-center justify-center">
-                      <FileText size={20} className="text-stone-400" />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm text-stone-800 truncate">
-                      {doc.title}
-                    </p>
-                    <div className="flex items-center gap-2 text-xs text-stone-400 mt-0.5">
-                      {doc.category && (
-                        <span className="flex items-center gap-1">
-                          <Tag size={10} />
-                          {doc.category.name}
-                        </span>
-                      )}
-                      <span className="flex items-center gap-1">
-                        <Calendar size={10} />
-                        {formatDate(doc.createdAt)}
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
+            {/* Scan / Upload */}
+            <Link
+              href="/upload"
+              className="hub-card-documents rounded-2xl p-5 sm:p-6 card-hover border border-green-200/50 animate-fade-in-up delay-5"
+            >
+              <div className="w-11 h-11 rounded-xl bg-green-700 flex items-center justify-center mb-4 shadow-sm">
+                <Camera size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Scan</h3>
+              <p className="text-stone-500 text-sm">Upload documents</p>
+            </Link>
 
-        {/* Bulletin Preview */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-stone-800 flex items-center gap-2">
-              <Megaphone size={18} />
-              Family Board
-            </h2>
+            {/* Photos */}
+            <a
+              href="https://www.icloud.com/sharedalbum/#B2X5nhQSTTixIx"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hub-card-photos rounded-2xl p-5 sm:p-6 card-hover border border-purple-200/50 animate-fade-in-up delay-6"
+            >
+              <div className="w-11 h-11 rounded-xl bg-purple-500 flex items-center justify-center mb-4 shadow-sm">
+                <Image size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Photos</h3>
+              <p className="text-stone-500 text-sm">Family album</p>
+              <span className="inline-flex items-center gap-1 mt-2 text-xs font-medium text-purple-600">
+                <ExternalLink size={11} />
+                iCloud
+              </span>
+            </a>
+
+            {/* Board */}
             <Link
               href="/bulletin"
-              className="text-green-700 text-sm flex items-center gap-1"
+              className="hub-card-assistant rounded-2xl p-5 sm:p-6 card-hover border border-amber-200/50 animate-fade-in-up delay-6"
             >
-              View all <ArrowRight size={14} />
+              <div className="w-11 h-11 rounded-xl bg-amber-500 flex items-center justify-center mb-4 shadow-sm">
+                <Megaphone size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Board</h3>
+              <p className="text-stone-500 text-sm">Family messages</p>
             </Link>
-          </div>
 
-          {bulletinMessages.length === 0 ? (
-            <div className="bg-stone-50 rounded-xl p-8 text-center">
-              <Megaphone size={32} className="mx-auto text-stone-300 mb-2" />
-              <p className="text-stone-500 text-sm">No messages yet</p>
-              <Link
-                href="/bulletin"
-                className="text-green-700 text-sm font-medium mt-1 inline-block"
+            {/* Smart Home - Coming Soon */}
+            <div className="hub-card-smart rounded-2xl p-5 sm:p-6 border border-blue-200/50 relative overflow-hidden animate-fade-in-up delay-6">
+              <div className="coming-soon-shimmer absolute inset-0 rounded-2xl" />
+              <div className="relative z-10">
+                <div className="w-11 h-11 rounded-xl bg-blue-400 flex items-center justify-center mb-4 shadow-sm">
+                  <Smartphone size={22} className="text-white" />
+                </div>
+                <h3 className="font-semibold text-stone-800 text-lg mb-1">Smart Home</h3>
+                <p className="text-stone-500 text-sm">Device monitoring</p>
+                <span className="inline-block mt-2 text-xs font-medium text-blue-600 bg-blue-100 rounded-full px-2.5 py-0.5">
+                  Coming soon
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Photo Strip */}
+        <section className="mb-10 -mx-4 px-4 overflow-hidden">
+          <div className="flex gap-3 overflow-x-auto pb-3 scrollbar-hide">
+            {[
+              { src: "/photos/family-group.jpg", alt: "Family gathering on the hill" },
+              { src: "/photos/swimming-hole.jpg", alt: "The swimming hole" },
+              { src: "/photos/lawn-games.jpg", alt: "Games on the lawn" },
+              { src: "/photos/summer-meadow.jpg", alt: "Summer meadow" },
+              { src: "/photos/bonfire.jpg", alt: "Bonfire night" },
+              { src: "/photos/barn-exterior.jpg", alt: "The barn" },
+              { src: "/photos/winter-mountains.jpg", alt: "Winter at Breadloaf" },
+              { src: "/photos/family-dinner.jpg", alt: "Family dinner" },
+            ].map((photo) => (
+              <a
+                key={photo.src}
+                href="https://www.icloud.com/sharedalbum/#B2X5nhQSTTixIx"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-shrink-0 group"
               >
-                Post the first update
+                <div className="w-40 h-28 sm:w-52 sm:h-36 rounded-xl overflow-hidden">
+                  <img
+                    src={photo.src}
+                    alt={photo.alt}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
+                </div>
+              </a>
+            ))}
+          </div>
+          <div className="flex items-center justify-center mt-2">
+            <a
+              href="https://www.icloud.com/sharedalbum/#B2X5nhQSTTixIx"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-stone-400 hover:text-green-700 flex items-center gap-1 transition-colors"
+            >
+              View all 847 photos <ExternalLink size={12} />
+            </a>
+          </div>
+        </section>
+
+        {/* Two-column layout on desktop */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8">
+          {/* Recent Documents */}
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-stone-800 text-lg flex items-center gap-2">
+                <Clock size={18} className="text-stone-400" />
+                Recent Documents
+              </h2>
+              <Link
+                href="/documents"
+                className="text-green-700 text-sm flex items-center gap-1 hover:gap-2 transition-all"
+              >
+                View all <ChevronRight size={14} />
               </Link>
             </div>
-          ) : (
-            <div className="space-y-2">
-              {bulletinMessages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className="bg-white rounded-xl border border-stone-200 p-3"
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-sm font-medium text-stone-700">
-                      {msg.author}
-                    </span>
-                    <span className="text-xs text-stone-400">
-                      {formatDate(msg.createdAt)}
-                    </span>
-                  </div>
-                  <p className="text-stone-600 text-sm line-clamp-2">
-                    {msg.content}
-                  </p>
+
+            {recentDocs.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-stone-200 p-8 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-stone-100 flex items-center justify-center mx-auto mb-3">
+                  <FolderOpen size={24} className="text-stone-300" />
                 </div>
-              ))}
+                <p className="text-stone-500 text-sm mb-2">No documents yet</p>
+                <Link
+                  href="/upload"
+                  className="text-green-700 text-sm font-medium inline-flex items-center gap-1 hover:gap-2 transition-all"
+                >
+                  Scan your first document <ArrowRight size={14} />
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {recentDocs.map((doc) => (
+                  <Link
+                    key={doc.id}
+                    href={`/documents/${doc.id}`}
+                    className="flex items-center gap-3 bg-white rounded-xl border border-stone-200/80 p-3.5 card-hover"
+                  >
+                    {doc.fileType.startsWith("image/") ? (
+                      <div className="w-12 h-12 rounded-lg bg-stone-100 flex-shrink-0 overflow-hidden">
+                        <img
+                          src={doc.filePath}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-12 h-12 rounded-lg bg-stone-50 flex-shrink-0 flex items-center justify-center">
+                        <FileText size={20} className="text-stone-400" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm text-stone-800 truncate">
+                        {doc.title}
+                      </p>
+                      <div className="flex items-center gap-2 text-xs text-stone-400 mt-1">
+                        {doc.category && (
+                          <span className="flex items-center gap-1">
+                            <Tag size={10} />
+                            {doc.category.name}
+                          </span>
+                        )}
+                        <span className="flex items-center gap-1">
+                          <Calendar size={10} />
+                          {formatDate(doc.createdAt)}
+                        </span>
+                      </div>
+                    </div>
+                    <ChevronRight size={16} className="text-stone-300 flex-shrink-0" />
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Family Board */}
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-stone-800 text-lg flex items-center gap-2">
+                <Users size={18} className="text-stone-400" />
+                Family Board
+              </h2>
+              <Link
+                href="/bulletin"
+                className="text-green-700 text-sm flex items-center gap-1 hover:gap-2 transition-all"
+              >
+                View all <ChevronRight size={14} />
+              </Link>
             </div>
-          )}
+
+            {bulletinMessages.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-stone-200 p-8 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-stone-100 flex items-center justify-center mx-auto mb-3">
+                  <Megaphone size={24} className="text-stone-300" />
+                </div>
+                <p className="text-stone-500 text-sm mb-2">No messages yet</p>
+                <Link
+                  href="/bulletin"
+                  className="text-green-700 text-sm font-medium inline-flex items-center gap-1 hover:gap-2 transition-all"
+                >
+                  Post the first update <ArrowRight size={14} />
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {bulletinMessages.map((msg) => (
+                  <div
+                    key={msg.id}
+                    className={`bg-white rounded-xl border p-3.5 ${
+                      msg.pinned
+                        ? "border-amber-200 bg-amber-50/30"
+                        : "border-stone-200/80"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                        <span className="text-green-700 text-xs font-semibold">
+                          {msg.author.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <span className="text-sm font-medium text-stone-700">
+                        {msg.author}
+                      </span>
+                      <span className="text-xs text-stone-400 ml-auto">
+                        {formatDate(msg.createdAt)}
+                      </span>
+                    </div>
+                    <p className="text-stone-600 text-sm line-clamp-2 pl-8">
+                      {msg.content}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
 
-        {/* Categories Overview */}
+        {/* Categories */}
         {categoriesWithDocs.length > 0 && (
-          <div>
-            <h2 className="font-semibold text-stone-800 mb-3 flex items-center gap-2">
-              <FolderOpen size={18} />
+          <section className="mt-8">
+            <h2 className="font-semibold text-stone-800 text-lg mb-4 flex items-center gap-2">
+              <Tag size={18} className="text-stone-400" />
               Categories
             </h2>
             <div className="flex flex-wrap gap-2">
@@ -238,7 +396,7 @@ export default async function HomePage() {
                 <Link
                   key={cat.id}
                   href={`/documents?category=${cat.slug}`}
-                  className="bg-white border border-stone-200 rounded-full px-3 py-1.5 text-sm text-stone-600 hover:border-green-300 transition-colors"
+                  className="bg-white border border-stone-200 rounded-full px-4 py-2 text-sm text-stone-600 hover:border-green-300 hover:bg-green-50/50 transition-all"
                 >
                   {cat.name}{" "}
                   <span className="text-stone-400">
@@ -247,7 +405,7 @@ export default async function HomePage() {
                 </Link>
               ))}
             </div>
-          </div>
+          </section>
         )}
       </div>
     </div>

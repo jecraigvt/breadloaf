@@ -34,3 +34,32 @@ export interface BulletinMessageType {
   pinned: boolean;
   createdAt: Date;
 }
+
+export interface RoomType {
+  id: string;
+  name: string;
+  slug: string;
+  type: string;
+  minCapacity: number;
+  maxCapacity: number;
+  hasCrib: boolean;
+  description: string | null;
+  sortOrder: number;
+}
+
+export interface StayType {
+  id: string;
+  guestName: string;
+  roomId: string | null;
+  room: RoomType | null;
+  checkIn: Date;
+  checkOut: Date;
+  notes: string | null;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface RoomWithStays extends RoomType {
+  stays: StayType[];
+}

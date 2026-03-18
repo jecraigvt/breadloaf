@@ -10,8 +10,8 @@ const geistSans = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Breadloaf Hill",
-  description: "Family property archive and assistant for Breadloaf Hill, Vermont",
+  title: "Breadloaf Hill | Family Hub",
+  description: "The family hub for Breadloaf Hill — your Vermont property home base for documents, photos, smart home, and more.",
   manifest: "/manifest.json",
 };
 
@@ -20,6 +20,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  themeColor: "#2d5a27",
 };
 
 export default function RootLayout({
