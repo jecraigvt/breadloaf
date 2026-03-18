@@ -13,6 +13,8 @@ import {
   Trash2,
   FileText,
   Loader2,
+  ExternalLink,
+  Link2,
 } from "lucide-react";
 import Link from "next/link";
 import type { DocumentWithCategory } from "@/types";
@@ -80,7 +82,20 @@ export default function DocumentDetailPage() {
         </Link>
 
         {/* Document Preview */}
-        {doc.fileType.startsWith("image/") ? (
+        {doc.fileType === "link" ? (
+          <a
+            href={doc.filePath}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block rounded-xl border border-blue-200 bg-blue-50 p-8 text-center hover:bg-blue-100 transition-colors"
+          >
+            <Link2 size={48} className="mx-auto text-blue-400 mb-3" />
+            <p className="text-blue-700 font-medium text-sm break-all">{doc.filePath}</p>
+            <span className="inline-flex items-center gap-1 mt-3 text-xs font-medium text-blue-600">
+              <ExternalLink size={12} /> Open Link
+            </span>
+          </a>
+        ) : doc.fileType.startsWith("image/") ? (
           <div className="rounded-xl overflow-hidden border border-stone-200">
             <img src={doc.filePath} alt={doc.title} className="w-full" />
           </div>
@@ -118,13 +133,15 @@ export default function DocumentDetailPage() {
               </span>
             </div>
           )}
-          <div className="flex items-center gap-3 px-4 py-3">
-            <FileText size={18} className="text-stone-400" />
-            <span className="text-sm text-stone-500">Size</span>
-            <span className="ml-auto text-sm text-stone-800">
-              {formatFileSize(doc.fileSize)}
-            </span>
-          </div>
+          {doc.fileType !== "link" && (
+            <div className="flex items-center gap-3 px-4 py-3">
+              <FileText size={18} className="text-stone-400" />
+              <span className="text-sm text-stone-500">Size</span>
+              <span className="ml-auto text-sm text-stone-800">
+                {formatFileSize(doc.fileSize)}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* AI Summary */}
@@ -164,14 +181,26 @@ export default function DocumentDetailPage() {
 
         {/* Actions */}
         <div className="flex gap-3">
-          <a
-            href={doc.filePath}
-            download={doc.fileName}
-            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-stone-300 text-stone-600 font-medium hover:bg-stone-50"
-          >
-            <Download size={18} />
-            Download
-          </a>
+          {doc.fileType === "link" ? (
+            <a
+              href={doc.filePath}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-blue-300 text-blue-700 font-medium hover:bg-blue-50"
+            >
+              <ExternalLink size={18} />
+              Open Document
+            </a>
+          ) : (
+            <a
+              href={doc.filePath}
+              download={doc.fileName}
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-stone-300 text-stone-600 font-medium hover:bg-stone-50"
+            >
+              <Download size={18} />
+              Download
+            </a>
+          )}
           <button
             onClick={handleDelete}
             disabled={deleting}

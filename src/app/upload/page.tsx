@@ -12,10 +12,12 @@ import {
   FileText,
   X,
   Wrench,
+  Link2,
+  ChevronDown,
 } from "lucide-react";
 import Link from "next/link";
 
-type UploadStep = "select" | "preview" | "uploading" | "categorizing" | "review" | "done";
+type UploadStep = "select" | "preview" | "uploading" | "categorizing" | "review" | "done" | "link";
 
 interface CategorizationResult {
   suggestedCategory: string;
@@ -41,6 +43,61 @@ export default function UploadPage() {
   const [editTitle, setEditTitle] = useState("");
   const [savedDocId, setSavedDocId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Link form state
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkTitle, setLinkTitle] = useState("");
+  const [linkCategory, setLinkCategory] = useState("");
+  const [linkDescription, setLinkDescription] = useState("");
+  const [savingLink, setSavingLink] = useState(false);
+  const [categories, setCategories] = useState<{ name: string; slug: string }[]>([]);
+
+  // Fetch categories for the link form
+  const fetchCategories = async () => {
+    try {
+      const res = await fetch("/api/documents?categoriesOnly=true");
+      if (res.ok) {
+        const data = await res.json();
+        setCategories(data);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleSaveLink = async () => {
+    if (!linkUrl.trim() || !linkTitle.trim()) return;
+    setSavingLink(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: linkTitle.trim(),
+          description: linkDescription.trim() || undefined,
+          fileName: linkTitle.trim(),
+          filePath: linkUrl.trim(),
+          fileType: "link",
+          fileSize: 0,
+          categorySlug: linkCategory || undefined,
+          tags: [],
+          aiSummary: linkDescription.trim() || undefined,
+          uploadedBy,
+        }),
+      });
+
+      if (!res.ok) throw new Error(await res.text());
+
+      const doc = await res.json();
+      setSavedDocId(doc.id);
+      setStep("done");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save link");
+    }
+    setSavingLink(false);
+  };
 
   const handleFile = (f: File) => {
     setFile(f);
@@ -163,6 +220,10 @@ export default function UploadPage() {
     setEditTitle("");
     setSavedDocId(null);
     setError(null);
+    setLinkUrl("");
+    setLinkTitle("");
+    setLinkCategory("");
+    setLinkDescription("");
     setStep("select");
   };
 
@@ -190,7 +251,94 @@ export default function UploadPage() {
               <div className="flex-1 h-px bg-stone-200" />
             </div>
             <FileDropzone onFile={handleFile} />
+            <div className="relative flex items-center gap-4">
+              <div className="flex-1 h-px bg-stone-200" />
+              <span className="text-stone-400 text-sm">or</span>
+              <div className="flex-1 h-px bg-stone-200" />
+            </div>
+            <button
+              onClick={() => { setStep("link"); fetchCategories(); }}
+              className="w-full flex items-center justify-center gap-3 border-2 border-dashed border-stone-300 text-stone-500 py-4 rounded-xl text-base font-medium hover:border-green-400 hover:text-green-700 transition-colors"
+            >
+              <Link2 size={20} />
+              Link a Document (URL)
+            </button>
           </>
+        )}
+
+        {step === "link" && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-stone-700 mb-1">URL</label>
+              <input
+                type="url"
+                value={linkUrl}
+                onChange={(e) => setLinkUrl(e.target.value)}
+                placeholder="https://docs.google.com/..."
+                className="w-full px-4 py-3 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-stone-700 mb-1">Title</label>
+              <input
+                type="text"
+                value={linkTitle}
+                onChange={(e) => setLinkTitle(e.target.value)}
+                placeholder="e.g., 2025 Bylaws"
+                className="w-full px-4 py-3 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-stone-700 mb-1">Category</label>
+              <select
+                value={linkCategory}
+                onChange={(e) => setLinkCategory(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
+              >
+                <option value="">Select a category...</option>
+                {categories.map((c) => (
+                  <option key={c.slug} value={c.slug}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-stone-700 mb-1">Description (optional)</label>
+              <input
+                type="text"
+                value={linkDescription}
+                onChange={(e) => setLinkDescription(e.target.value)}
+                placeholder="Brief description of this document"
+                className="w-full px-4 py-3 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-stone-700 mb-1">Your name</label>
+              <input
+                type="text"
+                value={uploadedBy}
+                onChange={(e) => setUploadedBy(e.target.value)}
+                placeholder="Who's adding this?"
+                className="w-full px-4 py-3 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={reset}
+                className="flex-1 py-3 rounded-xl border-2 border-stone-300 text-stone-600 font-medium hover:bg-stone-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveLink}
+                disabled={!linkUrl.trim() || !linkTitle.trim() || savingLink}
+                className="flex-1 py-3 rounded-xl bg-green-700 text-white font-medium hover:bg-green-800 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {savingLink ? <Loader2 size={18} className="animate-spin" /> : <Link2 size={18} />}
+                Save to Archive
+              </button>
+            </div>
+          </div>
         )}
 
         {step === "preview" && file && (

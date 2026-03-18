@@ -26,6 +26,12 @@ export function FileDropzone({ onFile }: FileDropzoneProps) {
       "image/webp": [".webp"],
       "image/heic": [".heic"],
       "application/pdf": [".pdf"],
+      "application/msword": [".doc"],
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+      "application/vnd.ms-excel": [".xls"],
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+      "text/plain": [".txt"],
+      "text/csv": [".csv"],
     },
     maxSize: 20 * 1024 * 1024,
     multiple: false,
@@ -56,7 +62,7 @@ export function FileDropzone({ onFile }: FileDropzoneProps) {
           <FileImage size={14} /> Images
         </span>
         <span className="flex items-center gap-1">
-          <FileText size={14} /> PDFs
+          <FileText size={14} /> PDF, Word, Excel
         </span>
         <span>Max 20MB</span>
       </div>
