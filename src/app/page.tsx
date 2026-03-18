@@ -25,6 +25,8 @@ import {
   AlertTriangle,
   MapPin,
   Contact,
+  ChefHat,
+  Package,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { HeroBanner } from "@/components/layout/hero-banner";
@@ -126,6 +128,30 @@ export default async function HomePage() {
               </div>
               <h3 className="font-semibold text-stone-800 text-lg mb-1">Supplies</h3>
               <p className="text-stone-500 text-sm">Shopping list</p>
+            </Link>
+
+            {/* Dinner Sign-up */}
+            <Link
+              href="/dinners"
+              className="hub-card-assistant rounded-2xl p-5 sm:p-6 card-hover border border-amber-200/50 animate-fade-in-up delay-3"
+            >
+              <div className="w-11 h-11 rounded-xl bg-orange-500 flex items-center justify-center mb-4 shadow-sm">
+                <ChefHat size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Dinners</h3>
+              <p className="text-stone-500 text-sm">Who's cooking?</p>
+            </Link>
+
+            {/* Pantry Inventory */}
+            <Link
+              href="/pantry"
+              className="hub-card-documents rounded-2xl p-5 sm:p-6 card-hover border border-green-200/50 animate-fade-in-up delay-3"
+            >
+              <div className="w-11 h-11 rounded-xl bg-teal-600 flex items-center justify-center mb-4 shadow-sm">
+                <Package size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Pantry</h3>
+              <p className="text-stone-500 text-sm">What's in stock</p>
             </Link>
 
             {/* 4. Rooms — with photo background */}

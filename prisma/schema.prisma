@@ -143,3 +143,32 @@ model FamilyMember {
 
   @@index([branch])
 }
+
+model DinnerSignup {
+  id        String   @id @default(cuid())
+  date      DateTime
+  chef      String
+  meal      String?
+  notes     String?
+  headCount Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([date])
+  @@index([date])
+}
+
+model PantryItem {
+  id        String   @id @default(cuid())
+  name      String
+  category  String   @default("General")
+  quantity  Int      @default(1)
+  unit      String?
+  expiresAt String?
+  notes     String?
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+}

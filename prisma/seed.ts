@@ -206,6 +206,82 @@ async function main() {
     }
     console.log("Seeded checklists:", checklists.length);
   }
+
+  // Seed pantry items
+  const existingPantry = await prisma.pantryItem.count();
+  if (existingPantry === 0) {
+    const pantryItems = [
+      { name: "Canned Tomatoes", category: "Canned Goods", quantity: 4, unit: "cans", updatedBy: "Tom" },
+      { name: "Black Beans", category: "Canned Goods", quantity: 3, unit: "cans", updatedBy: "Tom" },
+      { name: "Chicken Broth", category: "Canned Goods", quantity: 2, unit: "cans", updatedBy: "Sandy" },
+      { name: "Tuna", category: "Canned Goods", quantity: 6, unit: "cans", updatedBy: "Jim" },
+      { name: "Pasta (Spaghetti)", category: "Dry Goods", quantity: 3, unit: "boxes", updatedBy: "Tom" },
+      { name: "Rice", category: "Dry Goods", quantity: 2, unit: "bags", updatedBy: "Sandy" },
+      { name: "Pancake Mix", category: "Dry Goods", quantity: 1, unit: "boxes", updatedBy: "Greg" },
+      { name: "Oatmeal", category: "Dry Goods", quantity: 2, unit: "canisters", updatedBy: "Jim" },
+      { name: "Garlic Powder", category: "Spices & Seasonings", quantity: 1, unit: "bottles", updatedBy: "Tom" },
+      { name: "Italian Seasoning", category: "Spices & Seasonings", quantity: 1, unit: "bottles", updatedBy: "Tom" },
+      { name: "Salt", category: "Spices & Seasonings", quantity: 1, unit: "containers", updatedBy: "Sandy" },
+      { name: "Black Pepper", category: "Spices & Seasonings", quantity: 1, unit: "bottles", updatedBy: "Sandy" },
+      { name: "Olive Oil", category: "Condiments", quantity: 2, unit: "bottles", updatedBy: "Tom" },
+      { name: "Ketchup", category: "Condiments", quantity: 1, unit: "bottles", updatedBy: "Greg" },
+      { name: "Mustard", category: "Condiments", quantity: 1, unit: "bottles", updatedBy: "Greg" },
+      { name: "Soy Sauce", category: "Condiments", quantity: 1, unit: "bottles", updatedBy: "Jim" },
+      { name: "Coffee (Ground)", category: "Beverages", quantity: 2, unit: "bags", updatedBy: "Tom" },
+      { name: "Tea Bags", category: "Beverages", quantity: 1, unit: "boxes", updatedBy: "Sandy" },
+      { name: "Hot Cocoa Mix", category: "Beverages", quantity: 1, unit: "boxes", updatedBy: "Greg" },
+      { name: "Tortilla Chips", category: "Snacks", quantity: 2, unit: "bags", updatedBy: "Greg" },
+      { name: "Granola Bars", category: "Snacks", quantity: 1, unit: "boxes", updatedBy: "Jim" },
+      { name: "Trail Mix", category: "Snacks", quantity: 2, unit: "bags", updatedBy: "Sandy" },
+      { name: "Flour", category: "Baking", quantity: 1, unit: "bags", updatedBy: "Tom" },
+      { name: "Sugar", category: "Baking", quantity: 1, unit: "bags", updatedBy: "Tom" },
+      { name: "Baking Soda", category: "Baking", quantity: 1, unit: "boxes", updatedBy: "Sandy" },
+      { name: "Paper Towels", category: "Paper & Cleaning", quantity: 4, unit: "rolls", updatedBy: "Greg" },
+      { name: "Dish Soap", category: "Paper & Cleaning", quantity: 1, unit: "bottles", updatedBy: "Greg" },
+      { name: "Trash Bags", category: "Paper & Cleaning", quantity: 1, unit: "boxes", updatedBy: "Jim" },
+    ];
+
+    for (const item of pantryItems) {
+      await prisma.pantryItem.create({ data: item });
+    }
+    console.log("Seeded pantry items:", pantryItems.length);
+  }
+
+  // Seed dinner signups (upcoming week)
+  const existingDinners = await prisma.dinnerSignup.count();
+  if (existingDinners === 0) {
+    const today = new Date();
+    today.setHours(18, 0, 0, 0);
+
+    const dinnerSignups = [
+      {
+        date: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 18, 0, 0),
+        chef: "Tom & Lisa",
+        meal: "Grilled burgers and corn on the cob",
+        headCount: 12,
+        notes: "Vegetarian burgers available too",
+      },
+      {
+        date: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 2, 18, 0, 0),
+        chef: "Sandy's crew",
+        meal: "Pasta night - spaghetti and meatballs",
+        headCount: 15,
+        notes: "Gluten-free pasta for those who need it",
+      },
+      {
+        date: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 4, 18, 0, 0),
+        chef: "Greg & family",
+        meal: "Taco bar",
+        headCount: 14,
+        notes: "Kids love taco night!",
+      },
+    ];
+
+    for (const dinner of dinnerSignups) {
+      await prisma.dinnerSignup.create({ data: dinner });
+    }
+    console.log("Seeded dinner signups:", dinnerSignups.length);
+  }
 }
 
 main()
