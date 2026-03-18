@@ -95,6 +95,13 @@ src/lib/
 - **Google Calendar:** Shared via service account breadloaf-hill@reader-7c045.iam.gserviceaccount.com
 - **Photo album:** iCloud shared album (847 photos)
 
+## Deployment
+- **Auto-deploy:** Connected to GitHub repo `jecraigvt/breadloaf`, branch `main`. Every push auto-deploys.
+- **Manual:** `railway up` from CLI if needed
+- **Logs:** `railway logs` (runtime), `railway logs --build` (build)
+- **Known issue:** Railway caches build layers aggressively. If new pages don't appear, touch `next.config.mjs` to bust the cache.
+- **`.railwayignore`** excludes Photos/ dir, screenshots, and service account key from uploads.
+
 ## Conventions
 - Use `"use client"` for interactive pages, server components for static/data pages
 - API routes follow REST pattern: `route.ts` for GET/POST, `[id]/route.ts` for PATCH/DELETE
@@ -102,3 +109,12 @@ src/lib/
 - Icons from lucide-react, green-700 primary color, stone neutrals
 - Hub cards on homepage ordered by assumed frequency of use
 - Prisma models use cuid() for IDs, DateTime for timestamps
+- Google Calendar sync uses GoogleAuth (not JWT) — see `src/lib/google-calendar.ts`
+- Calendar sync runs on homepage, calendar page, stays page, and assistant message
+
+## Future Roadmap
+- **AI assistant with write access** — let users ask the assistant to add items to grocery list, local guide, maintenance log, family directory, etc. via function-calling
+- **Smart document cross-linking** — scanning a maintenance receipt auto-creates a maintenance log entry with cost extracted
+- **Smart Home dashboard** — monitor devices at the property
+- **Starlink monitoring** — internet speed/uptime dashboard
+- **Accounting/expense tracking** — split property costs among the four families
