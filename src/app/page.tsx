@@ -86,7 +86,7 @@ export default async function HomePage() {
         {/* Hub Grid */}
         <section className="mb-10">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
-            {/* Calendar — with photo background */}
+            {/* 1. Calendar — with photo background */}
             <Link
               href="/calendar"
               className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-1 min-h-[150px] sm:min-h-[170px] shadow-md"
@@ -104,10 +104,34 @@ export default async function HomePage() {
               </div>
             </Link>
 
-            {/* Rooms — with photo background */}
+            {/* 2. Weather */}
+            <Link
+              href="/weather"
+              className="hub-card-starlink rounded-2xl p-5 sm:p-6 card-hover border border-sky-200/50 animate-fade-in-up delay-2"
+            >
+              <div className="w-11 h-11 rounded-xl bg-sky-500 flex items-center justify-center mb-4 shadow-sm">
+                <CloudSun size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Weather</h3>
+              <p className="text-stone-500 text-sm">Forecast</p>
+            </Link>
+
+            {/* 3. Grocery & Supplies */}
+            <Link
+              href="/grocery"
+              className="hub-card-assistant rounded-2xl p-5 sm:p-6 card-hover border border-amber-200/50 animate-fade-in-up delay-3"
+            >
+              <div className="w-11 h-11 rounded-xl bg-amber-600 flex items-center justify-center mb-4 shadow-sm">
+                <ShoppingCart size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Supplies</h3>
+              <p className="text-stone-500 text-sm">Shopping list</p>
+            </Link>
+
+            {/* 4. Rooms — with photo background */}
             <Link
               href="/stays"
-              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-2 min-h-[150px] sm:min-h-[170px] shadow-md"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-4 min-h-[150px] sm:min-h-[170px] shadow-md"
             >
               <img
                 src="/photos/house-interior.jpg"
@@ -122,51 +146,19 @@ export default async function HomePage() {
               </div>
             </Link>
 
-            {/* Assistant — with photo background */}
+            {/* 5. Board */}
             <Link
-              href="/assistant"
-              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-3 min-h-[150px] sm:min-h-[170px] shadow-md"
+              href="/bulletin"
+              className="hub-card-assistant rounded-2xl p-5 sm:p-6 card-hover border border-amber-200/50 animate-fade-in-up delay-5"
             >
-              <img
-                src="/photos/hilltop-view.jpg"
-                alt=""
-                className="absolute inset-0 w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
-              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
-                <MessageCircle size={22} className="text-white mb-2 drop-shadow" />
-                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Assistant</h3>
-                <p className="text-white/80 text-sm">Ask about the property</p>
+              <div className="w-11 h-11 rounded-xl bg-amber-500 flex items-center justify-center mb-4 shadow-sm">
+                <Megaphone size={22} className="text-white" />
               </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Board</h3>
+              <p className="text-stone-500 text-sm">Family messages</p>
             </Link>
 
-            {/* Documents */}
-            <Link
-              href="/documents"
-              className="hub-card-documents rounded-2xl p-5 sm:p-6 card-hover border border-green-200/50 animate-fade-in-up delay-4"
-            >
-              <div className="w-11 h-11 rounded-xl bg-green-600 flex items-center justify-center mb-4 shadow-sm">
-                <FolderOpen size={22} className="text-white" />
-              </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Documents</h3>
-              <p className="text-stone-500 text-sm">
-                {docCount > 0 ? `${docCount} files archived` : "Property archive"}
-              </p>
-            </Link>
-
-            {/* Scan / Upload */}
-            <Link
-              href="/upload"
-              className="hub-card-documents rounded-2xl p-5 sm:p-6 card-hover border border-green-200/50 animate-fade-in-up delay-5"
-            >
-              <div className="w-11 h-11 rounded-xl bg-green-700 flex items-center justify-center mb-4 shadow-sm">
-                <Camera size={22} className="text-white" />
-              </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Scan</h3>
-              <p className="text-stone-500 text-sm">Upload documents</p>
-            </Link>
-
-            {/* Photos */}
+            {/* 6. Photos */}
             <a
               href="https://www.icloud.com/sharedalbum/#B2X5nhQSTTixIx"
               target="_blank"
@@ -184,31 +176,25 @@ export default async function HomePage() {
               </span>
             </a>
 
-            {/* Grocery & Supplies */}
+            {/* 7. Assistant — with photo background */}
             <Link
-              href="/grocery"
-              className="hub-card-assistant rounded-2xl p-5 sm:p-6 card-hover border border-amber-200/50 animate-fade-in-up delay-6"
+              href="/assistant"
+              className="relative rounded-2xl overflow-hidden card-hover animate-fade-in-up delay-6 min-h-[150px] sm:min-h-[170px] shadow-md"
             >
-              <div className="w-11 h-11 rounded-xl bg-amber-600 flex items-center justify-center mb-4 shadow-sm">
-                <ShoppingCart size={22} className="text-white" />
+              <img
+                src="/photos/hilltop-view.jpg"
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+              <div className="relative z-10 p-5 sm:p-6 flex flex-col justify-end h-full">
+                <MessageCircle size={22} className="text-white mb-2 drop-shadow" />
+                <h3 className="font-bold text-white text-lg mb-0.5 drop-shadow">Assistant</h3>
+                <p className="text-white/80 text-sm">Ask about the property</p>
               </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Supplies</h3>
-              <p className="text-stone-500 text-sm">Shopping list</p>
             </Link>
 
-            {/* Weather */}
-            <Link
-              href="/weather"
-              className="hub-card-starlink rounded-2xl p-5 sm:p-6 card-hover border border-sky-200/50 animate-fade-in-up delay-6"
-            >
-              <div className="w-11 h-11 rounded-xl bg-sky-500 flex items-center justify-center mb-4 shadow-sm">
-                <CloudSun size={22} className="text-white" />
-              </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Weather</h3>
-              <p className="text-stone-500 text-sm">Forecast</p>
-            </Link>
-
-            {/* Checklists */}
+            {/* 8. Checklists */}
             <Link
               href="/checklists"
               className="hub-card-documents rounded-2xl p-5 sm:p-6 card-hover border border-green-200/50 animate-fade-in-up delay-6"
@@ -220,43 +206,7 @@ export default async function HomePage() {
               <p className="text-stone-500 text-sm">Open & close</p>
             </Link>
 
-            {/* Maintenance */}
-            <Link
-              href="/maintenance"
-              className="hub-card-bulletin rounded-2xl p-5 sm:p-6 card-hover border border-rose-200/50 animate-fade-in-up delay-6"
-            >
-              <div className="w-11 h-11 rounded-xl bg-stone-600 flex items-center justify-center mb-4 shadow-sm">
-                <Wrench size={22} className="text-white" />
-              </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Maintenance</h3>
-              <p className="text-stone-500 text-sm">Service log</p>
-            </Link>
-
-            {/* Board */}
-            <Link
-              href="/bulletin"
-              className="hub-card-assistant rounded-2xl p-5 sm:p-6 card-hover border border-amber-200/50 animate-fade-in-up delay-6"
-            >
-              <div className="w-11 h-11 rounded-xl bg-amber-500 flex items-center justify-center mb-4 shadow-sm">
-                <Megaphone size={22} className="text-white" />
-              </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Board</h3>
-              <p className="text-stone-500 text-sm">Family messages</p>
-            </Link>
-
-            {/* Emergency */}
-            <Link
-              href="/emergency"
-              className="hub-card-bulletin rounded-2xl p-5 sm:p-6 card-hover border border-red-200/50 animate-fade-in-up delay-6"
-            >
-              <div className="w-11 h-11 rounded-xl bg-red-500 flex items-center justify-center mb-4 shadow-sm">
-                <AlertTriangle size={22} className="text-white" />
-              </div>
-              <h3 className="font-semibold text-stone-800 text-lg mb-1">Emergency</h3>
-              <p className="text-stone-500 text-sm">Contacts & info</p>
-            </Link>
-
-            {/* Local Guide */}
+            {/* 9. Local Guide */}
             <Link
               href="/guide"
               className="hub-card-photos rounded-2xl p-5 sm:p-6 card-hover border border-purple-200/50 animate-fade-in-up delay-6"
@@ -268,7 +218,7 @@ export default async function HomePage() {
               <p className="text-stone-500 text-sm">Things to do</p>
             </Link>
 
-            {/* Family Directory */}
+            {/* 10. Family Directory */}
             <Link
               href="/family"
               className="hub-card-smart rounded-2xl p-5 sm:p-6 card-hover border border-blue-200/50 animate-fade-in-up delay-6"
@@ -280,7 +230,57 @@ export default async function HomePage() {
               <p className="text-stone-500 text-sm">Directory</p>
             </Link>
 
-            {/* Smart Home - Coming Soon */}
+            {/* 11. Documents */}
+            <Link
+              href="/documents"
+              className="hub-card-documents rounded-2xl p-5 sm:p-6 card-hover border border-green-200/50 animate-fade-in-up delay-6"
+            >
+              <div className="w-11 h-11 rounded-xl bg-green-600 flex items-center justify-center mb-4 shadow-sm">
+                <FolderOpen size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Documents</h3>
+              <p className="text-stone-500 text-sm">
+                {docCount > 0 ? `${docCount} files archived` : "Property archive"}
+              </p>
+            </Link>
+
+            {/* 12. Scan */}
+            <Link
+              href="/upload"
+              className="hub-card-documents rounded-2xl p-5 sm:p-6 card-hover border border-green-200/50 animate-fade-in-up delay-6"
+            >
+              <div className="w-11 h-11 rounded-xl bg-green-700 flex items-center justify-center mb-4 shadow-sm">
+                <Camera size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Scan</h3>
+              <p className="text-stone-500 text-sm">Upload documents</p>
+            </Link>
+
+            {/* 13. Maintenance */}
+            <Link
+              href="/maintenance"
+              className="hub-card-bulletin rounded-2xl p-5 sm:p-6 card-hover border border-rose-200/50 animate-fade-in-up delay-6"
+            >
+              <div className="w-11 h-11 rounded-xl bg-stone-600 flex items-center justify-center mb-4 shadow-sm">
+                <Wrench size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Maintenance</h3>
+              <p className="text-stone-500 text-sm">Service log</p>
+            </Link>
+
+            {/* 14. Emergency */}
+            <Link
+              href="/emergency"
+              className="hub-card-bulletin rounded-2xl p-5 sm:p-6 card-hover border border-red-200/50 animate-fade-in-up delay-6"
+            >
+              <div className="w-11 h-11 rounded-xl bg-red-500 flex items-center justify-center mb-4 shadow-sm">
+                <AlertTriangle size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Emergency</h3>
+              <p className="text-stone-500 text-sm">Contacts & info</p>
+            </Link>
+
+            {/* 15. Smart Home - Coming Soon */}
             <div className="hub-card-smart rounded-2xl p-5 sm:p-6 border border-blue-200/50 relative overflow-hidden animate-fade-in-up delay-6">
               <div className="coming-soon-shimmer absolute inset-0 rounded-2xl" />
               <div className="relative z-10">

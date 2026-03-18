@@ -140,28 +140,6 @@ export default function EmergencyPage() {
       />
 
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
-        {/* 911 Card */}
-        <a
-          href="tel:911"
-          className="block bg-red-600 hover:bg-red-700 transition-colors rounded-2xl p-6 shadow-lg"
-        >
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0">
-              <AlertTriangle size={32} className="text-white" />
-            </div>
-            <div className="flex-1">
-              <p className="text-red-100 text-sm font-medium uppercase tracking-wider">
-                Emergency
-              </p>
-              <p className="text-white text-4xl font-bold">911</p>
-              <p className="text-red-100 text-sm mt-1">
-                Tap to call — fire, police, ambulance
-              </p>
-            </div>
-            <Phone size={28} className="text-white/70 flex-shrink-0" />
-          </div>
-        </a>
-
         {/* Sections */}
         {sections.map((section) => (
           <div key={section.title}>
@@ -226,7 +204,7 @@ export default function EmergencyPage() {
         {/* Footer note */}
         <div className="text-center py-4">
           <p className="text-sm text-stone-400">
-            Property address: Breadloaf Hill, Ripton, VT
+            3995 Vermont Route 125, Ripton, VT
           </p>
           <p className="text-xs text-stone-400 mt-1">
             Know a local contact to add? Let the family know on the{" "}
