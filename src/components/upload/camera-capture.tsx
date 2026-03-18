@@ -18,27 +18,51 @@ export function CameraCapture({ onCapture }: CameraCaptureProps) {
   const startCamera = useCallback(async () => {
     try {
       setError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "environment",
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-      });
+
+      // Check if camera API is available (requires HTTPS)
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setError("Camera not available. Your browser may require HTTPS. Use the file picker instead.");
+        return;
+      }
+
+      // Try rear camera first, fall back to any camera
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "environment",
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+        });
+      } catch {
+        // Fallback: try without specific constraints
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
+
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        // Show the video immediately
+        setIsStreaming(true);
+        // Play when ready
         videoRef.current.onloadedmetadata = () => {
-          videoRef.current
-            ?.play()
-            .then(() => setIsStreaming(true))
-            .catch(() =>
-              setError("Could not start camera preview. Try again.")
-            );
+          videoRef.current?.play().catch(() =>
+            setError("Could not start camera preview. Try again.")
+          );
         };
+        // Fallback: try playing directly after a short delay
+        setTimeout(() => {
+          videoRef.current?.play().catch(() => {});
+        }, 500);
       }
-    } catch {
-      setError("Camera access denied. Use the file picker below instead.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      if (message.includes("NotAllowed") || message.includes("Permission")) {
+        setError("Camera access denied. Please allow camera access in your browser settings, or use the file picker below.");
+      } else {
+        setError(`Camera error: ${message || "unknown"}. Use the file picker below instead.`);
+      }
     }
   }, []);
 
@@ -112,6 +136,7 @@ export function CameraCapture({ onCapture }: CameraCaptureProps) {
             ref={videoRef}
             autoPlay
             playsInline
+            muted
             className="w-full"
           />
           <div className="absolute bottom-4 left-0 right-0 flex justify-center">

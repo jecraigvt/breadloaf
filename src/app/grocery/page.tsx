@@ -690,9 +690,13 @@ function InventoryTab({
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        setCameraReady(true);
         videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play().then(() => setCameraReady(true)).catch(() => setScanMode("off"));
+          videoRef.current?.play().catch(() => setScanMode("off"));
         };
+        setTimeout(() => {
+          videoRef.current?.play().catch(() => {});
+        }, 500);
       }
     } catch {
       setScanMode("off");
@@ -902,7 +906,7 @@ function InventoryTab({
         {scanMode === "camera" && (
           <div className="space-y-4">
             <div className="relative rounded-xl overflow-hidden bg-black">
-              <video ref={videoRef} autoPlay playsInline className="w-full" />
+              <video ref={videoRef} autoPlay playsInline muted className="w-full" />
               {cameraReady && (
                 <div className="absolute bottom-4 left-0 right-0 flex justify-center">
                   <button
