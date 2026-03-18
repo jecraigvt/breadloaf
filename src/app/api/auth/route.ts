@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create a token: base64(family:pin)
-    const token = Buffer.from(`${family}:${pin}`).toString("base64");
+    const token = btoa(`${family}:${pin}`);
 
     const response = NextResponse.json({ family });
     response.cookies.set("breadloaf_auth", token, {
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const decoded = Buffer.from(token, "base64").toString();
+    const decoded = atob(token);
     const [family, pin] = decoded.split(":");
 
     const pinMap = getFamilyPins();

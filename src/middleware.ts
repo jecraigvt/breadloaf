@@ -15,7 +15,7 @@ function isAuthenticated(request: NextRequest): boolean {
   if (!token) return false;
 
   try {
-    const decoded = Buffer.from(token, "base64").toString();
+    const decoded = atob(token);
     const [family, pin] = decoded.split(":");
     const pinMap = getFamilyPins();
     return pinMap[pin] === family;
