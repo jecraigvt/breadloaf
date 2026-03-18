@@ -18,6 +18,13 @@ import {
   Clock,
   ExternalLink,
   Users,
+  ShoppingCart,
+  ClipboardCheck,
+  Wrench,
+  CloudSun,
+  AlertTriangle,
+  MapPin,
+  Contact,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { HeroBanner } from "@/components/layout/hero-banner";
@@ -177,6 +184,54 @@ export default async function HomePage() {
               </span>
             </a>
 
+            {/* Grocery & Supplies */}
+            <Link
+              href="/grocery"
+              className="hub-card-assistant rounded-2xl p-5 sm:p-6 card-hover border border-amber-200/50 animate-fade-in-up delay-6"
+            >
+              <div className="w-11 h-11 rounded-xl bg-amber-600 flex items-center justify-center mb-4 shadow-sm">
+                <ShoppingCart size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Supplies</h3>
+              <p className="text-stone-500 text-sm">Shopping list</p>
+            </Link>
+
+            {/* Weather */}
+            <Link
+              href="/weather"
+              className="hub-card-starlink rounded-2xl p-5 sm:p-6 card-hover border border-sky-200/50 animate-fade-in-up delay-6"
+            >
+              <div className="w-11 h-11 rounded-xl bg-sky-500 flex items-center justify-center mb-4 shadow-sm">
+                <CloudSun size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Weather</h3>
+              <p className="text-stone-500 text-sm">Forecast</p>
+            </Link>
+
+            {/* Checklists */}
+            <Link
+              href="/checklists"
+              className="hub-card-documents rounded-2xl p-5 sm:p-6 card-hover border border-green-200/50 animate-fade-in-up delay-6"
+            >
+              <div className="w-11 h-11 rounded-xl bg-green-600 flex items-center justify-center mb-4 shadow-sm">
+                <ClipboardCheck size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Checklists</h3>
+              <p className="text-stone-500 text-sm">Open & close</p>
+            </Link>
+
+            {/* Maintenance */}
+            <Link
+              href="/maintenance"
+              className="hub-card-bulletin rounded-2xl p-5 sm:p-6 card-hover border border-rose-200/50 animate-fade-in-up delay-6"
+            >
+              <div className="w-11 h-11 rounded-xl bg-stone-600 flex items-center justify-center mb-4 shadow-sm">
+                <Wrench size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Maintenance</h3>
+              <p className="text-stone-500 text-sm">Service log</p>
+            </Link>
+
             {/* Board */}
             <Link
               href="/bulletin"
@@ -187,6 +242,42 @@ export default async function HomePage() {
               </div>
               <h3 className="font-semibold text-stone-800 text-lg mb-1">Board</h3>
               <p className="text-stone-500 text-sm">Family messages</p>
+            </Link>
+
+            {/* Emergency */}
+            <Link
+              href="/emergency"
+              className="hub-card-bulletin rounded-2xl p-5 sm:p-6 card-hover border border-red-200/50 animate-fade-in-up delay-6"
+            >
+              <div className="w-11 h-11 rounded-xl bg-red-500 flex items-center justify-center mb-4 shadow-sm">
+                <AlertTriangle size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Emergency</h3>
+              <p className="text-stone-500 text-sm">Contacts & info</p>
+            </Link>
+
+            {/* Local Guide */}
+            <Link
+              href="/guide"
+              className="hub-card-photos rounded-2xl p-5 sm:p-6 card-hover border border-purple-200/50 animate-fade-in-up delay-6"
+            >
+              <div className="w-11 h-11 rounded-xl bg-purple-500 flex items-center justify-center mb-4 shadow-sm">
+                <MapPin size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Local Guide</h3>
+              <p className="text-stone-500 text-sm">Things to do</p>
+            </Link>
+
+            {/* Family Directory */}
+            <Link
+              href="/family"
+              className="hub-card-smart rounded-2xl p-5 sm:p-6 card-hover border border-blue-200/50 animate-fade-in-up delay-6"
+            >
+              <div className="w-11 h-11 rounded-xl bg-blue-500 flex items-center justify-center mb-4 shadow-sm">
+                <Contact size={22} className="text-white" />
+              </div>
+              <h3 className="font-semibold text-stone-800 text-lg mb-1">Family</h3>
+              <p className="text-stone-500 text-sm">Directory</p>
             </Link>
 
             {/* Smart Home - Coming Soon */}

@@ -86,3 +86,60 @@ model Stay {
   @@index([checkIn])
   @@index([checkOut])
 }
+
+model GroceryItem {
+  id        String   @id @default(cuid())
+  name      String
+  category  String   @default("General")
+  checked   Boolean  @default(false)
+  addedBy   String?
+  checkedBy String?
+  priority  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([checked])
+}
+
+model ChecklistItem {
+  id        String   @id @default(cuid())
+  name      String
+  list      String   // "opening" or "closing"
+  section   String   @default("General")
+  sortOrder Int      @default(0)
+  checked   Boolean  @default(false)
+  checkedBy String?
+  checkedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([list])
+}
+
+model MaintenanceRecord {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  category    String    @default("General")
+  performedBy String?
+  performedAt DateTime
+  nextDueAt   DateTime?
+  cost        Float?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([category])
+  @@index([performedAt])
+}
+
+model FamilyMember {
+  id       String  @id @default(cuid())
+  name     String
+  email    String?
+  phone    String?
+  birthday String?
+  branch   String? // which Craig brother's family
+  relation String? // e.g. "spouse", "child", "grandchild"
+  notes    String?
+
+  @@index([branch])
+}

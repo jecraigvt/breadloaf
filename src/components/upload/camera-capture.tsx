@@ -28,7 +28,10 @@ export function CameraCapture({ onCapture }: CameraCaptureProps) {
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        setIsStreaming(true);
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play();
+          setIsStreaming(true);
+        };
       }
     } catch {
       setError("Camera access denied. Use the file picker below instead.");

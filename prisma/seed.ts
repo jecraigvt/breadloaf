@@ -148,6 +148,64 @@ async function main() {
     });
   }
   console.log("Seeded rooms:", rooms.length);
+
+  // Seed opening/closing checklists
+  const existingChecklists = await prisma.checklistItem.count();
+  if (existingChecklists === 0) {
+    const checklists = [
+      // Opening checklist
+      { name: "Turn on main water supply", list: "opening", section: "Water System", sortOrder: 1 },
+      { name: "Check for frozen/burst pipes", list: "opening", section: "Water System", sortOrder: 2 },
+      { name: "Turn on water heater", list: "opening", section: "Water System", sortOrder: 3 },
+      { name: "Run all faucets to flush lines", list: "opening", section: "Water System", sortOrder: 4 },
+      { name: "Check toilets flush properly", list: "opening", section: "Water System", sortOrder: 5 },
+      { name: "Turn on propane at tank", list: "opening", section: "Heating & Gas", sortOrder: 6 },
+      { name: "Light pilot lights", list: "opening", section: "Heating & Gas", sortOrder: 7 },
+      { name: "Check propane level", list: "opening", section: "Heating & Gas", sortOrder: 8 },
+      { name: "Turn on electricity at breaker", list: "opening", section: "Electrical", sortOrder: 9 },
+      { name: "Test all light switches", list: "opening", section: "Electrical", sortOrder: 10 },
+      { name: "Check smoke detectors", list: "opening", section: "Safety", sortOrder: 11 },
+      { name: "Check CO detectors", list: "opening", section: "Safety", sortOrder: 12 },
+      { name: "Check fire extinguishers", list: "opening", section: "Safety", sortOrder: 13 },
+      { name: "Inspect for animal/pest intrusion", list: "opening", section: "Interior", sortOrder: 14 },
+      { name: "Open windows to air out", list: "opening", section: "Interior", sortOrder: 15 },
+      { name: "Check fridge/freezer", list: "opening", section: "Kitchen", sortOrder: 16 },
+      { name: "Run dishwasher empty cycle", list: "opening", section: "Kitchen", sortOrder: 17 },
+      { name: "Check pantry for expired items", list: "opening", section: "Kitchen", sortOrder: 18 },
+      { name: "Walk property perimeter", list: "opening", section: "Exterior", sortOrder: 19 },
+      { name: "Check roof for damage", list: "opening", section: "Exterior", sortOrder: 20 },
+      { name: "Inspect deck/porch", list: "opening", section: "Exterior", sortOrder: 21 },
+      { name: "Set up outdoor furniture", list: "opening", section: "Exterior", sortOrder: 22 },
+      { name: "Check woods cabin", list: "opening", section: "Exterior", sortOrder: 23 },
+      { name: "Connect Starlink", list: "opening", section: "Electrical", sortOrder: 24 },
+      // Closing checklist
+      { name: "Turn off main water supply", list: "closing", section: "Water System", sortOrder: 1 },
+      { name: "Drain all pipes and faucets", list: "closing", section: "Water System", sortOrder: 2 },
+      { name: "Add antifreeze to drains/toilets", list: "closing", section: "Water System", sortOrder: 3 },
+      { name: "Turn off water heater", list: "closing", section: "Water System", sortOrder: 4 },
+      { name: "Turn off propane at tank", list: "closing", section: "Heating & Gas", sortOrder: 5 },
+      { name: "Set thermostat to minimum (prevent freeze)", list: "closing", section: "Heating & Gas", sortOrder: 6 },
+      { name: "Clean out fridge, leave door propped open", list: "closing", section: "Kitchen", sortOrder: 7 },
+      { name: "Remove all perishable food", list: "closing", section: "Kitchen", sortOrder: 8 },
+      { name: "Take out all trash", list: "closing", section: "Kitchen", sortOrder: 9 },
+      { name: "Clean kitchen thoroughly", list: "closing", section: "Kitchen", sortOrder: 10 },
+      { name: "Strip beds and wash linens", list: "closing", section: "Interior", sortOrder: 11 },
+      { name: "Close and lock all windows", list: "closing", section: "Interior", sortOrder: 12 },
+      { name: "Unplug non-essential electronics", list: "closing", section: "Electrical", sortOrder: 13 },
+      { name: "Disconnect Starlink", list: "closing", section: "Electrical", sortOrder: 14 },
+      { name: "Store outdoor furniture", list: "closing", section: "Exterior", sortOrder: 15 },
+      { name: "Secure woods cabin", list: "closing", section: "Exterior", sortOrder: 16 },
+      { name: "Check for any maintenance needs", list: "closing", section: "Exterior", sortOrder: 17 },
+      { name: "Lock all doors", list: "closing", section: "Security", sortOrder: 18 },
+      { name: "Set mousetraps", list: "closing", section: "Security", sortOrder: 19 },
+      { name: "Notify family the property is closed", list: "closing", section: "Security", sortOrder: 20 },
+    ];
+
+    for (const item of checklists) {
+      await prisma.checklistItem.create({ data: item });
+    }
+    console.log("Seeded checklists:", checklists.length);
+  }
 }
 
 main()
