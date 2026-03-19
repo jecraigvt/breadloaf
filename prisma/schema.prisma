@@ -181,6 +181,20 @@ model Expense {
   @@index([date])
 }
 
+model JarvisMemory {
+  id        String   @id @default(cuid())
+  type      String   // semantic (facts/prefs), episodic (events), procedural (how-to)
+  topic     String   // short label: "roof repair", "sandy's role", "insurance renewal"
+  content   String   // the actual memory
+  source    String?  // who/what triggered this: "conversation with Jim", "board meeting"
+  relevance Float    @default(1.0) // 0-1 relevance score, decays over time
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type])
+  @@index([topic])
+}
+
 model Embedding {
   id         String   @id @default(cuid())
   sourceType String   // document, expense, maintenance, bulletin, meeting

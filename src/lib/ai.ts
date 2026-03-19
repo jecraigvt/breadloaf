@@ -433,6 +433,37 @@ const assistantTools: FunctionDeclarationsTool[] = [
           required: ["date", "amount", "description"],
         },
       },
+      {
+        name: "save_memory",
+        description:
+          "Save important information to your long-term memory. Use this proactively when you learn something worth remembering for future conversations. Types: 'semantic' for facts/preferences (Greg prefers the loft, insurance renews March), 'episodic' for events/decisions (board approved roof repair July 2026), 'procedural' for how-to knowledge (winterization steps). If a memory on the same topic exists, it will be updated rather than duplicated.",
+        parameters: {
+          type: SchemaType.OBJECT,
+          properties: {
+            type: {
+              type: SchemaType.STRING,
+              description:
+                "Memory type: 'semantic' (facts, preferences, relationships), 'episodic' (events, decisions, meetings), or 'procedural' (processes, how-to, steps)",
+            },
+            topic: {
+              type: SchemaType.STRING,
+              description:
+                "Short label (e.g., 'roof repair', 'Sandy board roles', 'winterization steps')",
+            },
+            content: {
+              type: SchemaType.STRING,
+              description:
+                "The detailed memory — include names, dates, amounts, decisions, steps, context. Be thorough.",
+            },
+            source: {
+              type: SchemaType.STRING,
+              description:
+                "Where this info came from (e.g., 'conversation with Jim', 'board meeting July 2026')",
+            },
+          },
+          required: ["type", "topic", "content"],
+        },
+      },
     ],
   },
 ];
@@ -518,6 +549,37 @@ async function executeToolFunction(
         success: true,
         item: { id: item.id, name: item.name },
       };
+    }
+    case "save_memory": {
+      // Check if a memory with this topic already exists — update if so
+      const existing = await prisma.jarvisMemory.findFirst({
+        where: { topic: args.topic as string },
+      });
+      if (existing) {
+        await prisma.jarvisMemory.update({
+          where: { id: existing.id },
+          data: {
+            type: (args.type as string) || existing.type,
+            content: args.content as string,
+            source: (args.source as string) || existing.source,
+            relevance: 1.0, // Refresh relevance on update
+          },
+        });
+        // Also update the embedding
+        embedAndStore("memory", existing.id, `${args.topic}: ${args.content}`).catch(() => {});
+        return { success: true, action: "updated", topic: args.topic };
+      }
+      const memory = await prisma.jarvisMemory.create({
+        data: {
+          type: (args.type as string) || "semantic",
+          topic: args.topic as string,
+          content: args.content as string,
+          source: (args.source as string) || undefined,
+        },
+      });
+      // Embed the memory for semantic retrieval
+      embedAndStore("memory", memory.id, `${args.topic}: ${args.content}`).catch(() => {});
+      return { success: true, action: "saved", topic: args.topic };
     }
     case "add_expense": {
       const expenseDate = new Date(args.date as string);
@@ -646,7 +708,7 @@ export async function chatWithAssistant(
 
   // Get upcoming stays and room info
   const currentYear = new Date().getFullYear();
-  const [upcomingStays, rooms, groceryItems, pantryItems, upcomingDinners, recentMaintenance, recentExpenses, expenseSummary] =
+  const [upcomingStays, rooms, groceryItems, pantryItems, upcomingDinners, recentMaintenance, recentExpenses, expenseSummary, allMemories] =
     await Promise.all([
       prisma.stay.findMany({
         where: { checkOut: { gte: new Date() } },
@@ -682,6 +744,10 @@ export async function chatWithAssistant(
         where: { fiscalYear: currentYear },
         _sum: { amount: true },
         _count: true,
+      }),
+      prisma.jarvisMemory.findMany({
+        orderBy: [{ relevance: "desc" }, { updatedAt: "desc" }],
+        take: 50,
       }),
     ]);
 
@@ -753,6 +819,26 @@ export async function chatWithAssistant(
           .join("\n")
       : `No expenses recorded for ${currentYear}.`;
 
+  // Build memory context — categorized by type, most relevant first
+  const semanticMemories = allMemories.filter((m) => m.type === "semantic");
+  const episodicMemories = allMemories.filter((m) => m.type === "episodic");
+  const proceduralMemories = allMemories.filter((m) => m.type === "procedural");
+
+  let memoryContext = "";
+  if (allMemories.length > 0) {
+    const parts: string[] = [];
+    if (semanticMemories.length > 0) {
+      parts.push("Facts & Preferences:\n" + semanticMemories.map((m) => `- [${m.topic}] ${m.content}`).join("\n"));
+    }
+    if (episodicMemories.length > 0) {
+      parts.push("Past Events & Decisions:\n" + episodicMemories.map((m) => `- [${m.topic}] ${m.content} (${new Date(m.updatedAt).toLocaleDateString()})`).join("\n"));
+    }
+    if (proceduralMemories.length > 0) {
+      parts.push("How-To Knowledge:\n" + proceduralMemories.map((m) => `- [${m.topic}] ${m.content}`).join("\n"));
+    }
+    memoryContext = parts.join("\n\n");
+  }
+
   // Route to the right model based on query intent
   const intent = lastUserMessage ? classifyIntent(lastUserMessage.content) : "lookup";
   const selectedModel = intent === "action" ? MODELS.lite : intent === "analysis" ? MODELS.pro : MODELS.flash;
@@ -789,6 +875,8 @@ ${expenseContext}
 
 ${documentContext ? `DOCUMENTS IN ARCHIVE:\n${documentContext}` : "The document archive is currently empty."}
 
+${memoryContext ? `YOUR MEMORIES (things you've learned from past conversations):\n${memoryContext}` : ""}
+
 PROPERTY OWNERSHIP:
 The property is owned by an S-Corp with four equal shareholders: Tom Craig, Jim Craig, Sandy Craig, and Greg Craig. All expenses are split equally (25% each).
 
@@ -812,7 +900,15 @@ WHAT YOU CAN DO:
    - Post messages to the family bulletin board (e.g., "Post that the driveway needs plowing")
    - Sign up to cook dinner (e.g., "Sign me up to make tacos on Saturday for 8 people")
 
-3. HELP WITH S-CORP matters:
+3. REMEMBER important information using save_memory:
+   - SEMANTIC memories for facts & preferences: "Greg prefers the loft", "insurance renews March 2027", "the well pump is a Grundfos SQ 5-70"
+   - EPISODIC memories for events & decisions: "July 2026 board meeting approved $15K roof repair", "Tom replaced the water heater in June"
+   - PROCEDURAL memories for how-to knowledge: "Winterization steps: drain pipes, close main shutoff, set thermostat to 55"
+   - Save memories PROACTIVELY when you learn something important — don't wait to be asked
+   - If a memory on the same topic exists, update it rather than creating a duplicate
+   - You should reference your memories when they're relevant to the conversation
+
+4. HELP WITH S-CORP matters:
    - Track expenses by category (utilities, maintenance, insurance, taxes, improvements, supplies, professional services)
    - Classify expenses as operating vs. capital
    - Track who paid for what (Tom, Jim, Sandy, Greg, or Shared)
