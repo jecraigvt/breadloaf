@@ -10,6 +10,7 @@ import {
   Plus,
   Shield,
   Hospital,
+  Trash2,
 } from "lucide-react";
 
 interface ContactCard {
@@ -111,6 +112,30 @@ const sections: ContactSection[] = [
       {
         name: "Starlink",
         description: "Internet — manage via Starlink app",
+      },
+    ],
+  },
+  {
+    title: "Trash & Recycling",
+    icon: <Trash2 size={20} />,
+    color: "text-lime-700",
+    borderColor: "border-lime-200",
+    bgColor: "bg-lime-50",
+    iconBg: "bg-lime-100",
+    contacts: [
+      {
+        name: "Addison County Solid Waste District",
+        phone: "(802) 388-2333",
+        description: "Recycling drop-off and hazardous waste info",
+      },
+      {
+        name: "Ripton Transfer Station",
+        description: "Town transfer station — check town website for hours and accepted items",
+      },
+      {
+        name: "Casella Waste Systems",
+        phone: "(802) 775-0800",
+        description: "Private trash hauler — pickup service available",
       },
     ],
   },

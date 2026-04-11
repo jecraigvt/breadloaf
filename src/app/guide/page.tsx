@@ -11,6 +11,8 @@ import {
   Clock,
   Car,
   Sparkles,
+  Phone,
+  ExternalLink,
 } from "lucide-react";
 
 type FilterCategory = "all" | "swimming" | "hikes" | "restaurants" | "activities" | "towns";
@@ -24,6 +26,8 @@ interface GuideEntry {
   driveTime?: string;
   familyFavorite?: boolean;
   placeholder?: boolean;
+  address?: string;
+  phone?: string;
 }
 
 const categoryConfig: Record<EntryCategory, { label: string; icon: React.ReactNode; color: string; bg: string; pill: string; pillActive: string }> = {
@@ -78,6 +82,7 @@ const entries: GuideEntry[] = [
     distance: "~5 miles",
     driveTime: "10 min",
     familyFavorite: true,
+    address: "Lincoln Rd, Bristol, VT 05443",
   },
   {
     name: "Texas Falls",
@@ -85,6 +90,7 @@ const entries: GuideEntry[] = [
     description: "Scenic gorge with cascading waterfalls in the Green Mountain National Forest. Great for wading — swimming is limited.",
     distance: "~8 miles",
     driveTime: "15 min",
+    address: "Texas Falls Rd, Hancock, VT 05748",
   },
   {
     name: "Middlebury Gorge",
@@ -92,6 +98,7 @@ const entries: GuideEntry[] = [
     description: "Deep pools and rope swings along the Middlebury River. Popular on hot summer days.",
     distance: "~6 miles",
     driveTime: "12 min",
+    address: "Middlebury Gorge, Ripton, VT",
   },
   {
     name: "Your family favorite spot",
@@ -108,6 +115,7 @@ const entries: GuideEntry[] = [
     distance: "~2 miles",
     driveTime: "5 min",
     familyFavorite: true,
+    address: "VT-125, Ripton, VT 05766",
   },
   {
     name: "Long Trail (access from Rt 125)",
@@ -115,6 +123,7 @@ const entries: GuideEntry[] = [
     description: "Vermont's famous end-to-end trail crosses Rt 125 near Breadloaf. Hike north toward Mt. Abraham or south toward Middlebury Gap.",
     distance: "~3 miles",
     driveTime: "8 min",
+    address: "Long Trail, Middlebury Gap, VT-125, Hancock, VT",
   },
   {
     name: "Skylight Pond Trail",
@@ -122,6 +131,7 @@ const entries: GuideEntry[] = [
     description: "Moderate 4-mile hike to a beautiful alpine pond with views. Connects to the Long Trail.",
     distance: "~4 miles",
     driveTime: "10 min",
+    address: "Steam Mill Rd, Ripton, VT 05766",
   },
   {
     name: "Mt. Abraham via Long Trail",
@@ -129,6 +139,7 @@ const entries: GuideEntry[] = [
     description: "Strenuous hike to one of Vermont's 4,000-footers with panoramic views above treeline.",
     distance: "~3 miles to trailhead",
     driveTime: "8 min",
+    address: "Long Trail, Lincoln Gap Rd, Lincoln, VT",
   },
   {
     name: "Spirit in Nature Trails",
@@ -136,6 +147,7 @@ const entries: GuideEntry[] = [
     description: "Peaceful network of short trails in Ripton, each themed around a world religion. Family-friendly.",
     distance: "~1 mile",
     driveTime: "3 min",
+    address: "73 Spirit in Nature Rd, Ripton, VT 05766",
   },
   {
     name: "Moosalamoo National Recreation Area",
@@ -143,6 +155,7 @@ const entries: GuideEntry[] = [
     description: "Extensive trail network with options from easy walks to challenging climbs. Falls of Lana and Silver Lake are highlights.",
     distance: "~10 miles",
     driveTime: "20 min",
+    address: "Moosalamoo Rd, Goshen, VT 05733",
   },
 
   // Restaurants
@@ -153,6 +166,8 @@ const entries: GuideEntry[] = [
     distance: "~12 miles",
     driveTime: "20 min",
     familyFavorite: true,
+    address: "137 Maple St, Middlebury, VT 05753",
+    phone: "(802) 388-3300",
   },
   {
     name: "Tourterelle (New Haven)",
@@ -160,6 +175,8 @@ const entries: GuideEntry[] = [
     description: "French-inspired bistro in a beautifully restored building. Perfect for a special dinner.",
     distance: "~10 miles",
     driveTime: "18 min",
+    address: "3629 Ethan Allen Hwy, New Haven, VT 05472",
+    phone: "(802) 453-6309",
   },
   {
     name: "The Bobcat Cafe (Bristol)",
@@ -167,6 +184,8 @@ const entries: GuideEntry[] = [
     description: "Cozy cafe with great burgers, local beers, and a relaxed vibe.",
     distance: "~14 miles",
     driveTime: "25 min",
+    address: "5 Main St, Bristol, VT 05443",
+    phone: "(802) 453-3311",
   },
   {
     name: "Middlebury Natural Foods Co-op",
@@ -174,6 +193,8 @@ const entries: GuideEntry[] = [
     description: "Excellent deli counter, prepared foods, and local products. Great for stocking up.",
     distance: "~12 miles",
     driveTime: "20 min",
+    address: "9 Washington St, Middlebury, VT 05753",
+    phone: "(802) 388-7276",
   },
   {
     name: "Family favorite — add yours!",
@@ -190,6 +211,7 @@ const entries: GuideEntry[] = [
     distance: "~12 miles",
     driveTime: "20 min",
     familyFavorite: true,
+    address: "The Green, Middlebury, VT 05753",
   },
   {
     name: "Middlebury College Museum of Art",
@@ -197,6 +219,8 @@ const entries: GuideEntry[] = [
     description: "Free admission. Impressive collection in a beautiful building on the Middlebury campus.",
     distance: "~12 miles",
     driveTime: "20 min",
+    address: "72 Porter Field Rd, Middlebury, VT 05753",
+    phone: "(802) 443-5007",
   },
   {
     name: "Otter Creek Brewing",
@@ -204,6 +228,8 @@ const entries: GuideEntry[] = [
     description: "Local brewery with a taproom. Tours available — a fun afternoon stop.",
     distance: "~12 miles",
     driveTime: "20 min",
+    address: "793 Exchange St, Middlebury, VT 05753",
+    phone: "(802) 388-0727",
   },
   {
     name: "Vermont Icelandic Horse Farm",
@@ -211,6 +237,8 @@ const entries: GuideEntry[] = [
     description: "Trail rides through the Green Mountains on gentle Icelandic horses. Unique Vermont experience.",
     distance: "~5 miles",
     driveTime: "10 min",
+    address: "3061 N Fern Lake Rd, Fayston, VT 05673",
+    phone: "(802) 496-7141",
   },
   {
     name: "Blueberry Hill (Cross-Country Skiing)",
@@ -218,6 +246,8 @@ const entries: GuideEntry[] = [
     description: "Excellent cross-country ski center in Goshen. Beautiful trails in winter, hiking in summer.",
     distance: "~8 miles",
     driveTime: "15 min",
+    address: "1245 Goshen-Ripton Rd, Goshen, VT 05733",
+    phone: "(802) 247-6735",
   },
 
   // Towns
@@ -371,6 +401,30 @@ export default function GuidePage() {
                             <Car size={12} />
                             {entry.driveTime}
                           </span>
+                        )}
+                      </div>
+                    )}
+                    {(entry.address || entry.phone) && (
+                      <div className="flex flex-wrap items-center gap-3 mt-2">
+                        {entry.address && (
+                          <a
+                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(entry.address)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-green-700 hover:text-green-800 hover:underline"
+                          >
+                            <ExternalLink size={12} />
+                            Directions
+                          </a>
+                        )}
+                        {entry.phone && (
+                          <a
+                            href={`tel:${entry.phone.replace(/[^+\d]/g, "")}`}
+                            className="inline-flex items-center gap-1 text-xs text-green-700 hover:text-green-800 hover:underline"
+                          >
+                            <Phone size={12} />
+                            {entry.phone}
+                          </a>
                         )}
                       </div>
                     )}

@@ -23,7 +23,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { RoomWithStays } from "@/types";
-import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isToday, isWithinInterval } from "date-fns";
+import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isToday, isWithinInterval, startOfDay } from "date-fns";
 
 const roomTypeIcons: Record<string, typeof Home> = {
   bedroom: BedDouble,
@@ -145,7 +145,12 @@ export default function StaysPage() {
 
   // Pad to start on Sunday
   const startDay = monthStart.getDay();
-  const paddedDays = Array(startDay).fill(null).concat(calendarDays);
+  const paddedDays: (Date | null)[] = Array(startDay).fill(null).concat(calendarDays);
+  // Pad end to complete the last week
+  const remaining = 7 - (paddedDays.length % 7);
+  if (remaining < 7) {
+    paddedDays.push(...Array(remaining).fill(null));
+  }
 
   // Get all stays across all rooms for the calendar
   const allStays = rooms.flatMap((room) =>
@@ -154,9 +159,9 @@ export default function StaysPage() {
 
   const getStaysForDay = (day: Date) =>
     allStays.filter((stay) => {
-      const ci = new Date(stay.checkIn);
-      const co = new Date(stay.checkOut);
-      return isWithinInterval(day, { start: ci, end: co });
+      const ci = startOfDay(new Date(stay.checkIn));
+      const co = startOfDay(new Date(stay.checkOut));
+      return isWithinInterval(startOfDay(day), { start: ci, end: co });
     });
 
   // Room capacity calculations
@@ -396,7 +401,7 @@ export default function StaysPage() {
                     onChange={(e) => setNotes(e.target.value)}
                     className="w-full border border-stone-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none resize-none"
                     rows={2}
-                    placeholder="Arriving late, bringing kids, need crib, etc."
+                    placeholder="Number of guests, arriving late, bringing kids, need crib, etc."
                   />
                 </div>
 
