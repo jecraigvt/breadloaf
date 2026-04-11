@@ -106,6 +106,24 @@ src/lib/
 - **Calendar ID:** aeb2b22ddb5d4bdce900c64d50a01ae870fc57824dc53d8b4dcb118618dd307c@group.calendar.google.com
 - **Photo album:** iCloud shared album (847 photos)
 
+## PENDING: Google Calendar Migration
+The Google Calendar was switched from Tom's personal calendar (tomgilcraig@gmail.com) to a dedicated
+"Breadloaf Hill Stays" calendar on breadloafhillsite@gmail.com (April 2026).
+
+**IMPORTANT — Do this BEFORE anyone loads the site, or the sync will delete existing stays:**
+
+1. Deploy the latest code: `railway up`
+2. Run the migration (visit in browser or curl):
+   - Browser: `https://breadloafhill.com/api/calendar/migrate`
+   - Terminal: `curl -X POST https://breadloafhill.com/api/calendar/migrate`
+3. Verify the response shows stays were pushed successfully
+4. Check the "Breadloaf Hill Stays" calendar on Google to confirm events appeared
+5. After confirming, delete the migration endpoint: `src/app/api/calendar/migrate/route.ts`
+6. Remove this "PENDING" section from CLAUDE.md
+7. Deploy again: `railway up`
+
+The `GOOGLE_CALENDAR_ID` env var has already been updated in Railway.
+
 ## Deployment Details
 - **`railway up` is the ONLY way to deploy.** GitHub pushes do NOT trigger deploys.
 - **Logs:** `railway logs` (runtime), `railway logs --build` (build)

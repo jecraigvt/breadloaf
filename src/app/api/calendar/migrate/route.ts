@@ -8,7 +8,16 @@ import { createCalendarEvent } from "@/lib/google-calendar";
  *
  * DELETE THIS FILE after migration is complete.
  */
+// Support both GET (browser) and POST (curl)
+export async function GET() {
+  return migrate();
+}
+
 export async function POST() {
+  return migrate();
+}
+
+async function migrate() {
   try {
     // Step 1: Clear all old googleEventIds so sync doesn't delete these stays
     const cleared = await prisma.stay.updateMany({
