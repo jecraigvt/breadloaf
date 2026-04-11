@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,10 @@ function escapeICalText(text: string): string {
   return text.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const isDownload = searchParams.get("download") === "true";
+
   const stays = await prisma.stay.findMany({
     include: { room: true },
     orderBy: { checkIn: "asc" },
@@ -25,6 +28,8 @@ export async function GET() {
     "METHOD:PUBLISH",
     "X-WR-CALNAME:Breadloaf Hill Visits",
     "X-WR-TIMEZONE:America/New_York",
+    "REFRESH-INTERVAL;VALUE=DURATION:PT1H",
+    "X-PUBLISHED-TTL:PT1H",
   ];
 
   for (const stay of stays) {
@@ -40,11 +45,15 @@ export async function GET() {
       .filter(Boolean)
       .join("\\n");
 
+    // iCal DTEND for all-day events is exclusive (day after last day)
+    const checkOutDate = new Date(stay.checkOut);
+    checkOutDate.setDate(checkOutDate.getDate() + 1);
+
     lines.push(
       "BEGIN:VEVENT",
-      `UID:stay-${stay.id}@breadloafhill`,
+      `UID:stay-${stay.id}@breadloafhill.com`,
       `DTSTART;VALUE=DATE:${new Date(stay.checkIn).toISOString().slice(0, 10).replace(/-/g, "")}`,
-      `DTEND;VALUE=DATE:${new Date(stay.checkOut).toISOString().slice(0, 10).replace(/-/g, "")}`,
+      `DTEND;VALUE=DATE:${checkOutDate.toISOString().slice(0, 10).replace(/-/g, "")}`,
       `SUMMARY:${escapeICalText(summary)}`,
       `DESCRIPTION:${escapeICalText(description)}`,
       "LOCATION:Breadloaf Hill\\, Vermont",
@@ -56,11 +65,15 @@ export async function GET() {
 
   lines.push("END:VCALENDAR");
 
-  return new NextResponse(lines.join("\r\n"), {
-    headers: {
-      "Content-Type": "text/calendar; charset=utf-8",
-      "Content-Disposition": 'attachment; filename="breadloaf-hill.ics"',
-      "Cache-Control": "no-cache, no-store, must-revalidate",
-    },
-  });
+  const headers: Record<string, string> = {
+    "Content-Type": "text/calendar; charset=utf-8",
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+  };
+
+  // Only set Content-Disposition for explicit downloads (not calendar subscriptions)
+  if (isDownload) {
+    headers["Content-Disposition"] = 'attachment; filename="breadloaf-hill.ics"';
+  }
+
+  return new NextResponse(lines.join("\r\n"), { headers });
 }

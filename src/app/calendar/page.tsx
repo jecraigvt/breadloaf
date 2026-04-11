@@ -188,7 +188,9 @@ export default function CalendarPage() {
     ? `${window.location.origin}/api/calendar`
     : "/api/calendar";
 
-  const googleSubscribeUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(feedUrl.replace("https://", "webcal://").replace("http://", "webcal://"))}`;
+  const webcalUrl = feedUrl.replace("https://", "webcal://").replace("http://", "webcal://");
+  const googleSubscribeUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalUrl)}`;
+  const outlookSubscribeUrl = `https://outlook.live.com/calendar/0/addfromweb?url=${encodeURIComponent(feedUrl)}&name=${encodeURIComponent("Breadloaf Hill Visits")}`;
 
   if (loading) {
     return (
@@ -246,12 +248,27 @@ export default function CalendarPage() {
                   <div className="fixed inset-0 z-40" onClick={() => setShowShareMenu(false)} />
                   <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl border border-stone-200 shadow-lg z-50 overflow-hidden">
                     <div className="p-3 border-b border-stone-100">
-                      <p className="text-sm font-medium text-stone-800">Share Calendar</p>
+                      <p className="text-sm font-medium text-stone-800">Add to Your Calendar</p>
                       <p className="text-xs text-stone-500 mt-0.5">
-                        Subscribe from any calendar app
+                        Stays sync automatically to your phone
                       </p>
                     </div>
                     <div className="p-2 space-y-1">
+                      <a
+                        href={webcalUrl}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-stone-50 transition-colors"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center">
+                          <CalendarDays size={16} className="text-stone-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-stone-800">
+                            Apple Calendar
+                          </p>
+                          <p className="text-xs text-stone-400">iPhone, iPad, Mac</p>
+                        </div>
+                        <ExternalLink size={14} className="text-stone-300 ml-auto" />
+                      </a>
                       <a
                         href={googleSubscribeUrl}
                         target="_blank"
@@ -263,14 +280,32 @@ export default function CalendarPage() {
                         </div>
                         <div>
                           <p className="text-sm font-medium text-stone-800">
-                            Add to Google Calendar
+                            Google Calendar
                           </p>
-                          <p className="text-xs text-stone-400">Subscribe to live feed</p>
+                          <p className="text-xs text-stone-400">Gmail, Android</p>
                         </div>
                         <ExternalLink size={14} className="text-stone-300 ml-auto" />
                       </a>
                       <a
-                        href="/api/calendar"
+                        href={outlookSubscribeUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-stone-50 transition-colors"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-sky-100 flex items-center justify-center">
+                          <CalendarDays size={16} className="text-sky-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-stone-800">
+                            Outlook
+                          </p>
+                          <p className="text-xs text-stone-400">Outlook.com, Microsoft 365</p>
+                        </div>
+                        <ExternalLink size={14} className="text-stone-300 ml-auto" />
+                      </a>
+                      <div className="border-t border-stone-100 my-1" />
+                      <a
+                        href="/api/calendar?download=true"
                         download="breadloaf-hill.ics"
                         className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-stone-50 transition-colors"
                       >
@@ -281,7 +316,7 @@ export default function CalendarPage() {
                           <p className="text-sm font-medium text-stone-800">
                             Download .ics file
                           </p>
-                          <p className="text-xs text-stone-400">Apple Calendar, Outlook, etc.</p>
+                          <p className="text-xs text-stone-400">One-time import to any app</p>
                         </div>
                       </a>
                       <button
@@ -298,7 +333,7 @@ export default function CalendarPage() {
                           <p className="text-sm font-medium text-stone-800">
                             Copy feed URL
                           </p>
-                          <p className="text-xs text-stone-400">For any calendar app</p>
+                          <p className="text-xs text-stone-400">Paste into any calendar app</p>
                         </div>
                       </button>
                     </div>
