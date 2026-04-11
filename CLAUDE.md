@@ -26,7 +26,7 @@ Family hub website for the Craig family property at 3995 Vermont Route 125, Ript
 - `DATABASE_URL` — PostgreSQL connection (references Postgres service)
 - `GOOGLE_AI_API_KEY` — Gemini API key
 - `GOOGLE_SERVICE_ACCOUNT_KEY` — Full JSON key for calendar service account
-- `GOOGLE_CALENDAR_ID` — Google Calendar ID (tomgilcraig@gmail.com)
+- `GOOGLE_CALENDAR_ID` — Google Calendar ID (Breadloaf Hill Stays calendar on breadloafhillsite@gmail.com)
 - `FAMILY_PINS` — Per-family auth PINs (format: `Tom:1234,Jim:5678,Sandy:9012,Greg:3456`)
 
 ## Local Development
@@ -102,7 +102,8 @@ src/lib/
 - **11 rooms total:** 4 bedrooms (private bath), Wedge Room, Upper/Lower Annex, Loft, Woods Cabin (compost toilet), Tents, Off-site
 - **Bed types:** Greg/Tom/Jim: queen, Sandy: king, all others: twin
 - **Address:** 3995 Vermont Route 125, Ripton, VT
-- **Google Calendar:** Shared via service account breadloaf-hill@reader-7c045.iam.gserviceaccount.com
+- **Google Calendar:** Dedicated "Breadloaf Hill Stays" calendar on breadloafhillsite@gmail.com, shared with service account breadloaf-hill@reader-7c045.iam.gserviceaccount.com
+- **Calendar ID:** aeb2b22ddb5d4bdce900c64d50a01ae870fc57824dc53d8b4dcb118618dd307c@group.calendar.google.com
 - **Photo album:** iCloud shared album (847 photos)
 
 ## Deployment Details
