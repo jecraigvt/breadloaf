@@ -87,10 +87,13 @@ function LoginContent() {
         setFamily(data.family);
         // Set username in localStorage
         localStorage.setItem("breadloaf-username", data.family);
-        // Brief pause to show welcome, then redirect
+        // Brief pause to show welcome, then hard-redirect so the browser
+        // sends the fresh auth cookie on a full page load (soft navigation
+        // via router.replace can stall inside the RSC request).
+        const dest = searchParams.get("from") || "/";
         setTimeout(() => {
-          router.replace(searchParams.get("from") || "/");
-        }, 800);
+          window.location.assign(dest);
+        }, 600);
       } else {
         setError("Invalid PIN");
         setPin(["", "", "", ""]);
