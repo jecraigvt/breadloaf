@@ -1,17 +1,31 @@
 import type { Metadata, Viewport } from "next";
-import localFont from "next/font/local";
+import { Instrument_Serif, Instrument_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { NavBar } from "@/components/layout/nav-bar";
 
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
-  weight: "100 900",
+const instrumentSerif = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  style: ["normal", "italic"],
+  variable: "--font-instrument-serif",
+  display: "swap",
+});
+
+const instrumentSans = Instrument_Sans({
+  subsets: ["latin"],
+  variable: "--font-instrument-sans",
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-jetbrains-mono",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
   title: "Breadloaf Hill | Family Hub",
-  description: "The family hub for Breadloaf Hill — your Vermont property home base for documents, photos, smart home, and more.",
+  description: "A family record of the house at 3995 Vermont Route 125 — Ripton, Addison County.",
   manifest: "/manifest.json",
 };
 
@@ -20,7 +34,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#2d5a27",
+  themeColor: "#1c1a17",
 };
 
 export default function RootLayout({
@@ -30,11 +44,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} antialiased`}>
-        <main className="min-h-screen pb-20">
-          {children}
-        </main>
-        <NavBar />
+      <body
+        className={`${instrumentSerif.variable} ${instrumentSans.variable} ${jetbrainsMono.variable} antialiased`}
+      >
+        <div className="stage">
+          <div className="shell">
+            {children}
+            <NavBar />
+          </div>
+        </div>
       </body>
     </html>
   );

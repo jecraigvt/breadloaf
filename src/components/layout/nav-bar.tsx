@@ -2,70 +2,80 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  Home,
-  CalendarDays,
-  Camera,
-  BedDouble,
-  FolderOpen,
-} from "lucide-react";
 
 const navItems = [
-  { href: "/", icon: Home, label: "Home" },
-  { href: "/calendar", icon: CalendarDays, label: "Calendar" },
-  { href: "/upload", icon: Camera, label: "Scan" },
-  { href: "/stays", icon: BedDouble, label: "Rooms" },
-  { href: "/documents", icon: FolderOpen, label: "Archive" },
+  {
+    href: "/",
+    label: "Hub",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M3 11l9-8 9 8v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" />
+      </svg>
+    ),
+  },
+  {
+    href: "/calendar",
+    label: "Dates",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <rect x="3" y="5" width="18" height="16" rx="1" />
+        <path d="M8 3v4M16 3v4M3 10h18" />
+      </svg>
+    ),
+  },
+  {
+    href: "/stays",
+    label: "Rooms",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M3 18v-6a3 3 0 0 1 3-3h15v9M3 15h18M7 13h4" />
+      </svg>
+    ),
+  },
+  {
+    href: "/guide",
+    label: "Guide",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z" />
+        <path d="M9 3v18M15 6v18" />
+      </svg>
+    ),
+  },
+  {
+    href: "/bulletin",
+    label: "Board",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M4 4h12a3 3 0 0 1 3 3v14H7a3 3 0 0 1-3-3z" />
+        <path d="M4 18a3 3 0 0 1 3-3h12" />
+      </svg>
+    ),
+  },
 ];
 
 export function NavBar() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 glass border-t border-stone-200/80 z-50">
-      <div className="flex items-center justify-around max-w-lg mx-auto">
-        {navItems.map((item) => {
-          const isActive =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href);
-          const Icon = item.icon;
-          const isScan = item.href === "/upload";
+    <nav className="nav-bottom">
+      {navItems.map((item) => {
+        const isActive =
+          item.href === "/"
+            ? pathname === "/"
+            : pathname.startsWith(item.href);
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex flex-col items-center py-2 px-3 text-xs transition-all ${
-                isScan ? "relative -top-3" : ""
-              } ${
-                isActive
-                  ? "text-green-700"
-                  : "text-stone-400 hover:text-stone-600"
-              }`}
-            >
-              {isScan ? (
-                <span className={`flex items-center justify-center w-14 h-14 rounded-full shadow-lg mb-1 transition-all ${
-                  isActive
-                    ? "bg-green-700 text-white scale-105"
-                    : "bg-green-700 text-white hover:bg-green-600"
-                }`}>
-                  <Icon size={24} />
-                </span>
-              ) : (
-                <span className={`mb-1 transition-transform ${isActive ? "scale-110" : ""}`}>
-                  <Icon size={22} />
-                </span>
-              )}
-              <span className={`transition-all ${
-                isActive ? "font-semibold" : ""
-              } ${isScan ? "text-green-700 font-medium" : ""}`}>
-                {item.label}
-              </span>
-            </Link>
-          );
-        })}
-      </div>
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={`nav-item ${isActive ? "active" : ""}`}
+          >
+            {item.icon}
+            <span>{item.label}</span>
+          </Link>
+        );
+      })}
     </nav>
   );
 }
