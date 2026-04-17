@@ -5,7 +5,8 @@ Family hub website for the Craig family property at 3995 Vermont Route 125, Ript
 
 ## Tech Stack
 - **Framework:** Next.js 14, React 18, TypeScript
-- **Styling:** Tailwind CSS 3.4, mobile-first design
+- **Styling:** Tailwind CSS 3.4 + editorial design system (see Design System below)
+- **Fonts:** Instrument Serif (italic display), Instrument Sans (body), JetBrains Mono (labels) via `next/font/google`
 - **Database:** PostgreSQL (Railway), Prisma ORM
 - **AI:** Google Gemini 3 Flash (document categorization, property assistant)
 - **Calendar:** Two-way sync with Google Calendar via service account
@@ -13,6 +14,25 @@ Family hub website for the Craig family property at 3995 Vermont Route 125, Ript
 - **Hosting:** Railway (hobby plan)
 - **Domain:** breadloafhill.com via Namecheap (CNAME → Railway)
 - **Photos:** iCloud shared album (external link)
+
+## Design System — Editorial Cabin-Catalog
+The app uses a "family magazine" editorial style — warm paper tones, italic serif display type, mono-caps eyebrow labels, and Roman-numeral section numbering (I–XIV).
+
+- **Shell frame:** every route renders inside `.stage > .shell` (see `src/app/layout.tsx`). On mobile the shell fills the viewport; on desktop (≥900px) it's a 440px-wide "phone frame" centered on a dark `--deep` stage with a drop shadow.
+- **Bottom nav lives INSIDE the shell** (`src/components/layout/nav-bar.tsx`) using `position: sticky; bottom: 0`. Five items: Hub / Dates / Rooms / Guide / Board. The active item has an ember-colored top underline.
+- **Design tokens** (CSS variables in `src/app/globals.css`): `--paper` `#f5efe4`, `--paper-2` `#ede5d3`, `--deep` `#1c1a17`, `--ink` `#2a2520`, `--muted` `#6a6055`, plus `--pine`/`--pine-deep` (greens) and `--ember`/`--ember-deep` (oranges) in oklch. Type vars: `--serif`, `--sans`, `--mono`.
+- **Component classes** (in globals.css, use these on any page you redesign):
+  - `.chrome-top` — sticky top bar with wordmark + mono-caps meta
+  - `.masthead` — full-bleed photo hero with scrim, chapter tag, big serif title, pager dashes (see `src/components/layout/masthead.tsx`)
+  - `.colophon` — 3-column stat strip
+  - `.chapter-intro` — editorial lede with mono-caps number + large serif italic emphasis
+  - `.section-head` — section title left (serif italic) + right-side mono caption
+  - `.tiles` / `.tile` / `.tile-text` — the 2-col hub grid with `FIG. NN` badges
+  - `.note` / `.note.pinned` — bulletin board entries with serif body
+  - `.stay` / `.room` / `.cal-*` / `.wx-*` / `.entry` — page-specific components (calendar, rooms, weather, guide), defined but not all pages ported yet
+  - `.pull-quote`, `.strip`, `.footer-colophon` — supporting pieces
+- **Legacy utilities** (card-hover, hub-card-*, animate-fade-in-up, glass, etc.) are preserved in globals.css so sub-pages that haven't been ported yet keep working.
+- **Not yet ported** to the editorial system: calendar, stays, guide, weather, bulletin, and all inner pages still use the original Tailwind styling. The CSS classes exist — when redesigning a page, swap Tailwind card/layout markup for the editorial classes. Full reference designs for these pages live in `.design-handoff/project/pages.jsx` (locally, not checked in).
 
 ## Key Architecture Decisions
 - Server components for data-fetching pages (homepage), client components for interactive pages
@@ -82,9 +102,9 @@ src/app/
 
 src/components/
   layout/
-    hero-banner.tsx     # Rotating photo hero (5 images, 8s interval)
-    nav-bar.tsx         # Bottom navigation (Home, Calendar, Scan, Rooms, Archive)
-    header.tsx          # Page header with back-to-home link
+    masthead.tsx        # Editorial rotating photo masthead (5 images, 6s interval, pager dashes)
+    nav-bar.tsx         # Editorial bottom nav (Hub, Dates, Rooms, Guide, Board) — sits inside .shell
+    header.tsx          # Page header with back-to-home link (used by un-ported pages)
   upload/
     camera-capture.tsx  # Camera interface for document scanning
     file-dropzone.tsx   # Drag-and-drop file upload (images, PDF, Word, Excel, CSV)
@@ -124,6 +144,7 @@ src/lib/
 
 ## Conventions
 - PIN auth via FAMILY_PINS env var; middleware skips auth when env var is unset (local dev)
+- After a successful PIN login, the login page hard-redirects with `window.location.assign(dest)` rather than `router.replace` — a soft Next client-router nav fired right after `Set-Cookie` can stall inside the RSC request and strand the user on the welcome spinner. See `src/app/login/page.tsx`.
 - S-Corp with 4 equal shareholders (Tom, Jim, Sandy, Greg Craig) — expenses split 25% each
 
 ## Future Roadmap

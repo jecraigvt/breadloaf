@@ -43,3 +43,6 @@ next-env.d.ts
 /screenshot-*.png
 /hero-*.png
 service-account-key.json
+
+# Claude Design handoff bundles (local reference only)
+/.design-handoff
