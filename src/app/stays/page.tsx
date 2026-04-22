@@ -23,7 +23,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { RoomWithStays } from "@/types";
-import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isToday, isWithinInterval, startOfDay } from "date-fns";
+import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isToday, startOfDay } from "date-fns";
 
 const roomTypeIcons: Record<string, typeof Home> = {
   bedroom: BedDouble,
@@ -66,6 +66,17 @@ const bedInfo: Record<string, string> = {
   "loft": "Twin beds",
   "woods-cabin": "Twin beds",
 };
+
+function isStayActiveOnDay(
+  stay: { checkIn: string | Date; checkOut: string | Date },
+  day: Date
+): boolean {
+  const checkIn = startOfDay(new Date(stay.checkIn));
+  const checkOut = startOfDay(new Date(stay.checkOut));
+  const currentDay = startOfDay(day);
+
+  return currentDay >= checkIn && currentDay < checkOut;
+}
 
 export default function StaysPage() {
   const [rooms, setRooms] = useState<RoomWithStays[]>([]);
@@ -158,11 +169,7 @@ export default function StaysPage() {
   );
 
   const getStaysForDay = (day: Date) =>
-    allStays.filter((stay) => {
-      const ci = startOfDay(new Date(stay.checkIn));
-      const co = startOfDay(new Date(stay.checkOut));
-      return isWithinInterval(startOfDay(day), { start: ci, end: co });
-    });
+    allStays.filter((stay) => isStayActiveOnDay(stay, day));
 
   // Room capacity calculations
   const totalCapacity = rooms
@@ -200,8 +207,7 @@ export default function StaysPage() {
           <div className="bg-white rounded-xl border border-stone-200 p-4 text-center">
             <p className="text-2xl font-bold text-stone-800">
               {allStays.filter((s) => {
-                const co = new Date(s.checkOut);
-                return co >= new Date();
+                return startOfDay(new Date(s.checkOut)) > startOfDay(new Date());
               }).length}
             </p>
             <p className="text-xs text-stone-500">Upcoming stays</p>
@@ -429,7 +435,7 @@ export default function StaysPage() {
               const colorClass = roomTypeColors[room.type] || roomTypeColors.bedroom;
               const bed = bedInfo[room.slug];
               const upcomingStays = room.stays.filter(
-                (s) => new Date(s.checkOut) >= new Date()
+                (s) => startOfDay(new Date(s.checkOut)) > startOfDay(new Date())
               );
               const isExpanded = selectedRoom === room.id;
 

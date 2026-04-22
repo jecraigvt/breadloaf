@@ -26,9 +26,7 @@ import {
   endOfMonth,
   eachDayOfInterval,
   isToday,
-  isWithinInterval,
   isBefore,
-  isAfter,
   startOfDay,
   differenceInDays,
   addDays,
@@ -58,6 +56,17 @@ interface StayWithRoom extends StayType {
   roomType: string;
 }
 
+function isStayActiveOnDay(
+  stay: Pick<StayType, "checkIn" | "checkOut">,
+  day: Date
+): boolean {
+  const checkIn = startOfDay(new Date(stay.checkIn));
+  const checkOut = startOfDay(new Date(stay.checkOut));
+  const currentDay = startOfDay(day);
+
+  return currentDay >= checkIn && currentDay < checkOut;
+}
+
 export default function CalendarPage() {
   const [rooms, setRooms] = useState<RoomWithStays[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,6 +75,7 @@ export default function CalendarPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
   const [view, setView] = useState<"month" | "list">("month");
+  const [feedToken, setFeedToken] = useState<string | null>(null);
 
   // Form state
   const [guestName, setGuestName] = useState("");
@@ -93,6 +103,16 @@ export default function CalendarPage() {
     fetchRooms(true);
   }, [fetchRooms]);
 
+  useEffect(() => {
+    fetch("/api/calendar/token")
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json()) as { token?: string };
+      })
+      .then((data) => setFeedToken(data?.token || null))
+      .catch(() => setFeedToken(null));
+  }, []);
+
   // All stays flattened with room info
   const allStays: StayWithRoom[] = rooms.flatMap((room) =>
     room.stays.map((stay) => ({
@@ -104,14 +124,10 @@ export default function CalendarPage() {
   );
 
   const getStaysForDay = (day: Date) =>
-    allStays.filter((stay) => {
-      const ci = startOfDay(new Date(stay.checkIn));
-      const co = startOfDay(new Date(stay.checkOut));
-      return isWithinInterval(startOfDay(day), { start: ci, end: co });
-    });
+    allStays.filter((stay) => isStayActiveOnDay(stay, day));
 
   const upcomingStays = allStays
-    .filter((s) => isAfter(new Date(s.checkOut), new Date()))
+    .filter((stay) => startOfDay(new Date(stay.checkOut)) > startOfDay(new Date()))
     .sort((a, b) => new Date(a.checkIn).getTime() - new Date(b.checkIn).getTime());
 
   // Calendar grid
@@ -184,13 +200,22 @@ export default function CalendarPage() {
     return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${startDate}/${endDate}&details=${details}&location=${location}`;
   };
 
-  const feedUrl = typeof window !== "undefined"
-    ? `${window.location.origin}/api/calendar`
+  const encodedFeedToken = feedToken ? encodeURIComponent(feedToken) : null;
+  const calendarFeedPath = encodedFeedToken
+    ? `/api/calendar?token=${encodedFeedToken}`
     : "/api/calendar";
+  const downloadPath = encodedFeedToken
+    ? `/api/calendar?token=${encodedFeedToken}&download=true`
+    : "/api/calendar?download=true";
+  const feedUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}${calendarFeedPath}`
+      : calendarFeedPath;
 
   const webcalUrl = feedUrl.replace("https://", "webcal://").replace("http://", "webcal://");
   const googleSubscribeUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalUrl)}`;
   const outlookSubscribeUrl = `https://outlook.live.com/calendar/0/addfromweb?url=${encodeURIComponent(feedUrl)}&name=${encodeURIComponent("Breadloaf Hill Visits")}`;
+  const secureFeedReady = Boolean(feedToken);
 
   if (loading) {
     return (
@@ -250,62 +275,70 @@ export default function CalendarPage() {
                     <div className="p-3 border-b border-stone-100">
                       <p className="text-sm font-medium text-stone-800">Add to Your Calendar</p>
                       <p className="text-xs text-stone-500 mt-0.5">
-                        Stays sync automatically to your phone
+                        Private feed links for Apple, Google, and Outlook
                       </p>
                     </div>
                     <div className="p-2 space-y-1">
-                      <a
-                        href={webcalUrl}
-                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-stone-50 transition-colors"
-                      >
-                        <div className="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center">
-                          <CalendarDays size={16} className="text-stone-600" />
+                      {secureFeedReady ? (
+                        <>
+                          <a
+                            href={webcalUrl}
+                            className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-stone-50 transition-colors"
+                          >
+                            <div className="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center">
+                              <CalendarDays size={16} className="text-stone-600" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-stone-800">
+                                Apple Calendar
+                              </p>
+                              <p className="text-xs text-stone-400">iPhone, iPad, Mac</p>
+                            </div>
+                            <ExternalLink size={14} className="text-stone-300 ml-auto" />
+                          </a>
+                          <a
+                            href={googleSubscribeUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-stone-50 transition-colors"
+                          >
+                            <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                              <CalendarDays size={16} className="text-blue-600" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-stone-800">
+                                Google Calendar
+                              </p>
+                              <p className="text-xs text-stone-400">Gmail, Android</p>
+                            </div>
+                            <ExternalLink size={14} className="text-stone-300 ml-auto" />
+                          </a>
+                          <a
+                            href={outlookSubscribeUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-stone-50 transition-colors"
+                          >
+                            <div className="w-8 h-8 rounded-lg bg-sky-100 flex items-center justify-center">
+                              <CalendarDays size={16} className="text-sky-600" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-stone-800">
+                                Outlook
+                              </p>
+                              <p className="text-xs text-stone-400">Outlook.com, Microsoft 365</p>
+                            </div>
+                            <ExternalLink size={14} className="text-stone-300 ml-auto" />
+                          </a>
+                        </>
+                      ) : (
+                        <div className="px-3 py-2.5 text-xs text-stone-400">
+                          Preparing secure calendar links...
                         </div>
-                        <div>
-                          <p className="text-sm font-medium text-stone-800">
-                            Apple Calendar
-                          </p>
-                          <p className="text-xs text-stone-400">iPhone, iPad, Mac</p>
-                        </div>
-                        <ExternalLink size={14} className="text-stone-300 ml-auto" />
-                      </a>
-                      <a
-                        href={googleSubscribeUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-stone-50 transition-colors"
-                      >
-                        <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
-                          <CalendarDays size={16} className="text-blue-600" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-stone-800">
-                            Google Calendar
-                          </p>
-                          <p className="text-xs text-stone-400">Gmail, Android</p>
-                        </div>
-                        <ExternalLink size={14} className="text-stone-300 ml-auto" />
-                      </a>
-                      <a
-                        href={outlookSubscribeUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-stone-50 transition-colors"
-                      >
-                        <div className="w-8 h-8 rounded-lg bg-sky-100 flex items-center justify-center">
-                          <CalendarDays size={16} className="text-sky-600" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-stone-800">
-                            Outlook
-                          </p>
-                          <p className="text-xs text-stone-400">Outlook.com, Microsoft 365</p>
-                        </div>
-                        <ExternalLink size={14} className="text-stone-300 ml-auto" />
-                      </a>
+                      )}
                       <div className="border-t border-stone-100 my-1" />
                       <a
-                        href="/api/calendar?download=true"
+                        href={downloadPath}
                         download="breadloaf-hill.ics"
                         className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-stone-50 transition-colors"
                       >
@@ -321,10 +354,12 @@ export default function CalendarPage() {
                       </a>
                       <button
                         onClick={() => {
+                          if (!secureFeedReady) return;
                           navigator.clipboard.writeText(feedUrl);
                           setShowShareMenu(false);
                         }}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-stone-50 transition-colors"
+                        disabled={!secureFeedReady}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-stone-50 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center">
                           <Share2 size={16} className="text-purple-600" />

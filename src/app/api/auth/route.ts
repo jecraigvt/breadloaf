@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-
-function getFamilyPins(): Record<string, string> {
-  const raw = process.env.FAMILY_PINS || "";
-  const pins: Record<string, string> = {};
-  for (const entry of raw.split(",")) {
-    const [name, pin] = entry.split(":").map((s) => s.trim());
-    if (name && pin) pins[pin] = name;
-  }
-  return pins;
-}
+import {
+  createAuthToken,
+  getAuthCookieName,
+  getFamilyFromAuthToken,
+  getFamilyPins,
+} from "@/lib/auth";
 
 // POST — Login: validate PIN, set cookie
 export async function POST(request: NextRequest) {
@@ -27,10 +23,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Create a token: base64(family:pin)
-    const token = btoa(`${family}:${pin}`);
+    const token = createAuthToken(family, String(pin));
 
     const response = NextResponse.json({ family });
-    response.cookies.set("breadloaf_auth", token, {
+    response.cookies.set(getAuthCookieName(), token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
@@ -46,22 +42,12 @@ export async function POST(request: NextRequest) {
 
 // GET — Check auth status
 export async function GET(request: NextRequest) {
-  const token = request.cookies.get("breadloaf_auth")?.value;
+  const family = getFamilyFromAuthToken(
+    request.cookies.get(getAuthCookieName())?.value
+  );
 
-  if (!token) {
-    return NextResponse.json({ authenticated: false }, { status: 401 });
-  }
-
-  try {
-    const decoded = atob(token);
-    const [family, pin] = decoded.split(":");
-
-    const pinMap = getFamilyPins();
-    if (pinMap[pin] === family) {
-      return NextResponse.json({ authenticated: true, family });
-    }
-  } catch {
-    // Invalid token
+  if (family) {
+    return NextResponse.json({ authenticated: true, family });
   }
 
   return NextResponse.json({ authenticated: false }, { status: 401 });
@@ -70,7 +56,7 @@ export async function GET(request: NextRequest) {
 // DELETE — Logout
 export async function DELETE() {
   const response = NextResponse.json({ success: true });
-  response.cookies.set("breadloaf_auth", "", {
+  response.cookies.set(getAuthCookieName(), "", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",

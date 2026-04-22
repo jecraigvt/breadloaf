@@ -45,15 +45,13 @@ export async function GET(request: NextRequest) {
       .filter(Boolean)
       .join("\\n");
 
-    // iCal DTEND for all-day events is exclusive (day after last day)
-    const checkOutDate = new Date(stay.checkOut);
-    checkOutDate.setDate(checkOutDate.getDate() + 1);
-
     lines.push(
       "BEGIN:VEVENT",
       `UID:stay-${stay.id}@breadloafhill.com`,
       `DTSTART;VALUE=DATE:${new Date(stay.checkIn).toISOString().slice(0, 10).replace(/-/g, "")}`,
-      `DTEND;VALUE=DATE:${checkOutDate.toISOString().slice(0, 10).replace(/-/g, "")}`,
+      // The local stay model stores the departure date, which maps directly
+      // to the exclusive DTEND value for all-day events.
+      `DTEND;VALUE=DATE:${new Date(stay.checkOut).toISOString().slice(0, 10).replace(/-/g, "")}`,
       `SUMMARY:${escapeICalText(summary)}`,
       `DESCRIPTION:${escapeICalText(description)}`,
       "LOCATION:Breadloaf Hill\\, Vermont",

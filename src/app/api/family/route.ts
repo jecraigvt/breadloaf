@@ -22,7 +22,17 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, email, phone, birthday, branch, relation, notes } = body;
+    const {
+      name,
+      email,
+      phone,
+      birthday,
+      branch,
+      relation,
+      boardRole,
+      isBoardMember,
+      notes,
+    } = body;
 
     if (!name?.trim()) {
       return NextResponse.json(
@@ -39,6 +49,8 @@ export async function POST(request: NextRequest) {
         birthday: birthday?.trim() || null,
         branch: branch?.trim() || null,
         relation: relation?.trim() || null,
+        boardRole: boardRole?.trim() || null,
+        isBoardMember: Boolean(isBoardMember),
         notes: notes?.trim() || null,
       },
     });

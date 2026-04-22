@@ -12,6 +12,11 @@ export async function PATCH(
   try {
     const data = await request.json();
     const updateData: Record<string, unknown> = {};
+    const currentStay = await prisma.stay.findUnique({ where: { id: params.id } });
+
+    if (!currentStay) {
+      return NextResponse.json({ error: "Stay not found" }, { status: 404 });
+    }
 
     if (data.guestName !== undefined) updateData.guestName = data.guestName.trim();
     if (data.roomId !== undefined) updateData.roomId = data.roomId || null;
@@ -19,6 +24,15 @@ export async function PATCH(
     if (data.checkOut !== undefined) updateData.checkOut = new Date(data.checkOut);
     if (data.notes !== undefined) updateData.notes = data.notes?.trim() || null;
     if (data.status !== undefined) updateData.status = data.status;
+
+    const nextCheckIn = (updateData.checkIn as Date | undefined) ?? currentStay.checkIn;
+    const nextCheckOut = (updateData.checkOut as Date | undefined) ?? currentStay.checkOut;
+    if (nextCheckOut <= nextCheckIn) {
+      return NextResponse.json(
+        { error: "Check-out must be after check-in" },
+        { status: 400 }
+      );
+    }
 
     const stay = await prisma.stay.update({
       where: { id: params.id },

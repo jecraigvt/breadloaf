@@ -28,10 +28,35 @@ export default function DocumentDetailPage() {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     fetch(`/api/documents/${params.id}`)
-      .then((r) => r.json())
-      .then(setDoc)
-      .finally(() => setLoading(false));
+      .then(async (response) => {
+        if (!response.ok) {
+          return null;
+        }
+
+        return (await response.json()) as DocumentWithCategory;
+      })
+      .then((document) => {
+        if (!cancelled) {
+          setDoc(document);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDoc(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [params.id]);
 
   const handleDelete = async () => {

@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
   const where: Record<string, unknown> = {};
   if (from || to) {
-    where.checkOut = from ? { gte: new Date(from) } : undefined;
+    where.checkOut = from ? { gt: new Date(from) } : undefined;
     where.checkIn = to ? { lte: new Date(to) } : undefined;
   }
 
@@ -75,12 +75,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const checkInDate = new Date(checkIn);
+    const checkOutDate = new Date(checkOut);
+
+    if (checkOutDate <= checkInDate) {
+      return NextResponse.json(
+        { error: "Check-out must be after check-in" },
+        { status: 400 }
+      );
+    }
+
     const stay = await prisma.stay.create({
       data: {
         guestName: guestName.trim(),
         roomId: roomId || null,
-        checkIn: new Date(checkIn),
-        checkOut: new Date(checkOut),
+        checkIn: checkInDate,
+        checkOut: checkOutDate,
         notes: notes?.trim() || null,
         status: status || "confirmed",
       },

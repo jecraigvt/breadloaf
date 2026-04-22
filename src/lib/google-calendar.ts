@@ -58,6 +58,7 @@ export async function createCalendarEvent(stay: {
           date: formatDateOnly(stay.checkIn),
         },
         end: {
+          // Google all-day events use an exclusive end date.
           date: formatDateOnly(stay.checkOut),
         },
         transparency: "transparent",
@@ -113,6 +114,7 @@ export async function updateCalendarEvent(
           date: formatDateOnly(stay.checkIn),
         },
         end: {
+          // Google all-day events use an exclusive end date.
           date: formatDateOnly(stay.checkOut),
         },
       },
@@ -160,22 +162,31 @@ export async function syncFromGoogleCalendar(): Promise<{
   const stats = { created: 0, updated: 0, deleted: 0 };
 
   try {
-    // Fetch upcoming events from Google Calendar
+    // Fetch upcoming events from Google Calendar, following pagination so
+    // we never delete local stays based on a partial event list.
     const calId = getCalendarId();
     console.log(`[Calendar Sync] Syncing from calendar: ${calId}`);
     const now = new Date();
     const threeMonthsAgo = new Date(now);
     threeMonthsAgo.setMonth(now.getMonth() - 3);
 
-    const response = await calendar.events.list({
-      calendarId: getCalendarId(),
-      timeMin: threeMonthsAgo.toISOString(),
-      maxResults: 250,
-      singleEvents: true,
-      orderBy: "startTime",
-    });
+    const events: calendar_v3.Schema$Event[] = [];
+    let nextPageToken: string | undefined;
 
-    const events = response.data.items || [];
+    do {
+      const response = await calendar.events.list({
+        calendarId: getCalendarId(),
+        timeMin: threeMonthsAgo.toISOString(),
+        maxResults: 250,
+        pageToken: nextPageToken,
+        singleEvents: true,
+        orderBy: "startTime",
+      });
+
+      events.push(...(response.data.items || []));
+      nextPageToken = response.data.nextPageToken || undefined;
+    } while (nextPageToken);
+
     console.log(`[Calendar Sync] Fetched ${events.length} events from Google Calendar`);
     for (const e of events.slice(0, 5)) {
       console.log(`[Calendar Sync] Event: "${e.summary}" | ${e.start?.date || e.start?.dateTime} - ${e.end?.date || e.end?.dateTime} | ID: ${e.id}`);
@@ -194,14 +205,18 @@ export async function syncFromGoogleCalendar(): Promise<{
         : event.start?.dateTime
         ? new Date(event.start.dateTime)
         : null;
-      // Google Calendar all-day event end dates are exclusive (day after last day)
-      // Subtract 1 day so a single-day event shows as 1 day, not 2
+      // Google Calendar all-day event end dates are exclusive, which matches
+      // the local stay model's departure-date semantics.
       let checkOut: Date | null = null;
       if (event.end?.date) {
         const endDate = new Date(event.end.date + "T00:00:00");
-        endDate.setDate(endDate.getDate() - 1);
-        // If single-day event, checkOut = checkIn
-        checkOut = endDate < checkIn! ? checkIn : endDate;
+        if (endDate <= checkIn!) {
+          const normalizedEnd = new Date(checkIn!);
+          normalizedEnd.setDate(normalizedEnd.getDate() + 1);
+          checkOut = normalizedEnd;
+        } else {
+          checkOut = endDate;
+        }
       } else if (event.end?.dateTime) {
         checkOut = new Date(event.end.dateTime);
       }
