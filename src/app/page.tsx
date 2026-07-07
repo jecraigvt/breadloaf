@@ -68,6 +68,8 @@ const HUB_TEXT: TextTile[] = [
   { lbl: "XII",     big: <>The <em>Family</em></>,                sub: "Directory, by branch",   href: "/family" },
   { lbl: "XIII",    big: <><em>Maintenance</em></>,               sub: "Service log",            href: "/maintenance" },
   { lbl: "XIV",     big: <>Emergency</>,                          sub: "Contacts · tap to call", href: "/emergency" },
+  { lbl: "XV",      big: <>The <em>Archive</em></>,               sub: "Documents · auto-filed", href: "/documents" },
+  { lbl: "XVI",     big: <>Add <em>Docs</em></>,                  sub: "Drop files · they file themselves", href: "/upload" },
 ];
 
 const PHOTO_STRIP = [
@@ -171,7 +173,7 @@ export default async function HomePage() {
       {/* Index / hub */}
       <div className="section-head">
         <div className="lt">The <em>Hub</em></div>
-        <div className="rt">Index · Sections I – XIV</div>
+        <div className="rt">Index · Sections I – XVI</div>
       </div>
 
       <div className="tiles">

@@ -226,6 +226,12 @@ export default function DocumentsPage() {
             {documents.length} document{documents.length !== 1 ? "s" : ""}
           </span>
           <div className="flex items-center gap-1">
+            <Link
+              href="/upload"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-white bg-green-700 hover:bg-green-800 transition-colors"
+            >
+              + Add
+            </Link>
             <button
               onClick={runLibrarian}
               disabled={librarianState !== "idle"}
