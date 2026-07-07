@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { categorizeDocument, processMediaFile } from "@/lib/ai";
+import { categorizeDocument, categorizeText, processMediaFile } from "@/lib/ai";
+import { extractTextFromFile, isExtractableType } from "@/lib/extract-text";
 import { resolveDocumentCategory } from "@/lib/document-categories";
 import { prisma } from "@/lib/prisma";
 import { readFile } from "fs/promises";
@@ -51,8 +52,16 @@ export async function POST(request: NextRequest) {
     } else if (fileType.startsWith("image/") || fileType === "application/pdf") {
       // Gemini reads images and PDFs natively
       result = await categorizeDocument(base64, fileType, categories);
-    } else {
-      // Word/Excel and other binary formats — manual categorization for now
+    } else if (isExtractableType(fileType)) {
+      // Word/Excel/CSV/TXT — extract text server-side, then categorize
+      const extracted = await extractTextFromFile(buffer, fileType);
+      if (extracted?.trim()) {
+        result = await categorizeText(extracted, path.basename(filePath), categories);
+      }
+    }
+
+    if (!result) {
+      // Unsupported format or empty extraction — manual categorization
       return NextResponse.json({
         suggestedCategory: "",
         title: path.basename(filePath),

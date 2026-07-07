@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Header } from "@/components/layout/header";
-import { Search, Grid, List, FolderOpen, Tag, Calendar } from "lucide-react";
+import { Search, Grid, List, FolderOpen, Tag, Calendar, Sparkles, Loader2, X, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import type { DocumentWithCategory } from "@/types";
 import { formatDate } from "@/lib/utils";
@@ -29,6 +29,17 @@ interface Category {
   color: string | null;
   _count: { documents: number };
 }
+
+interface LibrarianPlan {
+  newCategories: { name: string; description: string; reason: string }[];
+  renames: { slug: string; newName: string; newDescription: string; reason: string }[];
+  merges: { fromSlug: string; intoSlug: string; reason: string }[];
+  refiles: { documentId: string; intoName: string; reason: string }[];
+  summary: string;
+}
+
+const planIsEmpty = (p: LibrarianPlan) =>
+  p.newCategories.length + p.renames.length + p.merges.length + p.refiles.length === 0;
 
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentWithCategory[]>([]);
@@ -78,6 +89,58 @@ export default function DocumentsPage() {
       setUncategorizedCount(data.length);
     }
   };
+
+  // ─── Librarian ────────────────────────────────────────────────
+  const [librarianState, setLibrarianState] = useState<"idle" | "planning" | "reviewing" | "applying">("idle");
+  const [plan, setPlan] = useState<LibrarianPlan | null>(null);
+  const [librarianMessage, setLibrarianMessage] = useState<string | null>(null);
+
+  const runLibrarian = async () => {
+    setLibrarianState("planning");
+    setLibrarianMessage(null);
+    try {
+      const res = await fetch("/api/documents/librarian", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "plan" }),
+      });
+      if (!res.ok) throw new Error();
+      const p: LibrarianPlan = await res.json();
+      setPlan(p);
+      setLibrarianState("reviewing");
+    } catch {
+      setLibrarianMessage("The librarian hit a snag — try again in a minute.");
+      setLibrarianState("idle");
+    }
+  };
+
+  const applyPlan = async () => {
+    if (!plan) return;
+    setLibrarianState("applying");
+    try {
+      const res = await fetch("/api/documents/librarian", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "apply", plan }),
+      });
+      if (!res.ok) throw new Error();
+      const { applied } = await res.json();
+      setLibrarianMessage(
+        `Tidied up: ${applied.merges} merged, ${applied.renames} renamed, ${applied.newCategories} new, ${applied.refiles} re-filed.`
+      );
+      setPlan(null);
+      setLibrarianState("idle");
+      fetchDocuments();
+      fetchCategories();
+      fetchUncategorizedCount();
+    } catch {
+      setLibrarianMessage("Applying the plan failed — nothing may have changed. Try again.");
+      setLibrarianState("reviewing");
+    }
+  };
+
+  const categoryNameBySlug = (slug: string) =>
+    categories.find((c) => c.slug === slug)?.name || slug;
 
   const assignCategory = async (docId: string, categoryId: string) => {
     if (!categoryId) return;
@@ -157,12 +220,25 @@ export default function DocumentsPage() {
             ))}
         </div>
 
-        {/* View Toggle */}
+        {/* View Toggle + Librarian */}
         <div className="flex items-center justify-between">
           <span className="text-sm text-stone-500">
             {documents.length} document{documents.length !== 1 ? "s" : ""}
           </span>
-          <div className="flex gap-1">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={runLibrarian}
+              disabled={librarianState !== "idle"}
+              className="flex items-center gap-1.5 px-3 py-1.5 mr-1 rounded-lg text-sm text-purple-700 bg-purple-50 hover:bg-purple-100 disabled:opacity-50 transition-colors"
+              title="AI review of the filing system"
+            >
+              {librarianState === "planning" ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Sparkles size={14} />
+              )}
+              {librarianState === "planning" ? "Reviewing..." : "Tidy Up"}
+            </button>
             <button
               onClick={() => setViewMode("grid")}
               className={`p-2 rounded-lg ${viewMode === "grid" ? "bg-stone-200" : "hover:bg-stone-100"}`}
@@ -177,6 +253,130 @@ export default function DocumentsPage() {
             </button>
           </div>
         </div>
+
+        {librarianMessage && (
+          <div className="flex items-center justify-between bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 text-sm text-purple-800">
+            <span>{librarianMessage}</span>
+            <button onClick={() => setLibrarianMessage(null)} className="text-purple-400 hover:text-purple-600">
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        {/* Librarian plan review */}
+        {(librarianState === "reviewing" || librarianState === "applying") && plan && (
+          <div className="bg-white border border-purple-200 rounded-xl p-4 space-y-4">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h3 className="font-semibold text-stone-800 flex items-center gap-2">
+                  <Sparkles size={16} className="text-purple-600" />
+                  Librarian&apos;s Proposal
+                </h3>
+                <p className="text-sm text-stone-600 mt-1">{plan.summary}</p>
+              </div>
+              <button
+                onClick={() => { setPlan(null); setLibrarianState("idle"); }}
+                className="text-stone-400 hover:text-stone-600 flex-shrink-0"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {planIsEmpty(plan) ? (
+              <p className="text-sm text-green-700 bg-green-50 rounded-lg px-3 py-2">
+                Everything looks tidy — no changes needed.
+              </p>
+            ) : (
+              <div className="space-y-3 text-sm">
+                {plan.merges.length > 0 && (
+                  <div>
+                    <p className="font-medium text-stone-700 mb-1">Merge categories</p>
+                    {plan.merges.map((m, i) => (
+                      <div key={i} className="flex items-start gap-2 text-stone-600 py-0.5">
+                        <ArrowRight size={14} className="mt-0.5 text-purple-400 flex-shrink-0" />
+                        <span>
+                          <span className="font-medium">{categoryNameBySlug(m.fromSlug)}</span>
+                          {" → "}
+                          <span className="font-medium">{categoryNameBySlug(m.intoSlug)}</span>
+                          <span className="text-stone-400"> — {m.reason}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {plan.renames.length > 0 && (
+                  <div>
+                    <p className="font-medium text-stone-700 mb-1">Rename</p>
+                    {plan.renames.map((r, i) => (
+                      <div key={i} className="flex items-start gap-2 text-stone-600 py-0.5">
+                        <ArrowRight size={14} className="mt-0.5 text-purple-400 flex-shrink-0" />
+                        <span>
+                          <span className="font-medium">{categoryNameBySlug(r.slug)}</span>
+                          {" → "}
+                          <span className="font-medium">{r.newName}</span>
+                          <span className="text-stone-400"> — {r.reason}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {plan.newCategories.length > 0 && (
+                  <div>
+                    <p className="font-medium text-stone-700 mb-1">New categories</p>
+                    {plan.newCategories.map((n, i) => (
+                      <div key={i} className="flex items-start gap-2 text-stone-600 py-0.5">
+                        <ArrowRight size={14} className="mt-0.5 text-purple-400 flex-shrink-0" />
+                        <span>
+                          <span className="font-medium">{n.name}</span>
+                          <span className="text-stone-400"> — {n.reason}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {plan.refiles.length > 0 && (
+                  <div>
+                    <p className="font-medium text-stone-700 mb-1">
+                      Re-file {plan.refiles.length} document{plan.refiles.length !== 1 ? "s" : ""}
+                    </p>
+                    {plan.refiles.slice(0, 8).map((f, i) => (
+                      <div key={i} className="flex items-start gap-2 text-stone-600 py-0.5">
+                        <ArrowRight size={14} className="mt-0.5 text-purple-400 flex-shrink-0" />
+                        <span>
+                          into <span className="font-medium">{f.intoName}</span>
+                          <span className="text-stone-400"> — {f.reason}</span>
+                        </span>
+                      </div>
+                    ))}
+                    {plan.refiles.length > 8 && (
+                      <p className="text-stone-400 pl-6">…and {plan.refiles.length - 8} more</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!planIsEmpty(plan) && (
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setPlan(null); setLibrarianState("idle"); }}
+                  disabled={librarianState === "applying"}
+                  className="flex-1 py-2.5 rounded-xl border-2 border-stone-200 text-stone-600 font-medium hover:bg-stone-50 disabled:opacity-50"
+                >
+                  Not Now
+                </button>
+                <button
+                  onClick={applyPlan}
+                  disabled={librarianState === "applying"}
+                  className="flex-1 py-2.5 rounded-xl bg-purple-600 text-white font-medium hover:bg-purple-700 disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {librarianState === "applying" && <Loader2 size={14} className="animate-spin" />}
+                  {librarianState === "applying" ? "Applying..." : "Apply Changes"}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Documents */}
         {loading ? (

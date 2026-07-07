@@ -6,16 +6,21 @@ import { Upload, FileImage, FileText } from "lucide-react";
 
 interface FileDropzoneProps {
   onFile: (file: File) => void;
+  // When provided, multi-select is enabled and 2+ files go here instead
+  onFiles?: (files: File[]) => void;
 }
 
-export function FileDropzone({ onFile }: FileDropzoneProps) {
+export function FileDropzone({ onFile, onFiles }: FileDropzoneProps) {
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
-      if (acceptedFiles.length > 0) {
+      if (acceptedFiles.length === 0) return;
+      if (acceptedFiles.length > 1 && onFiles) {
+        onFiles(acceptedFiles);
+      } else {
         onFile(acceptedFiles[0]);
       }
     },
-    [onFile]
+    [onFile, onFiles]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -41,7 +46,7 @@ export function FileDropzone({ onFile }: FileDropzoneProps) {
       "video/webm": [".webm"],
     },
     maxSize: 100 * 1024 * 1024,
-    multiple: false,
+    multiple: Boolean(onFiles),
   });
 
   return (
@@ -61,9 +66,13 @@ export function FileDropzone({ onFile }: FileDropzoneProps) {
         }`}
       />
       <p className="text-stone-600 font-medium">
-        {isDragActive ? "Drop file here" : "Tap to choose a file"}
+        {isDragActive
+          ? onFiles ? "Drop files here" : "Drop file here"
+          : onFiles ? "Tap to choose files" : "Tap to choose a file"}
       </p>
-      <p className="text-stone-400 text-sm mt-1">or drag and drop</p>
+      <p className="text-stone-400 text-sm mt-1">
+        {onFiles ? "or drag and drop — multiple files welcome" : "or drag and drop"}
+      </p>
       <div className="flex items-center justify-center gap-4 mt-3 text-xs text-stone-400">
         <span className="flex items-center gap-1">
           <FileImage size={14} /> Images

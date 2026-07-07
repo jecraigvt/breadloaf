@@ -92,8 +92,8 @@ src/app/
   checklists/           # Opening/closing checklists for seasonal use
   bulletin/             # Family message board
   assistant/            # AI property assistant (Gemini, function-calling for actions)
-  documents/            # Document archive with AI categorization
-  upload/               # Document scanner (camera + file upload + link by URL)
+  documents/            # Document archive: AI categorization, Needs Review bucket, AI "librarian" reorganization (Tidy Up button)
+  upload/               # Document intake: camera, single or BATCH file upload (drop many files, they auto-file), link by URL
   maintenance/          # Maintenance log with timeline view
   emergency/            # Emergency contacts (tap-to-call)
   guide/                # Local guide (swimming, hikes, restaurants)
@@ -111,7 +111,10 @@ src/components/
 
 src/lib/
   prisma.ts             # Prisma client singleton
-  ai.ts                 # Gemini AI (categorization, assistant with function-calling, pantry scanning)
+  ai.ts                 # Gemini AI (categorization incl. PDFs + extracted text, assistant with function-calling, pantry scanning)
+  document-categories.ts # Category resolution guardrails (fuzzy dedupe, AI-proposed categories, Needs Review)
+  extract-text.ts       # Text extraction: docx (mammoth), xlsx (exceljs), csv/txt
+  librarian.ts          # AI filing-system review: generates + applies merge/rename/refile plans (user-approved)
   google-calendar.ts    # Two-way Google Calendar sync service
   utils.ts              # Formatting helpers
   upload.ts             # File upload handling (images, PDF, Word, Excel, CSV, TXT)

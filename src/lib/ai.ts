@@ -239,6 +239,66 @@ This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Gre
   }
 }
 
+// Categorize a document from extracted text (Word/Excel/CSV/TXT — types
+// Gemini can't read inline). Same contract as categorizeDocument.
+export async function categorizeText(
+  documentText: string,
+  fileName: string,
+  existingCategories: CategoryOption[]
+): Promise<CategorizationResult> {
+  const model = genAI.getGenerativeModel({ model: MODELS.flash });
+
+  const result = await model.generateContent(
+    `You are a document categorization assistant for the Breadloaf Hill family property archive in Vermont.
+
+Existing categories:
+${describeCategories(existingCategories)}
+
+${NEW_CATEGORY_RULES}
+
+Below is the text content extracted from an uploaded document (file name: "${fileName}"). Analyze it and return ONLY valid JSON (no markdown fences, no extra text) with these fields:
+{
+  "suggestedCategory": "exact name of an existing category, or \\"\\" if proposing a new one",
+  "newCategoryProposal": null or {"name": "...", "description": "..."},
+  "title": "descriptive title for this document",
+  "summary": "2-3 sentence summary of the document content",
+  "extractedText": "the key facts from the document — names, dates, dollar amounts, decisions, account numbers redacted to last 4 digits",
+  "tags": ["relevant", "tags", "for", "searching"],
+  "confidence": 0.0 to 1.0,
+  "maintenanceCost": null or dollar amount as number if this is a maintenance receipt/invoice,
+  "maintenanceDate": null or date in YYYY-MM-DD format if this is a maintenance receipt/invoice,
+  "maintenanceVendor": null or vendor/contractor name if this is a maintenance receipt/invoice
+}
+
+This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Greg Craig). Categorization hints:
+- K-1 forms, Schedule K-1 → "K-1 Forms"
+- Meeting minutes, resolutions, votes → "Meeting Minutes"
+- Articles of incorporation, bylaws, annual reports, state filings → "Corporate Filings"
+- P&L, balance sheets, income statements, financial reports → "Financial Statements"
+- Bank statements, account statements → "Bank Statements"
+- Capital account statements, shareholder equity → "Capital Accounts"
+
+Document text:
+${documentText}`
+  );
+
+  const text = result.response.text();
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    return JSON.parse(text);
+  } catch {
+    return {
+      suggestedCategory: "",
+      title: fileName,
+      summary: text.slice(0, 200),
+      extractedText: documentText.slice(0, 2000),
+      tags: [],
+      confidence: 0.3,
+    };
+  }
+}
+
 interface ScannedPantryItem {
   name: string;
   quantity: number;

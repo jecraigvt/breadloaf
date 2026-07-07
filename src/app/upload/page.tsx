@@ -19,7 +19,16 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-type UploadStep = "select" | "preview" | "uploading" | "categorizing" | "review" | "done" | "link";
+type UploadStep = "select" | "preview" | "uploading" | "categorizing" | "review" | "done" | "link" | "batch";
+
+interface BatchItem {
+  file: File;
+  status: "queued" | "uploading" | "categorizing" | "filed" | "needs-review" | "error";
+  title?: string;
+  categoryName?: string | null;
+  categoryCreated?: boolean;
+  error?: string;
+}
 
 interface CategorizationResult {
   suggestedCategory: string;
@@ -211,6 +220,86 @@ export default function UploadPage() {
     }
   };
 
+  // ─── Batch mode: dump many files, they file themselves ─────────
+  const [batchItems, setBatchItems] = useState<BatchItem[]>([]);
+  const [batchRunning, setBatchRunning] = useState(false);
+
+  const handleFiles = (files: File[]) => {
+    if (uploadedBy) localStorage.setItem("breadloaf-username", uploadedBy);
+    const items: BatchItem[] = files.map((file) => ({ file, status: "queued" }));
+    setBatchItems(items);
+    setStep("batch");
+    setError(null);
+    processBatch(items);
+  };
+
+  const updateBatchItem = (index: number, patch: Partial<BatchItem>) => {
+    setBatchItems((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, ...patch } : item))
+    );
+  };
+
+  const processBatch = async (items: BatchItem[]) => {
+    setBatchRunning(true);
+    // Sequential to keep the AI happy and progress legible
+    for (let i = 0; i < items.length; i++) {
+      try {
+        updateBatchItem(i, { status: "uploading" });
+        const formData = new FormData();
+        formData.append("file", items[i].file);
+        formData.append("uploadedBy", uploadedBy);
+        const uploadRes = await fetch("/api/upload", { method: "POST", body: formData });
+        if (!uploadRes.ok) throw new Error(await uploadRes.text());
+        const uploadData = await uploadRes.json();
+
+        updateBatchItem(i, { status: "categorizing" });
+        const catRes = await fetch("/api/categorize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filePath: uploadData.filePath, fileType: uploadData.fileType }),
+        });
+        const catData: CategorizationResult = catRes.ok
+          ? await catRes.json()
+          : { suggestedCategory: "", title: items[i].file.name, summary: "", tags: [], confidence: 0, needsReview: true };
+
+        const saveRes = await fetch("/api/documents", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: catData.title || items[i].file.name,
+            description: catData.summary,
+            fileName: uploadData.fileName,
+            filePath: uploadData.filePath,
+            fileType: uploadData.fileType,
+            fileSize: uploadData.fileSize,
+            categorySlug: catData.resolvedCategorySlug ?? "",
+            tags: catData.tags,
+            aiSummary: catData.summary,
+            aiExtractedText: catData.extractedText || "",
+            uploadedBy,
+            maintenanceCost: catData.maintenanceCost,
+            maintenanceDate: catData.maintenanceDate,
+            maintenanceVendor: catData.maintenanceVendor,
+          }),
+        });
+        if (!saveRes.ok) throw new Error(await saveRes.text());
+
+        updateBatchItem(i, {
+          status: catData.needsReview ? "needs-review" : "filed",
+          title: catData.title || items[i].file.name,
+          categoryName: catData.resolvedCategoryName,
+          categoryCreated: catData.categoryCreated,
+        });
+      } catch (err) {
+        updateBatchItem(i, {
+          status: "error",
+          error: err instanceof Error ? err.message : "Failed",
+        });
+      }
+    }
+    setBatchRunning(false);
+  };
+
   const handleSave = async () => {
     if (!file || !result) return;
     setError(null);
@@ -256,6 +345,8 @@ export default function UploadPage() {
     setEditTitle("");
     setSavedDocId(null);
     setError(null);
+    setBatchItems([]);
+    setBatchRunning(false);
     setLinkUrl("");
     setLinkTitle("");
     setLinkCategory("");
@@ -288,7 +379,7 @@ export default function UploadPage() {
               <span className="text-stone-400 text-sm">or</span>
               <div className="flex-1 h-px bg-stone-200" />
             </div>
-            <FileDropzone onFile={handleFile} />
+            <FileDropzone onFile={handleFile} onFiles={handleFiles} />
             <div className="relative flex items-center gap-4">
               <div className="flex-1 h-px bg-stone-200" />
               <span className="text-stone-400 text-sm">or</span>
@@ -302,6 +393,88 @@ export default function UploadPage() {
               Link a Document (URL)
             </button>
           </>
+        )}
+
+        {step === "batch" && (
+          <div className="space-y-4">
+            <div className={`rounded-xl p-4 border ${batchRunning ? "bg-green-50 border-green-200" : "bg-stone-50 border-stone-200"}`}>
+              <h3 className="font-semibold text-stone-800 flex items-center gap-2">
+                {batchRunning ? (
+                  <Loader2 size={18} className="animate-spin text-green-600" />
+                ) : (
+                  <CheckCircle2 size={18} className="text-green-600" />
+                )}
+                {batchRunning
+                  ? `Processing ${batchItems.filter((b) => b.status === "filed" || b.status === "needs-review" || b.status === "error").length} of ${batchItems.length}...`
+                  : `Done — ${batchItems.filter((b) => b.status === "filed").length} filed, ${batchItems.filter((b) => b.status === "needs-review").length} need review, ${batchItems.filter((b) => b.status === "error").length} failed`}
+              </h3>
+              {!batchRunning && batchItems.some((b) => b.status === "needs-review") && (
+                <p className="text-sm text-stone-500 mt-1">
+                  Items needing review are in the amber bucket on the Documents page.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              {batchItems.map((item, idx) => (
+                <div
+                  key={idx}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-sm ${
+                    item.status === "error"
+                      ? "bg-red-50 border-red-200"
+                      : item.status === "needs-review"
+                        ? "bg-amber-50 border-amber-200"
+                        : "bg-white border-stone-200"
+                  }`}
+                >
+                  <span className="flex-shrink-0">
+                    {item.status === "queued" && <FileText size={16} className="text-stone-300" />}
+                    {(item.status === "uploading" || item.status === "categorizing") && (
+                      <Loader2 size={16} className="animate-spin text-green-600" />
+                    )}
+                    {item.status === "filed" && <CheckCircle2 size={16} className="text-green-600" />}
+                    {item.status === "needs-review" && <FolderOpen size={16} className="text-amber-600" />}
+                    {item.status === "error" && <X size={16} className="text-red-500" />}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-stone-800 truncate">
+                      {item.title || item.file.name}
+                    </p>
+                    <p className="text-xs text-stone-400 truncate">
+                      {item.status === "queued" && "Waiting..."}
+                      {item.status === "uploading" && "Uploading..."}
+                      {item.status === "categorizing" && "Reading & filing..."}
+                      {item.status === "filed" && (
+                        <>
+                          Filed under <span className="text-green-700 font-medium">{item.categoryName}</span>
+                          {item.categoryCreated && <span className="text-blue-600"> (new category)</span>}
+                        </>
+                      )}
+                      {item.status === "needs-review" && "Saved — needs review"}
+                      {item.status === "error" && (item.error || "Failed")}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {!batchRunning && (
+              <div className="flex gap-3">
+                <button
+                  onClick={reset}
+                  className="flex-1 py-3 rounded-xl border-2 border-stone-300 text-stone-600 font-medium hover:bg-stone-50"
+                >
+                  Upload More
+                </button>
+                <Link
+                  href="/documents"
+                  className="flex-1 py-3 rounded-xl bg-green-700 text-white font-medium hover:bg-green-800 text-center"
+                >
+                  View Archive
+                </Link>
+              </div>
+            )}
+          </div>
         )}
 
         {step === "link" && (
