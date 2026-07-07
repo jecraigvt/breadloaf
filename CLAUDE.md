@@ -12,7 +12,7 @@ Family hub website for the Craig family property at 3995 Vermont Route 125, Ript
 - **Calendar:** Two-way sync with Google Calendar via service account
 - **Weather:** Open-Meteo API (free, no key needed)
 - **Hosting:** Railway (hobby plan)
-- **Domain:** breadloafhill.com via Namecheap (CNAME → Railway)
+- **Domain:** breadloafhill.com — DNS on Cloudflare (proxied CNAMEs → Railway; apex + www are separate custom domains on the Railway service, each needing its own CNAME target and a `_railway-verify` TXT record)
 - **Photos:** iCloud shared album (external link)
 
 ## Design System — Editorial Cabin-Catalog
@@ -39,7 +39,7 @@ The app uses a "family magazine" editorial style — warm paper tones, italic se
 - Google Calendar sync runs on every page load (homepage, calendar, stays, assistant) to keep data fresh
 - Service account auth (GoogleAuth, not JWT) for Calendar API
 - SQLite locally, PostgreSQL in production — schema is the same
-- `railway up` for deployments (not GitHub-connected), `.railwayignore` excludes Photos/ dir
+- Deploys: GitHub auto-deploy is enabled (push to `main` deploys); `railway up` also works for deploying without pushing. `.railwayignore` excludes Photos/ dir
 - ESLint ignored during builds (`next.config.mjs`) to prevent agent-generated lint issues from blocking deploys
 
 ## Environment Variables (Railway)
@@ -58,14 +58,14 @@ npm run dev
 ```
 
 ## Deployment
-**IMPORTANT: `git push` alone does NOT deploy.** Railway is NOT connected to GitHub for auto-deploy. You MUST run `railway up` after every commit to deploy.
+**GitHub auto-deploy is ENABLED** (verified in Railway dashboard, July 2026): pushes to `main` deploy to production automatically. This changed — before mid-2026 the service was not GitHub-connected and `railway up` was required after every push.
 ```bash
-git push origin main   # Push to GitHub (backup/history only)
-railway up             # REQUIRED — this is what actually deploys to Railway
+git push origin main   # Deploys automatically via GitHub integration
+railway up             # Alternative: deploys the local directory without pushing
 railway logs           # Check runtime logs
 railway logs --build   # Check build logs
 ```
-The correct deploy workflow is: `git add/commit` → `git push origin main` → `railway up`
+Normal workflow: `git add/commit` → `git push origin main`, then check `railway logs` to confirm the new deploy started. Note `railway up` uploads the local working tree, so uncommitted changes deploy too — prefer push-to-deploy.
 
 Migrations and seed run at startup (`npm start` script).
 
@@ -127,7 +127,7 @@ src/lib/
 - **Photo album:** iCloud shared album (847 photos)
 
 ## Deployment Details
-- **`railway up` is the ONLY way to deploy.** GitHub pushes do NOT trigger deploys.
+- **Pushes to `main` auto-deploy** (GitHub integration enabled on the Railway service). `railway up` deploys the local directory directly.
 - **Logs:** `railway logs` (runtime), `railway logs --build` (build)
 - **`.railwayignore`** excludes Photos/ dir, screenshots, and service account key from uploads.
 - After deploy, check `railway logs` to confirm the app started and migrations ran.
