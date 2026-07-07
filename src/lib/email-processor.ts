@@ -90,9 +90,12 @@ async function processEmail(email: InboundEmail): Promise<EmailActions> {
     notes: [],
   };
 
-  // 1. Extract stay announcements from the body
+  // 1. Analyze the body: stay announcements + is the body itself a document?
+  let bodyIsDocument = false;
   if (email.text.trim()) {
-    const stays = await extractStays(email);
+    const analysis = await analyzeEmailBody(email);
+    bodyIsDocument = analysis.bodyIsDocument;
+    const stays = analysis.stays;
     for (const stay of stays) {
       // Hard guards regardless of model confidence: never create stays in
       // the past (forwarded/old emails) or implausibly far out
@@ -134,7 +137,14 @@ async function processEmail(email: InboundEmail): Promise<EmailActions> {
     }
   }
 
-  // 2. File attachments through the document pipeline
+  // 2. If the body itself is substantive content (typed-in minutes, a
+  // report, detailed instructions), archive it as a document
+  if (bodyIsDocument) {
+    const filed = await archiveBodyAsDocument(email);
+    if (filed) actions.docsFiled.push(filed);
+  }
+
+  // 3. File attachments through the document pipeline
   for (const attachment of email.attachments) {
     const filed = await fileAttachment(attachment, email);
     if (filed) actions.docsFiled.push(filed);
@@ -143,7 +153,7 @@ async function processEmail(email: InboundEmail): Promise<EmailActions> {
   return actions;
 }
 
-// ─── Stay extraction ────────────────────────────────────────────
+// ─── Body analysis (stays + is-this-a-document) ────────────────
 
 interface ExtractedStay {
   guestName: string;
@@ -152,7 +162,12 @@ interface ExtractedStay {
   confidence: number;
 }
 
-async function extractStays(email: InboundEmail): Promise<ExtractedStay[]> {
+interface BodyAnalysis {
+  stays: ExtractedStay[];
+  bodyIsDocument: boolean;
+}
+
+async function analyzeEmailBody(email: InboundEmail): Promise<BodyAnalysis> {
   const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
   const today = new Date().toISOString().slice(0, 10);
 
@@ -173,24 +188,90 @@ Find statements that clearly announce someone WILL be staying at the property ("
 - Dates in YYYY-MM-DD. Infer the year from today's date (announcements are about upcoming visits). checkOut is the departure date.
 - confidence: 0-1 that this is a real, definite stay announcement with correct dates.
 
+Separately, decide whether the email BODY ITSELF is a document worth archiving ("bodyIsDocument"). TRUE only when the body contains substantive content a family member would look up later — meeting minutes or decisions/votes typed into the email, financial details or vendor quotes, detailed how-to instructions (e.g. winterization steps), a written report. FALSE for logistics chatter, greetings, scheduling talk, short social notes, or a body that mainly says "see attached" (the attachment gets archived separately). When unsure, say false.
+
 Return ONLY valid JSON (no markdown fences):
-{"stays": [{"guestName": "...", "checkIn": "YYYY-MM-DD", "checkOut": "YYYY-MM-DD", "confidence": 0.0}]}
-Return {"stays": []} if there are none.`
+{"stays": [{"guestName": "...", "checkIn": "YYYY-MM-DD", "checkOut": "YYYY-MM-DD", "confidence": 0.0}], "bodyIsDocument": false}
+Return {"stays": [], "bodyIsDocument": false} if there is nothing.`
   );
 
   try {
     const text = result.response.text();
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text);
-    return (parsed.stays || []).filter(
-      (s: ExtractedStay) =>
-        s?.guestName?.trim() &&
-        /^\d{4}-\d{2}-\d{2}$/.test(s.checkIn || "") &&
-        /^\d{4}-\d{2}-\d{2}$/.test(s.checkOut || "") &&
-        new Date(s.checkOut) > new Date(s.checkIn)
-    );
+    return {
+      stays: (parsed.stays || []).filter(
+        (s: ExtractedStay) =>
+          s?.guestName?.trim() &&
+          /^\d{4}-\d{2}-\d{2}$/.test(s.checkIn || "") &&
+          /^\d{4}-\d{2}-\d{2}$/.test(s.checkOut || "") &&
+          new Date(s.checkOut) > new Date(s.checkIn)
+      ),
+      bodyIsDocument: parsed.bodyIsDocument === true,
+    };
   } catch {
-    return [];
+    return { stays: [], bodyIsDocument: false };
+  }
+}
+
+// Save the email body itself as an archived .txt document and run it
+// through the same categorization pipeline as any other text file.
+async function archiveBodyAsDocument(
+  email: InboundEmail
+): Promise<{ title: string; category: string | null } | null> {
+  try {
+    const content = [
+      `From: ${email.fromName} <${email.fromEmail}>`,
+      `Date: ${email.receivedAt.toISOString()}`,
+      `Subject: ${email.subject}`,
+      "",
+      email.text,
+    ].join("\n");
+
+    const uploadDir = path.join(process.cwd(), "public", "uploads");
+    await mkdir(uploadDir, { recursive: true });
+    const uniqueName = `${generateId()}.txt`;
+    const buffer = Buffer.from(content, "utf-8");
+    await writeFile(path.join(uploadDir, uniqueName), buffer);
+
+    const categories = await prisma.category.findMany({
+      select: { name: true, description: true },
+      orderBy: { name: "asc" },
+    });
+    const result = await categorizeText(content, email.subject, categories);
+    const resolution = await resolveDocumentCategory({
+      suggestedCategory: result.suggestedCategory,
+      newCategoryProposal: result.newCategoryProposal,
+      confidence: result.confidence,
+    });
+
+    const safeName = (email.subject || "email").replace(/[^\w\- ]+/g, "").trim().slice(0, 60) || "email";
+    const doc = await prisma.document.create({
+      data: {
+        title: result.title || email.subject,
+        description: result.summary || null,
+        fileName: `${safeName}.txt`,
+        filePath: `/uploads/${uniqueName}`,
+        fileType: "text/plain",
+        fileSize: buffer.length,
+        categoryId: resolution.categoryId,
+        tags: result.tags?.length ? JSON.stringify(result.tags) : null,
+        aiSummary: result.summary || null,
+        aiExtractedText: result.extractedText || null,
+        uploadedBy: `${email.fromName} (email)`,
+      },
+      include: { category: true },
+    });
+
+    const embeddingContent = [doc.title, doc.category?.name || "", doc.aiSummary || "", doc.aiExtractedText || ""]
+      .filter(Boolean)
+      .join(" | ");
+    embedAndStore("document", doc.id, embeddingContent).catch(() => {});
+
+    return { title: doc.title, category: resolution.categoryName };
+  } catch (err) {
+    console.error("[Mail Room] body archive failed:", err);
+    return null;
   }
 }
 
