@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { categorizeDocument, processMediaFile } from "@/lib/ai";
+import { resolveDocumentCategory } from "@/lib/document-categories";
 import { prisma } from "@/lib/prisma";
 import { readFile } from "fs/promises";
 import path from "path";
@@ -15,38 +16,71 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get existing categories
+    // Existing categories, with descriptions so the AI files consistently
     const categories = await prisma.category.findMany({
-      select: { name: true },
+      select: { name: true, description: true },
+      orderBy: { name: "asc" },
     });
-    const categoryNames = categories.map((c) => c.name);
 
     // Read the file and convert to base64
     const fullPath = path.join(process.cwd(), "public", filePath);
     const buffer = await readFile(fullPath);
     const base64 = buffer.toString("base64");
 
+    // Gemini's inline-data request limit is ~20MB — send oversized files to review
+    const AI_SIZE_LIMIT = 15 * 1024 * 1024;
+
     // Route to the right processor
+    let result;
+    if (buffer.length > AI_SIZE_LIMIT) {
+      return NextResponse.json({
+        suggestedCategory: "",
+        title: path.basename(filePath),
+        summary: "File too large for AI analysis — categorize manually",
+        extractedText: "",
+        tags: [],
+        confidence: 0.3,
+        resolvedCategorySlug: null,
+        resolvedCategoryName: null,
+        categoryCreated: false,
+        needsReview: true,
+      });
+    }
     if (fileType.startsWith("audio/") || fileType.startsWith("video/")) {
-      // Audio/video — use multimodal processing
-      const result = await processMediaFile(base64, fileType, categoryNames);
-      return NextResponse.json(result);
+      result = await processMediaFile(base64, fileType, categories);
+    } else if (fileType.startsWith("image/") || fileType === "application/pdf") {
+      // Gemini reads images and PDFs natively
+      result = await categorizeDocument(base64, fileType, categories);
+    } else {
+      // Word/Excel and other binary formats — manual categorization for now
+      return NextResponse.json({
+        suggestedCategory: "",
+        title: path.basename(filePath),
+        summary: "Document uploaded — categorize manually or ask Jarvis about it",
+        extractedText: "",
+        tags: [],
+        confidence: 0.3,
+        resolvedCategorySlug: null,
+        resolvedCategoryName: null,
+        categoryCreated: false,
+        needsReview: true,
+      });
     }
 
-    if (fileType.startsWith("image/")) {
-      // Images — use vision categorization
-      const result = await categorizeDocument(base64, fileType, categoryNames);
-      return NextResponse.json(result);
-    }
+    // Apply guardrails: match to an existing category, create a genuinely
+    // new one from the AI's proposal, or flag for review.
+    const resolution = await resolveDocumentCategory({
+      suggestedCategory: result.suggestedCategory,
+      newCategoryProposal: result.newCategoryProposal,
+      confidence: result.confidence,
+    });
 
-    // PDFs, Word docs, etc. — manual categorization for now
     return NextResponse.json({
-      suggestedCategory: "Other",
-      title: path.basename(filePath),
-      summary: "Document uploaded — categorize manually or ask Jarvis about it",
-      extractedText: "",
-      tags: [],
-      confidence: 0.3,
+      ...result,
+      resolvedCategorySlug: resolution.categorySlug,
+      resolvedCategoryName: resolution.categoryName,
+      categoryCreated: resolution.categoryCreated,
+      needsReview: resolution.needsReview,
     });
   } catch (error) {
     console.error("Categorization error:", error);

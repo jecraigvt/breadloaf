@@ -74,8 +74,16 @@ export async function semanticSearch(
   return scored.filter((s) => s.score > 0.3);
 }
 
+export interface CategoryOption {
+  name: string;
+  description?: string | null;
+}
+
 interface CategorizationResult {
   suggestedCategory: string;
+  // Set when no existing category fits — server-side guardrails decide
+  // whether it actually becomes a new category (see document-categories.ts)
+  newCategoryProposal?: { name: string; description: string } | null;
   title: string;
   summary: string;
   extractedText: string;
@@ -87,11 +95,23 @@ interface CategorizationResult {
   maintenanceVendor?: string | null;
 }
 
+function describeCategories(categories: CategoryOption[]): string {
+  return categories
+    .map((c) => `- ${c.name}${c.description ? ` — ${c.description}` : ""}`)
+    .join("\n");
+}
+
+const NEW_CATEGORY_RULES = `Category rules:
+- STRONGLY prefer an existing category. Set "suggestedCategory" to its exact name and "newCategoryProposal" to null.
+- Only if NO existing category reasonably fits, set "suggestedCategory" to "" and propose ONE new category: {"name": "Short Title Case Name", "description": "one sentence describing what belongs in it"}.
+- A new category must be a recurring TYPE of document the family will file again (e.g. "Utility Bills"), never a one-off topic, a person's name, or a near-synonym of an existing category.
+- If you are unsure, use the existing "Other" category rather than proposing something new.`;
+
 // Process audio/video files — extract transcript, summary, key facts
 export async function processMediaFile(
   base64Data: string,
   mimeType: string,
-  existingCategories: string[]
+  existingCategories: CategoryOption[]
 ): Promise<CategorizationResult> {
   const model = genAI.getGenerativeModel({ model: MODELS.flash });
 
@@ -108,9 +128,15 @@ export async function processMediaFile(
     {
       text: `You are processing a ${mediaType} for the Craig family property archive at Breadloaf Hill, Vermont. The property is owned as an S-Corp by four Craig brothers (Tom, Jim, Sandy, Greg), with Ethan (Jim's son) now on the board.
 
+Existing categories:
+${describeCategories(existingCategories)}
+
+${NEW_CATEGORY_RULES}
+
 Analyze this ${mediaType} and return ONLY valid JSON (no markdown fences):
 {
-  "suggestedCategory": "one of: ${existingCategories.join(", ")}",
+  "suggestedCategory": "exact name of an existing category, or \\"\\" if proposing a new one",
+  "newCategoryProposal": null or {"name": "...", "description": "..."},
   "title": "descriptive title for this ${mediaType}",
   "summary": "comprehensive summary — capture ALL key facts, decisions, action items, dollar amounts, names mentioned, topics discussed. This is what the family assistant will reference, so be thorough.",
   "extractedText": "full transcript or detailed description of everything said/shown. Include speaker names if identifiable, timestamps of key moments, and exact quotes for important decisions.",
@@ -142,27 +168,34 @@ Be extremely thorough — extract every useful detail.`,
 }
 
 export async function categorizeDocument(
-  imageBase64: string,
+  fileBase64: string,
   fileType: string,
-  existingCategories: string[]
+  existingCategories: CategoryOption[]
 ): Promise<CategorizationResult> {
   const model = genAI.getGenerativeModel({ model: MODELS.flash });
 
-  const mimeType = fileType as "image/jpeg" | "image/png" | "image/webp";
+  // Gemini reads images AND PDFs inline
+  const mimeType = fileType as "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
 
   const result = await model.generateContent([
     {
       inlineData: {
         mimeType,
-        data: imageBase64,
+        data: fileBase64,
       },
     },
     {
       text: `You are a document categorization assistant for the Breadloaf Hill family property archive in Vermont.
 
+Existing categories:
+${describeCategories(existingCategories)}
+
+${NEW_CATEGORY_RULES}
+
 Analyze this document and return ONLY valid JSON (no markdown fences, no extra text) with these fields:
 {
-  "suggestedCategory": "one of: ${existingCategories.join(", ")}",
+  "suggestedCategory": "exact name of an existing category, or \\"\\" if proposing a new one",
+  "newCategoryProposal": null or {"name": "...", "description": "..."},
   "title": "descriptive title for this document",
   "summary": "2-3 sentence summary of the document content",
   "extractedText": "key text extracted from the document",

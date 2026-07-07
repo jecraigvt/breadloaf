@@ -33,6 +33,7 @@ interface Category {
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentWithCategory[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [uncategorizedCount, setUncategorizedCount] = useState(0);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -41,6 +42,7 @@ export default function DocumentsPage() {
   useEffect(() => {
     fetchDocuments();
     fetchCategories();
+    fetchUncategorizedCount();
   }, []);
 
   useEffect(() => {
@@ -66,6 +68,28 @@ export default function DocumentsPage() {
     if (res.ok) {
       const data = await res.json();
       setCategories(data);
+    }
+  };
+
+  const fetchUncategorizedCount = async () => {
+    const res = await fetch("/api/documents?category=uncategorized");
+    if (res.ok) {
+      const data = await res.json();
+      setUncategorizedCount(data.length);
+    }
+  };
+
+  const assignCategory = async (docId: string, categoryId: string) => {
+    if (!categoryId) return;
+    const res = await fetch(`/api/documents/${docId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ categoryId }),
+    });
+    if (res.ok) {
+      fetchDocuments();
+      fetchCategories();
+      fetchUncategorizedCount();
     }
   };
 
@@ -98,6 +122,22 @@ export default function DocumentsPage() {
           >
             All
           </button>
+          {uncategorizedCount > 0 && (
+            <button
+              onClick={() =>
+                setSelectedCategory(
+                  selectedCategory === "uncategorized" ? null : "uncategorized"
+                )
+              }
+              className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                selectedCategory === "uncategorized"
+                  ? "bg-amber-600 text-white"
+                  : "bg-amber-100 text-amber-800 hover:bg-amber-200"
+              }`}
+            >
+              Needs Review ({uncategorizedCount})
+            </button>
+          )}
           {categories
             .filter((c) => c._count.documents > 0)
             .map((cat) => (
@@ -186,7 +226,7 @@ export default function DocumentsPage() {
                   <p className="font-medium text-sm text-stone-800 line-clamp-2">
                     {doc.title}
                   </p>
-                  {doc.category && (
+                  {doc.category ? (
                     <span
                       className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                         CATEGORY_COLORS[doc.category.color || "gray"]
@@ -194,6 +234,28 @@ export default function DocumentsPage() {
                     >
                       {doc.category.name}
                     </span>
+                  ) : (
+                    <select
+                      defaultValue=""
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onChange={(e) => {
+                        e.preventDefault();
+                        assignCategory(doc.id, e.target.value);
+                      }}
+                      className="mt-1 w-full px-2 py-1 rounded-lg border border-amber-300 bg-amber-50 text-xs text-amber-800"
+                    >
+                      <option value="" disabled>
+                        File under…
+                      </option>
+                      {categories.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </option>
+                      ))}
+                    </select>
                   )}
                 </div>
               </Link>
@@ -228,11 +290,33 @@ export default function DocumentsPage() {
                     </p>
                   )}
                   <div className="flex items-center gap-3 mt-1 text-xs text-stone-400">
-                    {doc.category && (
+                    {doc.category ? (
                       <span className="flex items-center gap-1">
                         <Tag size={10} />
                         {doc.category.name}
                       </span>
+                    ) : (
+                      <select
+                        defaultValue=""
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onChange={(e) => {
+                          e.preventDefault();
+                          assignCategory(doc.id, e.target.value);
+                        }}
+                        className="px-2 py-0.5 rounded-lg border border-amber-300 bg-amber-50 text-xs text-amber-800"
+                      >
+                        <option value="" disabled>
+                          File under…
+                        </option>
+                        {categories.map((cat) => (
+                          <option key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </option>
+                        ))}
+                      </select>
                     )}
                     <span className="flex items-center gap-1">
                       <Calendar size={10} />

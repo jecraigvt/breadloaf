@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { embedAndStore } from "@/lib/ai";
+import { slugifyCategory } from "@/lib/document-categories";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -29,7 +30,10 @@ export async function GET(request: NextRequest) {
     ];
   }
 
-  if (categorySlug) {
+  if (categorySlug === "uncategorized") {
+    // Needs Review bucket — docs the AI couldn't confidently file
+    where.categoryId = null;
+  } else if (categorySlug) {
     const category = await prisma.category.findUnique({
       where: { slug: categorySlug },
     });
@@ -65,31 +69,21 @@ export async function POST(request: NextRequest) {
       uploadedBy,
     } = body;
 
-    // Find category by name or slug
+    // Strict category lookup: exact slug or exact (case-insensitive) name.
+    // No partial matching — a wrong guess should land in Needs Review
+    // (categoryId null), not in a random category.
     let categoryId: string | null = null;
-    if (categorySlug) {
-      // Try exact slug match first
-      let category = await prisma.category.findUnique({
-        where: { slug: categorySlug.toLowerCase().replace(/\s+/g, "-").replace(/&/g, "") },
+    if (categorySlug?.trim()) {
+      const raw = categorySlug.trim();
+      const category = await prisma.category.findFirst({
+        where: {
+          OR: [
+            { slug: slugifyCategory(raw) },
+            { name: { equals: raw, mode: "insensitive" } },
+          ],
+        },
       });
-
-      // Try name match
-      if (!category) {
-        category = await prisma.category.findUnique({
-          where: { name: categorySlug },
-        });
-      }
-
-      // Try partial match
-      if (!category) {
-        category = await prisma.category.findFirst({
-          where: { name: { contains: categorySlug } },
-        });
-      }
-
-      if (category) {
-        categoryId = category.id;
-      }
+      if (category) categoryId = category.id;
     }
 
     const document = await prisma.document.create({

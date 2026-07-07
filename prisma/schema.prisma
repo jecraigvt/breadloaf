@@ -29,13 +29,14 @@ model Document {
 }
 
 model Category {
-  id        String     @id @default(cuid())
-  name      String     @unique
-  slug      String     @unique
-  icon      String?
-  color     String?
-  documents Document[]
-  createdAt DateTime   @default(now())
+  id          String     @id @default(cuid())
+  name        String     @unique
+  slug        String     @unique
+  icon        String?
+  color       String?
+  description String?
+  documents   Document[]
+  createdAt   DateTime   @default(now())
 }
 
 model BulletinMessage {

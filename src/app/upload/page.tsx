@@ -25,8 +25,13 @@ interface CategorizationResult {
   suggestedCategory: string;
   title: string;
   summary: string;
+  extractedText?: string;
   tags: string[];
   confidence: number;
+  resolvedCategorySlug?: string | null;
+  resolvedCategoryName?: string | null;
+  categoryCreated?: boolean;
+  needsReview?: boolean;
   maintenanceCost?: number | null;
   maintenanceDate?: string | null;
   maintenanceVendor?: string | null;
@@ -187,11 +192,12 @@ export default function UploadPage() {
       } else {
         // Categorization failed, continue with manual info
         setResult({
-          suggestedCategory: "Other",
+          suggestedCategory: "",
           title: file.name,
           summary: "",
           tags: [],
           confidence: 0,
+          needsReview: true,
         });
         setEditTitle(file.name);
       }
@@ -222,10 +228,10 @@ export default function UploadPage() {
           filePath: uploadData.filePath,
           fileType: uploadData.fileType,
           fileSize: uploadData.fileSize,
-          categorySlug: result.suggestedCategory,
+          categorySlug: result.resolvedCategorySlug ?? result.suggestedCategory,
           tags: result.tags,
           aiSummary: result.summary,
-          aiExtractedText: "",
+          aiExtractedText: result.extractedText || "",
           uploadedBy,
           maintenanceCost: result.maintenanceCost,
           maintenanceDate: result.maintenanceDate,
@@ -486,12 +492,23 @@ export default function UploadPage() {
               />
             </div>
 
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex items-center gap-2 text-sm flex-wrap">
               <FolderOpen size={16} className="text-stone-500" />
               <span className="text-stone-500">Category:</span>
-              <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full font-medium">
-                {result.suggestedCategory}
-              </span>
+              {result.needsReview ? (
+                <span className="bg-amber-100 text-amber-800 px-3 py-1 rounded-full font-medium">
+                  Needs review — file it from the Documents page
+                </span>
+              ) : (
+                <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full font-medium">
+                  {result.resolvedCategoryName || result.suggestedCategory}
+                </span>
+              )}
+              {result.categoryCreated && (
+                <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs font-medium">
+                  new category
+                </span>
+              )}
             </div>
 
             {result.summary && (

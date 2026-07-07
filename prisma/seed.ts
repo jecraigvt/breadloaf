@@ -3,24 +3,24 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 const categories = [
-  { name: "Deeds & Titles", slug: "deeds-titles", icon: "FileText", color: "blue" },
-  { name: "Tax Records", slug: "tax-records", icon: "Receipt", color: "red" },
-  { name: "Insurance", slug: "insurance", icon: "Shield", color: "green" },
-  { name: "Maintenance", slug: "maintenance", icon: "Wrench", color: "orange" },
-  { name: "Warranties", slug: "warranties", icon: "BadgeCheck", color: "purple" },
-  { name: "Surveys & Maps", slug: "surveys-maps", icon: "Map", color: "teal" },
-  { name: "Inspections", slug: "inspections", icon: "ClipboardCheck", color: "yellow" },
-  { name: "Contracts", slug: "contracts", icon: "Handshake", color: "indigo" },
-  { name: "Correspondence", slug: "correspondence", icon: "Mail", color: "pink" },
-  { name: "Receipts", slug: "receipts", icon: "DollarSign", color: "emerald" },
-  { name: "Photos", slug: "photos", icon: "Camera", color: "sky" },
-  { name: "Meeting Minutes", slug: "meeting-minutes", icon: "FileText", color: "slate" },
-  { name: "Corporate Filings", slug: "corporate-filings", icon: "Building", color: "indigo" },
-  { name: "Financial Statements", slug: "financial-statements", icon: "BarChart", color: "emerald" },
-  { name: "K-1 Forms", slug: "k1-forms", icon: "FileSpreadsheet", color: "violet" },
-  { name: "Bank Statements", slug: "bank-statements", icon: "Landmark", color: "cyan" },
-  { name: "Capital Accounts", slug: "capital-accounts", icon: "PiggyBank", color: "amber" },
-  { name: "Other", slug: "other", icon: "Folder", color: "gray" },
+  { name: "Deeds & Titles", slug: "deeds-titles", icon: "FileText", color: "blue", description: "Property deeds, titles, and ownership records" },
+  { name: "Tax Records", slug: "tax-records", icon: "Receipt", color: "red", description: "Property tax bills, tax returns, and assessments" },
+  { name: "Insurance", slug: "insurance", icon: "Shield", color: "green", description: "Insurance policies, declarations, claims, and renewal notices" },
+  { name: "Maintenance", slug: "maintenance", icon: "Wrench", color: "orange", description: "Repair records, service reports, and contractor work on the property" },
+  { name: "Warranties", slug: "warranties", icon: "BadgeCheck", color: "purple", description: "Product warranties and manuals for appliances and equipment" },
+  { name: "Surveys & Maps", slug: "surveys-maps", icon: "Map", color: "teal", description: "Land surveys, plot maps, boundary and topographic documents" },
+  { name: "Inspections", slug: "inspections", icon: "ClipboardCheck", color: "yellow", description: "Building, septic, water, and safety inspection reports" },
+  { name: "Contracts", slug: "contracts", icon: "Handshake", color: "indigo", description: "Signed agreements with contractors, vendors, and service providers" },
+  { name: "Correspondence", slug: "correspondence", icon: "Mail", color: "pink", description: "Letters and emails about the property (town, neighbors, lawyers)" },
+  { name: "Receipts", slug: "receipts", icon: "DollarSign", color: "emerald", description: "Purchase receipts and invoices for property expenses" },
+  { name: "Photos", slug: "photos", icon: "Camera", color: "sky", description: "Photos documenting the property, projects, and conditions" },
+  { name: "Meeting Minutes", slug: "meeting-minutes", icon: "FileText", color: "slate", description: "S-Corp board meeting minutes, resolutions, and votes" },
+  { name: "Corporate Filings", slug: "corporate-filings", icon: "Building", color: "indigo", description: "Articles of incorporation, bylaws, annual reports, state filings" },
+  { name: "Financial Statements", slug: "financial-statements", icon: "BarChart", color: "emerald", description: "P&L statements, balance sheets, and income statements" },
+  { name: "K-1 Forms", slug: "k1-forms", icon: "FileSpreadsheet", color: "violet", description: "Schedule K-1 shareholder tax forms" },
+  { name: "Bank Statements", slug: "bank-statements", icon: "Landmark", color: "cyan", description: "Bank and account statements for the S-Corp" },
+  { name: "Capital Accounts", slug: "capital-accounts", icon: "PiggyBank", color: "amber", description: "Shareholder capital account statements and equity records" },
+  { name: "Other", slug: "other", icon: "Folder", color: "gray", description: "Documents that don't fit any other category" },
 ];
 
 const rooms = [
@@ -137,14 +137,25 @@ const rooms = [
 ];
 
 async function main() {
-  for (const cat of categories) {
-    await prisma.category.upsert({
-      where: { slug: cat.slug },
-      update: {},
-      create: cat,
-    });
+  // The categorization scheme evolves (the AI can add/merge categories),
+  // so only seed the full set into an empty table — re-seeding on every
+  // deploy would resurrect categories that were merged or renamed.
+  const categoryCount = await prisma.category.count();
+  if (categoryCount === 0) {
+    for (const cat of categories) {
+      await prisma.category.create({ data: cat });
+    }
+    console.log("Seeded categories:", categories.length);
+  } else {
+    // Backfill descriptions on seeded categories that don't have one yet
+    for (const cat of categories) {
+      await prisma.category.updateMany({
+        where: { slug: cat.slug, description: null },
+        data: { description: cat.description },
+      });
+    }
+    console.log("Categories already present:", categoryCount, "(descriptions backfilled)");
   }
-  console.log("Seeded categories:", categories.length);
 
   for (const room of rooms) {
     await prisma.room.upsert({
