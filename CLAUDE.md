@@ -48,6 +48,8 @@ The app uses a "family magazine" editorial style — warm paper tones, italic se
 - `GOOGLE_SERVICE_ACCOUNT_KEY` — Full JSON key for calendar service account
 - `GOOGLE_CALENDAR_ID` — Google Calendar ID (Breadloaf Hill Stays calendar on breadloafhillsite@gmail.com)
 - `FAMILY_PINS` — Per-family auth PINs (format: `Tom:1234,Jim:5678,Sandy:9012,Greg:3456`)
+- `GMAIL_APP_PASSWORD` — App password for breadloafhillsite@gmail.com (Mail Room IMAP polling; spaces tolerated)
+- `FAMILY_EMAILS` — Extra allowlisted sender addresses for Mail Room, comma-separated (jecraigvt@gmail.com and the site's own address are always allowed)
 
 ## Local Development
 ```bash
@@ -115,6 +117,8 @@ src/lib/
   document-categories.ts # Category resolution guardrails (fuzzy dedupe, AI-proposed categories, Needs Review)
   extract-text.ts       # Text extraction: docx (mammoth), xlsx (exceljs), csv/txt
   librarian.ts          # AI filing-system review: generates + applies merge/rename/refile plans (user-approved)
+  email-inbox.ts        # IMAP reader for breadloafhillsite@gmail.com (unseen messages + attachments)
+  email-processor.ts    # "Mail Room": allowlisted family emails → stay extraction/dedupe → calendar; attachments → doc pipeline; audit notes to bulletin. Add-only by design.
   google-calendar.ts    # Two-way Google Calendar sync service
   utils.ts              # Formatting helpers
   upload.ts             # File upload handling (images, PDF, Word, Excel, CSV, TXT)
