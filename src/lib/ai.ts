@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI, SchemaType, type FunctionDeclarationsTool } from "@google/generative-ai";
 import { prisma } from "@/lib/prisma";
+import { GROCERY_CATEGORIES, resolveCategory } from "@/lib/grocery-categories";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
@@ -279,8 +280,7 @@ const assistantTools: FunctionDeclarationsTool[] = [
             },
             category: {
               type: SchemaType.STRING,
-              description:
-                "Category: produce, dairy, meat, bakery, pantry, frozen, beverages, household, other",
+              description: `Category, one of: ${GROCERY_CATEGORIES.join(", ")}. Omit if unsure — the list auto-categorizes by item name.`,
             },
           },
           required: ["name"],
@@ -479,7 +479,7 @@ async function executeToolFunction(
       const item = await prisma.groceryItem.create({
         data: {
           name: args.name as string,
-          category: (args.category as string) || undefined,
+          category: resolveCategory(args.category as string | undefined, args.name as string),
           addedBy: username || undefined,
         },
       });
@@ -917,7 +917,7 @@ WHAT YOU CAN DO:
 When someone asks what you can do or how you can help, explain these capabilities in a friendly way.
 When users ask you to add or manage items, use the appropriate tool. Confirm what you've done in your response.
 If a request is ambiguous, ask for clarification before taking action.
-For the grocery list, infer a reasonable category when possible (produce, dairy, meat, bakery, pantry, frozen, beverages, household, other).
+For the grocery list, infer a reasonable category when possible (${GROCERY_CATEGORIES.join(", ")}); if unsure, omit it and the list will auto-sort by item name.
 For expenses, infer the category and type (operating vs capital) when possible. Capital expenses are improvements that add value (renovations, new equipment). Operating expenses are regular costs (utilities, insurance, maintenance).
 
 Guidelines:

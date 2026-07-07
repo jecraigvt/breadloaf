@@ -20,6 +20,11 @@ import {
   CheckCircle2,
   RotateCcw,
 } from "lucide-react";
+import {
+  GROCERY_CATEGORIES,
+  GROCERY_EMOJI,
+  resolveCategory,
+} from "@/lib/grocery-categories";
 
 type Tab = "shopping" | "inventory";
 
@@ -36,25 +41,7 @@ interface GroceryItem {
   updatedAt: string;
 }
 
-const GROCERY_CATEGORIES = [
-  "General",
-  "Pantry",
-  "Kitchen",
-  "Cleaning",
-  "Bathroom",
-  "Tools & Hardware",
-  "Outdoor",
-] as const;
-
-const GROCERY_EMOJI: Record<string, string> = {
-  General: "📦",
-  Pantry: "🥫",
-  Kitchen: "🍳",
-  Cleaning: "🧹",
-  Bathroom: "🛁",
-  "Tools & Hardware": "🔧",
-  Outdoor: "🌿",
-};
+const AUTO_CATEGORY = "Auto";
 
 // ─── Pantry types ──────────────────────────────────────────────
 interface PantryItem {
@@ -188,7 +175,7 @@ function ShoppingListTab({
   const [items, setItems] = useState<GroceryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [newItem, setNewItem] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string>("General");
+  const [selectedCategory, setSelectedCategory] = useState<string>(AUTO_CATEGORY);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [adding, setAdding] = useState(false);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
@@ -232,11 +219,16 @@ function ShoppingListTab({
     if (!name || adding) return;
     setAdding(true);
 
+    const category =
+      selectedCategory === AUTO_CATEGORY
+        ? resolveCategory(null, name)
+        : selectedCategory;
+
     const tempId = `temp-${Date.now()}`;
     const optimisticItem: GroceryItem = {
       id: tempId,
       name,
-      category: selectedCategory,
+      category,
       checked: false,
       addedBy: userName || null,
       checkedBy: null,
@@ -253,7 +245,7 @@ function ShoppingListTab({
       const res = await fetch("/api/grocery", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, category: selectedCategory, addedBy: userName || null }),
+        body: JSON.stringify({ name, category, addedBy: userName || null }),
       });
       if (res.ok) {
         const created = await res.json();
@@ -343,20 +335,18 @@ function ShoppingListTab({
   const priorityItems = uncheckedItems.filter((i) => i.priority);
   const regularItems = uncheckedItems.filter((i) => !i.priority);
 
+  // Group via resolveCategory so legacy rows (lowercase categories from
+  // the assistant, old "General" defaults) still land in the right aisle.
   const groupedByCategory = GROCERY_CATEGORIES.reduce(
     (acc, cat) => {
-      const catItems = regularItems.filter((i) => i.category === cat);
+      const catItems = regularItems.filter(
+        (i) => resolveCategory(i.category, i.name) === cat
+      );
       if (catItems.length > 0) acc[cat] = catItems;
       return acc;
     },
     {} as Record<string, GroceryItem[]>
   );
-  const otherItems = regularItems.filter(
-    (i) => !(GROCERY_CATEGORIES as readonly string[]).includes(i.category)
-  );
-  if (otherItems.length > 0) {
-    groupedByCategory["Other"] = otherItems;
-  }
 
   return (
     <>
@@ -388,12 +378,20 @@ function ShoppingListTab({
               onClick={() => setShowCategoryPicker(!showCategoryPicker)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-stone-100 hover:bg-stone-200 text-sm text-stone-600 transition-colors"
             >
-              <span>{GROCERY_EMOJI[selectedCategory] || "📦"}</span>
-              <span>{selectedCategory}</span>
+              <span>{selectedCategory === AUTO_CATEGORY ? "✨" : GROCERY_EMOJI[selectedCategory] || "📦"}</span>
+              <span>{selectedCategory === AUTO_CATEGORY ? "Auto-sort" : selectedCategory}</span>
               <ChevronDown size={14} className={`transition-transform ${showCategoryPicker ? "rotate-180" : ""}`} />
             </button>
             {showCategoryPicker && (
-              <div className="absolute top-full left-0 mt-1 bg-white rounded-xl border border-stone-200 shadow-lg py-1 z-40 min-w-[180px]">
+              <div className="absolute top-full left-0 mt-1 bg-white rounded-xl border border-stone-200 shadow-lg py-1 z-40 min-w-[180px] max-h-72 overflow-y-auto">
+                <button
+                  onClick={() => { setSelectedCategory(AUTO_CATEGORY); setShowCategoryPicker(false); inputRef.current?.focus(); }}
+                  className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-stone-50 transition-colors ${selectedCategory === AUTO_CATEGORY ? "text-green-700 font-medium bg-green-50" : "text-stone-600"}`}
+                >
+                  <span>✨</span>
+                  <span>Auto-sort</span>
+                  {selectedCategory === AUTO_CATEGORY && <Check size={14} className="ml-auto text-green-600" />}
+                </button>
                 {GROCERY_CATEGORIES.map((cat) => (
                   <button
                     key={cat}
@@ -833,7 +831,7 @@ function InventoryTab({
       await fetch("/api/grocery", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: item.name + (item.unit ? ` (${item.unit})` : ""), category: "Pantry", addedBy: userName || null }),
+        body: JSON.stringify({ name: item.name + (item.unit ? ` (${item.unit})` : ""), addedBy: userName || null }),
       });
       await fetch(`/api/pantry/${item.id}`, { method: "DELETE" });
       setItems((prev) => prev.filter((i) => i.id !== item.id));

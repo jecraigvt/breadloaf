@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { resolveCategory } from "@/lib/grocery-categories";
 
 export async function GET() {
   const items = await prisma.groceryItem.findMany({
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
     const item = await prisma.groceryItem.create({
       data: {
         name: name.trim(),
-        category: category || "General",
+        category: resolveCategory(category, name),
         addedBy: addedBy || null,
         priority: priority || false,
       },

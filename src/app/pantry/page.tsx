@@ -226,7 +226,6 @@ export default function PantryPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: item.name + (item.unit ? ` (${item.unit})` : ""),
-          category: "Pantry",
           addedBy: userName || null,
         }),
       });
