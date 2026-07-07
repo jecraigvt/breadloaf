@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { syncFromGoogleCalendar } from "@/lib/google-calendar";
+import { pollInboxInBackground } from "@/lib/email-processor";
 import Link from "next/link";
 import { Masthead } from "@/components/layout/masthead";
 import { formatDate } from "@/lib/utils";
@@ -107,6 +108,8 @@ function TileLink({ tile }: { tile: PhotoTile }) {
 
 export default async function HomePage() {
   await syncFromGoogleCalendar().catch(() => {});
+  // Check the family inbox (rate-limited, non-blocking — same pattern as calendar sync)
+  pollInboxInBackground();
 
   const [docCount, bulletinMessages, upcomingStays] = await Promise.all([
     prisma.document.count(),

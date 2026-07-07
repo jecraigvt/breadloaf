@@ -88,6 +88,19 @@ model Stay {
   @@index([checkOut])
 }
 
+// Processed inbound family emails (dedupe + audit trail)
+model EmailLog {
+  id         String   @id @default(cuid())
+  messageId  String   @unique
+  fromEmail  String
+  subject    String?
+  receivedAt DateTime
+  actions    String? // JSON summary of what was created (stays, docs, notes)
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 model GroceryItem {
   id        String   @id @default(cuid())
   name      String
