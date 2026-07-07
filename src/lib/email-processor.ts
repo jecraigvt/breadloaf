@@ -94,6 +94,17 @@ async function processEmail(email: InboundEmail): Promise<EmailActions> {
   if (email.text.trim()) {
     const stays = await extractStays(email);
     for (const stay of stays) {
+      // Hard guards regardless of model confidence: never create stays in
+      // the past (forwarded/old emails) or implausibly far out
+      const checkOut = new Date(stay.checkOut);
+      const checkIn = new Date(stay.checkIn);
+      const monthsAhead = (checkIn.getTime() - Date.now()) / (30 * 24 * 3600 * 1000);
+      if (checkOut <= new Date() || monthsAhead > 18) {
+        actions.notes.push(
+          `Skipped ${stay.guestName} ${stay.checkIn}–${stay.checkOut} (dates in the past or too far out — old/forwarded email?)`
+        );
+        continue;
+      }
       if (stay.confidence < 0.7) {
         actions.notes.push(
           `Possible visit mentioned (${stay.guestName}, ${stay.checkIn}–${stay.checkOut}) but not confident enough to add`
@@ -157,6 +168,7 @@ ${email.text}
 
 Find statements that clearly announce someone WILL be staying at the property ("we'll be up July 10-17", "the Kellers arrive the 12th through the 19th"). Rules:
 - Only definite plans. "We might come up in August" or questions are NOT announcements (confidence < 0.5).
+- FORWARDED / OLD MESSAGES: if this is a forwarded email (subject starts with "Fwd:", or the body contains a forwarded-message header with an original date), judge announcements by the ORIGINAL message's date, not today. A visit announced in an old message already happened — give it confidence 0.1. Never roll an old announcement forward to a future year.
 - guestName: who is staying, as it would appear on a calendar (e.g. "Jim & Carol", "The Kellers"). If the sender says "we" without names, use the sender's name + family (e.g. "${email.fromName} & family").
 - Dates in YYYY-MM-DD. Infer the year from today's date (announcements are about upcoming visits). checkOut is the departure date.
 - confidence: 0-1 that this is a real, definite stay announcement with correct dates.
