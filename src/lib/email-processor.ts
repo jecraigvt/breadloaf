@@ -163,8 +163,9 @@ async function processEmail(email: InboundEmail): Promise<EmailActions> {
 
   // 3. File attachments through the document pipeline
   for (const attachment of email.attachments) {
-    const filed = await fileAttachment(attachment, email);
-    if (filed) actions.docsFiled.push(filed);
+    const result = await fileAttachment(attachment, email);
+    if (result && "filed" in result) actions.docsFiled.push(result.filed);
+    else if (result && "skipped" in result) actions.notes.push(`Skipped attachment ${result.skipped}`);
   }
 
   return actions;
@@ -342,23 +343,65 @@ function nameTokens(name: string): string[] {
 // ─── Attachment filing ──────────────────────────────────────────
 
 const AI_SIZE_LIMIT = 15 * 1024 * 1024;
-const FILEABLE_PREFIXES = ["image/"];
-const FILEABLE_TYPES = new Set([
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "text/plain",
-  "text/csv",
+const SAVE_SIZE_LIMIT = 30 * 1024 * 1024;
+
+// Email clients often declare attachments as application/octet-stream (or
+// generic types), so the filename extension is the more reliable signal.
+const EXT_TYPE_MAP: Record<string, string> = {
+  pdf: "application/pdf",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  txt: "text/plain",
+  csv: "text/csv",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  heic: "image/heic",
+};
+
+// Formats we can't read yet but should still archive (→ Needs Review)
+// rather than silently drop a family document.
+const SAVE_ONLY_TYPES = new Set([
+  "application/msword",
+  "application/vnd.ms-excel",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ]);
+
+function effectiveType(attachment: InboundAttachment): string {
+  const declared = attachment.contentType.split(";")[0].trim().toLowerCase();
+  if (declared && declared !== "application/octet-stream") return declared;
+  const ext = (attachment.filename.split(".").pop() || "").toLowerCase();
+  return EXT_TYPE_MAP[ext] || declared;
+}
+
+type FileResult =
+  | { filed: { title: string; category: string | null } }
+  | { skipped: string }
+  | null; // inline signature image — ignore without comment
 
 async function fileAttachment(
   attachment: InboundAttachment,
   email: InboundEmail
-): Promise<{ title: string; category: string | null } | null> {
-  const type = attachment.contentType.split(";")[0].trim();
-  const fileable =
-    FILEABLE_PREFIXES.some((p) => type.startsWith(p)) || FILEABLE_TYPES.has(type);
-  if (!fileable || attachment.size > AI_SIZE_LIMIT) return null;
+): Promise<FileResult> {
+  if (attachment.inline) return null;
+
+  const type = effectiveType(attachment);
+  const aiReadable =
+    type.startsWith("image/") || type === "application/pdf" || isExtractableType(type);
+  const saveOnly = SAVE_ONLY_TYPES.has(type);
+
+  if (!aiReadable && !saveOnly) {
+    return { skipped: `"${attachment.filename}" — unrecognized file type (${attachment.contentType})` };
+  }
+  if (attachment.size > SAVE_SIZE_LIMIT) {
+    return { skipped: `"${attachment.filename}" — too large (${Math.round(attachment.size / 1024 / 1024)}MB)` };
+  }
 
   // Save to /uploads like the web upload path
   const uploadDir = path.join(process.cwd(), "public", "uploads");
@@ -367,23 +410,26 @@ async function fileAttachment(
   const uniqueName = `${generateId()}.${ext}`;
   await writeFile(path.join(uploadDir, uniqueName), attachment.content);
 
-  // Categorize
+  // Categorize (save-only formats and oversized-for-AI files skip analysis
+  // and land in Needs Review instead)
   const categories = await prisma.category.findMany({
     select: { name: true, description: true },
     orderBy: { name: "asc" },
   });
 
   let result = null;
-  if (type.startsWith("image/") || type === "application/pdf") {
-    result = await categorizeDocument(
-      attachment.content.toString("base64"),
-      type,
-      categories
-    );
-  } else if (isExtractableType(type)) {
-    const extracted = await extractTextFromFile(attachment.content, type);
-    if (extracted?.trim()) {
-      result = await categorizeText(extracted, attachment.filename, categories);
+  if (attachment.size <= AI_SIZE_LIMIT) {
+    if (type.startsWith("image/") || type === "application/pdf") {
+      result = await categorizeDocument(
+        attachment.content.toString("base64"),
+        type,
+        categories
+      );
+    } else if (isExtractableType(type)) {
+      const extracted = await extractTextFromFile(attachment.content, type);
+      if (extracted?.trim()) {
+        result = await categorizeText(extracted, attachment.filename, categories);
+      }
     }
   }
 
@@ -417,7 +463,7 @@ async function fileAttachment(
     .join(" | ");
   embedAndStore("document", doc.id, embeddingContent).catch(() => {});
 
-  return { title: doc.title, category: resolution.categoryName };
+  return { filed: { title: doc.title, category: resolution.categoryName } };
 }
 
 // ─── Audit trail ────────────────────────────────────────────────

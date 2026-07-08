@@ -11,6 +11,8 @@ export interface InboundAttachment {
   contentType: string;
   content: Buffer;
   size: number;
+  // cid-embedded inline image (signature logos etc.), not a real attachment
+  inline: boolean;
 }
 
 export interface InboundEmail {
@@ -69,6 +71,7 @@ export async function fetchUnseenEmails(): Promise<InboundEmail[]> {
                 contentType: a.contentType || "application/octet-stream",
                 content: a.content as Buffer,
                 size: a.size || (a.content as Buffer).length,
+                inline: a.related === true,
               })),
           });
 
