@@ -285,20 +285,41 @@ async function findOverlappingStay(stay: ExtractedStay) {
     },
     select: { id: true, guestName: true },
   });
-  const newTokens = nameTokens(stay.guestName);
-  return (
-    overlapping.find((s) =>
-      nameTokens(s.guestName).some((t) => newTokens.includes(t))
-    ) ?? null
-  );
+  return overlapping.find((s) => guestNamesMatch(s.guestName, stay.guestName)) ?? null;
 }
 
-function nameTokens(name: string): string[] {
+function guestNamesMatch(a: string, b: string): boolean {
+  const at = nameTokens(a);
+  const bt = nameTokens(b);
+  // Prefer first names/nicknames — surnames are shared family-wide
+  if (at.length > 0 && bt.length > 0) return at.some((t) => bt.includes(t));
+  // One side is surname-only ("The Kellers") — compare with surnames included
+  const aAll = allNameTokens(a);
+  const bAll = allNameTokens(b);
+  return aAll.some((t) => bAll.includes(t));
+}
+
+// Family surnames are shared by everyone, so they can't distinguish one
+// branch's stay from another's — only first names/nicknames count.
+const NAME_STOPWORDS = new Set([
+  "the", "and", "family", "families", "kids", "crew",
+  "craig", "craigs", "keller", "kellers", "devlin", "devlins", "noyes", "noye",
+]);
+
+const GENERIC_STOPWORDS = new Set(["the", "and", "family", "families", "kids", "crew"]);
+
+function allNameTokens(name: string): string[] {
   return name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .split(/\s+/)
-    .filter((t) => t.length > 2 && !["the", "and", "family"].includes(t));
+    .filter((t) => t.length > 2 && !GENERIC_STOPWORDS.has(t))
+    // singularize so "the Kellers" matches "Rob Keller" (consistent both sides)
+    .map((t) => (t.length > 4 && t.endsWith("s") ? t.slice(0, -1) : t));
+}
+
+function nameTokens(name: string): string[] {
+  return allNameTokens(name).filter((t) => !NAME_STOPWORDS.has(t));
 }
 
 // ─── Attachment filing ──────────────────────────────────────────
