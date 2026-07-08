@@ -35,11 +35,13 @@ interface LibrarianPlan {
   renames: { slug: string; newName: string; newDescription: string; reason: string }[];
   merges: { fromSlug: string; intoSlug: string; reason: string }[];
   refiles: { documentId: string; intoName: string; reason: string }[];
+  duplicates: { keepId: string; removeIds: string[]; title: string }[];
   summary: string;
 }
 
 const planIsEmpty = (p: LibrarianPlan) =>
-  p.newCategories.length + p.renames.length + p.merges.length + p.refiles.length === 0;
+  p.newCategories.length + p.renames.length + p.merges.length + p.refiles.length +
+    (p.duplicates?.length ?? 0) === 0;
 
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentWithCategory[]>([]);
@@ -126,7 +128,7 @@ export default function DocumentsPage() {
       if (!res.ok) throw new Error();
       const { applied } = await res.json();
       setLibrarianMessage(
-        `Tidied up: ${applied.merges} merged, ${applied.renames} renamed, ${applied.newCategories} new, ${applied.refiles} re-filed.`
+        `Tidied up: ${applied.merges} merged, ${applied.renames} renamed, ${applied.newCategories} new, ${applied.refiles} re-filed, ${applied.duplicatesRemoved ?? 0} duplicate${(applied.duplicatesRemoved ?? 0) === 1 ? "" : "s"} removed.`
       );
       setPlan(null);
       setLibrarianState("idle");
@@ -335,6 +337,23 @@ export default function DocumentsPage() {
                         <span>
                           <span className="font-medium">{n.name}</span>
                           <span className="text-stone-400"> — {n.reason}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {(plan.duplicates?.length ?? 0) > 0 && (
+                  <div>
+                    <p className="font-medium text-stone-700 mb-1">Remove exact duplicates</p>
+                    {plan.duplicates.map((d, i) => (
+                      <div key={i} className="flex items-start gap-2 text-stone-600 py-0.5">
+                        <ArrowRight size={14} className="mt-0.5 text-purple-400 flex-shrink-0" />
+                        <span>
+                          <span className="font-medium">{d.title}</span>
+                          <span className="text-stone-400">
+                            {" "}— keep 1 copy, remove {d.removeIds.length} identical{" "}
+                            {d.removeIds.length === 1 ? "copy" : "copies"} (byte-for-byte match)
+                          </span>
                         </span>
                       </div>
                     ))}

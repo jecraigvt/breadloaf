@@ -1,4 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { createHash } from "crypto";
+import { readFile, unlink } from "fs/promises";
+import path from "path";
 import { prisma } from "@/lib/prisma";
 import { slugifyCategory } from "@/lib/document-categories";
 
@@ -15,6 +18,9 @@ export interface LibrarianPlan {
   merges: { fromSlug: string; intoSlug: string; reason: string }[];
   // Refile individual misfiled documents (intoName may be a newCategories name)
   refiles: { documentId: string; intoName: string; reason: string }[];
+  // Byte-identical copies found by hashing the files — detected by CODE,
+  // not the AI; removal still requires the user to approve the plan.
+  duplicates: { keepId: string; removeIds: string[]; title: string }[];
   summary: string;
 }
 
@@ -95,7 +101,63 @@ Return ONLY valid JSON (no markdown fences):
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   const raw = JSON.parse(jsonMatch ? jsonMatch[0] : text);
 
-  return validatePlan(raw, categories, documents);
+  const plan = validatePlan(raw, categories, documents);
+  plan.duplicates = await findDuplicateDocuments();
+  return plan;
+}
+
+// ─── Duplicate detection (deterministic, no AI involved) ────────
+
+async function hashDocumentFile(filePath: string): Promise<string | null> {
+  try {
+    const full = path.join(process.cwd(), "public", filePath);
+    const buffer = await readFile(full);
+    return createHash("sha256").update(buffer).digest("hex");
+  } catch {
+    return null; // file missing (pre-volume uploads) — can't judge, skip
+  }
+}
+
+export async function findDuplicateDocuments(): Promise<LibrarianPlan["duplicates"]> {
+  const docs = await prisma.document.findMany({
+    select: { id: true, title: true, filePath: true, fileSize: true, categoryId: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  // Only hash files that share a size with another doc — cheap pre-filter
+  const bySize = new Map<number, typeof docs>();
+  for (const d of docs) {
+    const group = bySize.get(d.fileSize) || [];
+    group.push(d);
+    bySize.set(d.fileSize, group);
+  }
+
+  const duplicates: LibrarianPlan["duplicates"] = [];
+  for (const group of Array.from(bySize.values())) {
+    if (group.length < 2) continue;
+    const byHash = new Map<string, typeof docs>();
+    for (const d of group) {
+      const hash = await hashDocumentFile(d.filePath);
+      if (!hash) continue;
+      const g = byHash.get(hash) || [];
+      g.push(d);
+      byHash.set(hash, g);
+    }
+    for (const copies of Array.from(byHash.values())) {
+      if (copies.length < 2) continue;
+      // Keep the best copy: categorized beats uncategorized, then oldest
+      const sorted = [...copies].sort((a, b) => {
+        if (Boolean(a.categoryId) !== Boolean(b.categoryId)) return a.categoryId ? -1 : 1;
+        return a.createdAt.getTime() - b.createdAt.getTime();
+      });
+      duplicates.push({
+        keepId: sorted[0].id,
+        removeIds: sorted.slice(1).map((d) => d.id),
+        title: sorted[0].title,
+      });
+    }
+  }
+  return duplicates;
 }
 
 const PROTECTED_SLUGS = new Set([
@@ -183,6 +245,7 @@ function validatePlan(
     renames: safeRenames,
     merges: dedupedMerges,
     refiles,
+    duplicates: [], // filled by deterministic hashing, never from AI output
     summary: raw.summary?.trim() || "Reorganization plan generated.",
   };
 }
@@ -192,7 +255,7 @@ const NEW_CATEGORY_COLORS = [
 ];
 
 export async function applyLibrarianPlan(plan: LibrarianPlan): Promise<{
-  applied: { newCategories: number; renames: number; merges: number; refiles: number };
+  applied: { newCategories: number; renames: number; merges: number; refiles: number; duplicatesRemoved: number };
 }> {
   // Re-validate against current DB state (plan may be stale)
   const categories = await prisma.category.findMany({
@@ -277,7 +340,40 @@ export async function applyLibrarianPlan(plan: LibrarianPlan): Promise<{
     }
   }
 
+  // 5. Duplicate removal — only deletes copies that are STILL byte-identical
+  // to the kept document at apply time (re-hashed, not trusted from the plan)
+  let duplicatesRemoved = 0;
+  for (const dup of plan.duplicates ?? []) {
+    const keep = await prisma.document.findUnique({
+      where: { id: dup.keepId },
+      select: { id: true, filePath: true },
+    });
+    if (!keep) continue;
+    const keepHash = await hashDocumentFile(keep.filePath);
+    if (!keepHash) continue;
+
+    for (const removeId of dup.removeIds) {
+      if (removeId === dup.keepId) continue;
+      const doomed = await prisma.document.findUnique({
+        where: { id: removeId },
+        select: { id: true, filePath: true },
+      });
+      if (!doomed) continue;
+      const doomedHash = await hashDocumentFile(doomed.filePath);
+      if (!doomedHash || doomedHash !== keepHash) continue; // changed since plan — leave it
+
+      await prisma.document.delete({ where: { id: doomed.id } });
+      await prisma.embedding.deleteMany({
+        where: { sourceType: "document", sourceId: doomed.id },
+      });
+      if (doomed.filePath !== keep.filePath) {
+        await unlink(path.join(process.cwd(), "public", doomed.filePath)).catch(() => {});
+      }
+      duplicatesRemoved++;
+    }
+  }
+
   return {
-    applied: { newCategories: created, renames: renamed, merges: merged, refiles: refiled },
+    applied: { newCategories: created, renames: renamed, merges: merged, refiles: refiled, duplicatesRemoved },
   };
 }
