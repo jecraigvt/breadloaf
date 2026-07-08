@@ -137,6 +137,7 @@ src/lib/
 - **Pushes to `main` auto-deploy** (GitHub integration enabled on the Railway service). `railway up` deploys the local directory directly.
 - **Logs:** `railway logs` (runtime), `railway logs --build` (build)
 - **`.railwayignore`** excludes Photos/ dir, screenshots, and service account key from uploads.
+- **Uploaded documents persist on a Railway volume** (`breadloaf-app-volume`, mounted at `/app/public/uploads`, added July 2026). Before that, every deploy wiped uploaded files (container filesystem is ephemeral) — DB rows survived but files 404'd. Don't remove the volume.
 - After deploy, check `railway logs` to confirm the app started and migrations ran.
 
 ## Conventions
