@@ -437,7 +437,7 @@ export default function DocumentsPage() {
                 {doc.fileType.startsWith("image/") ? (
                   <div className="h-32 bg-stone-100">
                     <img
-                      src={doc.filePath}
+                      src={`/api/documents/${doc.id}/file`}
                       alt={doc.title}
                       className="w-full h-full object-cover"
                     />
@@ -497,7 +497,7 @@ export default function DocumentsPage() {
                 {doc.fileType.startsWith("image/") ? (
                   <div className="w-16 h-16 rounded-lg bg-stone-100 flex-shrink-0 overflow-hidden">
                     <img
-                      src={doc.filePath}
+                      src={`/api/documents/${doc.id}/file`}
                       alt={doc.title}
                       className="w-full h-full object-cover"
                     />

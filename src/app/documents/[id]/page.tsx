@@ -122,13 +122,19 @@ export default function DocumentDetailPage() {
           </a>
         ) : doc.fileType.startsWith("image/") ? (
           <div className="rounded-xl overflow-hidden border border-stone-200">
-            <img src={doc.filePath} alt={doc.title} className="w-full" />
+            <img src={`/api/documents/${doc.id}/file`} alt={doc.title} className="w-full" />
           </div>
         ) : (
-          <div className="rounded-xl border border-stone-200 p-12 text-center bg-stone-50">
+          <a
+            href={`/api/documents/${doc.id}/file?download=1`}
+            className="block rounded-xl border border-stone-200 p-12 text-center bg-stone-50 hover:bg-stone-100 transition-colors"
+          >
             <FileText size={64} className="mx-auto text-stone-300 mb-2" />
             <p className="text-stone-500">{doc.fileName}</p>
-          </div>
+            <span className="inline-flex items-center gap-1 mt-3 text-xs font-medium text-green-700">
+              <Download size={12} /> Tap to download
+            </span>
+          </a>
         )}
 
         {/* Metadata */}
@@ -218,8 +224,7 @@ export default function DocumentDetailPage() {
             </a>
           ) : (
             <a
-              href={doc.filePath}
-              download={doc.fileName}
+              href={`/api/documents/${doc.id}/file?download=1`}
               className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-stone-300 text-stone-600 font-medium hover:bg-stone-50"
             >
               <Download size={18} />
