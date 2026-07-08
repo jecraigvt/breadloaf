@@ -62,30 +62,30 @@ export async function processInbox(): Promise<InboxRunSummary> {
   const allowed = allowedSenders();
 
   for (const email of emails) {
-    // Dedupe (Gmail can re-show messages; page loads can race)
-    const existing = await prisma.emailLog.findUnique({
-      where: { messageId: email.messageId },
-    });
-    if (existing) {
-      summary.skipped.push({ from: email.fromEmail, subject: email.subject, reason: "already processed" });
+    // Claim the ledger row BEFORE processing — the unique messageId acts
+    // as a lock so concurrent polls (rapid manual triggers, page-load
+    // races) can't double-process an email during the ~30s of AI work.
+    const claimed = await claimEmail(email);
+    if (!claimed) {
+      summary.skipped.push({ from: email.fromEmail, subject: email.subject, reason: "already processed (or in progress)" });
       continue;
     }
 
     if (!allowed.has(email.fromEmail)) {
       console.log(`[Mail Room] Ignoring email from non-family sender: ${email.fromEmail}`);
-      await recordLog(email, { ignored: "sender not on family allowlist" });
+      await updateLog(email.messageId, { ignored: "sender not on family allowlist" });
       summary.skipped.push({ from: email.fromEmail, subject: email.subject, reason: "sender not on allowlist" });
       continue;
     }
 
     try {
       const actions = await processEmail(email);
-      await recordLog(email, actions);
+      await updateLog(email.messageId, actions);
       await postAuditNote(email, actions);
       summary.processed.push({ from: email.fromEmail, subject: email.subject, actions });
     } catch (err) {
       console.error(`[Mail Room] Failed to process "${email.subject}":`, err);
-      await recordLog(email, { error: String(err) });
+      await updateLog(email.messageId, { error: String(err) });
       summary.errors.push({ subject: email.subject, error: String(err) });
     }
   }
@@ -471,7 +471,8 @@ async function fileAttachment(
 
 // ─── Audit trail ────────────────────────────────────────────────
 
-async function recordLog(email: InboundEmail, actions: unknown): Promise<void> {
+// Returns false if another run already claimed (or completed) this email.
+async function claimEmail(email: InboundEmail): Promise<boolean> {
   try {
     await prisma.emailLog.create({
       data: {
@@ -479,11 +480,23 @@ async function recordLog(email: InboundEmail, actions: unknown): Promise<void> {
         fromEmail: email.fromEmail,
         subject: email.subject,
         receivedAt: email.receivedAt,
-        actions: JSON.stringify(actions),
+        actions: JSON.stringify({ status: "processing" }),
       },
     });
+    return true;
   } catch {
-    // unique collision from a racing poll — fine
+    return false; // unique collision — someone else owns it
+  }
+}
+
+async function updateLog(messageId: string, actions: unknown): Promise<void> {
+  try {
+    await prisma.emailLog.update({
+      where: { messageId },
+      data: { actions: JSON.stringify(actions) },
+    });
+  } catch {
+    // log row vanished — nothing to update
   }
 }
 

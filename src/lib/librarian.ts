@@ -50,10 +50,7 @@ export async function generateLibrarianPlan(): Promise<LibrarianPlan> {
     )
     .join("\n");
 
-  const model = genAI.getGenerativeModel({ model: "gemini-3.1-pro-preview" });
-
-  const result = await model.generateContent(
-    `You are the librarian for the Breadloaf Hill family property archive (a Vermont property owned by an S-Corp with four Craig brothers as shareholders). Review the filing system and propose a reorganization plan.
+  const prompt = `You are the librarian for the Breadloaf Hill family property archive (a Vermont property owned by an S-Corp with four Craig brothers as shareholders). Review the filing system and propose a reorganization plan.
 
 CURRENT CATEGORIES:
 ${categoryList}
@@ -80,8 +77,19 @@ Return ONLY valid JSON (no markdown fences):
   "merges": [{"fromSlug": "...", "intoSlug": "...", "reason": "..."}],
   "refiles": [{"documentId": "...", "intoName": "exact category name (existing, renamed, or from newCategories)", "reason": "..."}],
   "summary": "1-2 sentence plain-English summary of the plan (or say the archive is tidy)"
-}`
-  );
+}`;
+
+  // Pro gives the best reorganization judgment, but quota for it is thin —
+  // fall back to Flash rather than failing the whole review.
+  let result;
+  try {
+    const pro = genAI.getGenerativeModel({ model: "gemini-3.1-pro-preview" });
+    result = await pro.generateContent(prompt);
+  } catch (err) {
+    console.warn("[Librarian] Pro model unavailable, falling back to Flash:", String(err).slice(0, 200));
+    const flash = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+    result = await flash.generateContent(prompt);
+  }
 
   const text = result.response.text();
   const jsonMatch = text.match(/\{[\s\S]*\}/);
