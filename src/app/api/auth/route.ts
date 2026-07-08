@@ -6,6 +6,13 @@ import {
   getFamilyPins,
 } from "@/lib/auth";
 
+// Share the session across www.breadloafhill.com and the bare domain —
+// they're separate hosts, so a host-only cookie set on one 401s the other.
+function cookieDomain(request: NextRequest): string | undefined {
+  const host = request.headers.get("host") || "";
+  return host.endsWith("breadloafhill.com") ? ".breadloafhill.com" : undefined;
+}
+
 // POST — Login: validate PIN, set cookie
 export async function POST(request: NextRequest) {
   try {
@@ -32,6 +39,7 @@ export async function POST(request: NextRequest) {
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * 365, // 1 year
       path: "/",
+      domain: cookieDomain(request),
     });
 
     return response;
@@ -54,7 +62,7 @@ export async function GET(request: NextRequest) {
 }
 
 // DELETE — Logout
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
   const response = NextResponse.json({ success: true });
   response.cookies.set(getAuthCookieName(), "", {
     httpOnly: true,
@@ -62,6 +70,7 @@ export async function DELETE() {
     sameSite: "lax",
     maxAge: 0,
     path: "/",
+    domain: cookieDomain(request),
   });
   return response;
 }
