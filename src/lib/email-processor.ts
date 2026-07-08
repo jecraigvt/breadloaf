@@ -45,9 +45,19 @@ export function pollInboxInBackground(): void {
     });
 }
 
-export async function processInbox(): Promise<void> {
+export interface InboxRunSummary {
+  unseen: number;
+  processed: { from: string; subject: string; actions: EmailActions }[];
+  skipped: { from: string; subject: string; reason: string }[];
+  errors: { subject: string; error: string }[];
+}
+
+export async function processInbox(): Promise<InboxRunSummary> {
+  const summary: InboxRunSummary = { unseen: 0, processed: [], skipped: [], errors: [] };
   const emails = await fetchUnseenEmails();
-  if (emails.length === 0) return;
+  summary.unseen = emails.length;
+  console.log(`[Mail Room] inbox checked: ${emails.length} unseen message(s)`);
+  if (emails.length === 0) return summary;
 
   const allowed = allowedSenders();
 
@@ -56,11 +66,15 @@ export async function processInbox(): Promise<void> {
     const existing = await prisma.emailLog.findUnique({
       where: { messageId: email.messageId },
     });
-    if (existing) continue;
+    if (existing) {
+      summary.skipped.push({ from: email.fromEmail, subject: email.subject, reason: "already processed" });
+      continue;
+    }
 
     if (!allowed.has(email.fromEmail)) {
       console.log(`[Mail Room] Ignoring email from non-family sender: ${email.fromEmail}`);
       await recordLog(email, { ignored: "sender not on family allowlist" });
+      summary.skipped.push({ from: email.fromEmail, subject: email.subject, reason: "sender not on allowlist" });
       continue;
     }
 
@@ -68,11 +82,14 @@ export async function processInbox(): Promise<void> {
       const actions = await processEmail(email);
       await recordLog(email, actions);
       await postAuditNote(email, actions);
+      summary.processed.push({ from: email.fromEmail, subject: email.subject, actions });
     } catch (err) {
       console.error(`[Mail Room] Failed to process "${email.subject}":`, err);
       await recordLog(email, { error: String(err) });
+      summary.errors.push({ subject: email.subject, error: String(err) });
     }
   }
+  return summary;
 }
 
 interface EmailActions {
