@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI, SchemaType, type FunctionDeclarationsTool } from "@google/generative-ai";
 import { prisma } from "@/lib/prisma";
 import { GROCERY_CATEGORIES, resolveCategory } from "@/lib/grocery-categories";
+import { findOverlappingStay, createStayWithCalendarSync } from "@/lib/stays";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
@@ -380,6 +381,39 @@ const assistantTools: FunctionDeclarationsTool[] = [
         },
       },
       {
+        name: "create_stay",
+        description:
+          "Add a stay/visit to the property calendar (also syncs to the family Google Calendar). Use when someone says they or other family members will be at the property on certain dates.",
+        parameters: {
+          type: SchemaType.OBJECT,
+          properties: {
+            guestName: {
+              type: SchemaType.STRING,
+              description:
+                "Who is staying, as it should appear on the calendar (e.g. 'Jim & Carol', 'The Kellers'). If the user says 'we' or 'me', use their name.",
+            },
+            checkIn: {
+              type: SchemaType.STRING,
+              description: "Arrival date, YYYY-MM-DD",
+            },
+            checkOut: {
+              type: SchemaType.STRING,
+              description: "Departure date, YYYY-MM-DD (must be after checkIn)",
+            },
+            roomName: {
+              type: SchemaType.STRING,
+              description:
+                "Optional room to assign (e.g. 'Tom Craig's Room', 'Loft', 'Woods Cabin'). Omit if not specified.",
+            },
+            notes: {
+              type: SchemaType.STRING,
+              description: "Optional notes about the visit",
+            },
+          },
+          required: ["guestName", "checkIn", "checkOut"],
+        },
+      },
+      {
         name: "add_maintenance_record",
         description:
           "Log a maintenance task, repair, or property work item to the maintenance log",
@@ -579,6 +613,57 @@ async function executeToolFunction(
       return {
         success: true,
         item: { id: item.id, name: item.name, category: item.category },
+      };
+    }
+    case "create_stay": {
+      const guestName = (args.guestName as string)?.trim();
+      const checkIn = new Date(args.checkIn as string);
+      const checkOut = new Date(args.checkOut as string);
+      if (!guestName || isNaN(checkIn.getTime()) || isNaN(checkOut.getTime())) {
+        return { success: false, error: "guestName, checkIn, and checkOut are required" };
+      }
+      if (checkOut <= checkIn) {
+        return { success: false, error: "checkOut must be after checkIn" };
+      }
+
+      const duplicate = await findOverlappingStay(guestName, checkIn, checkOut);
+      if (duplicate) {
+        return {
+          success: false,
+          alreadyOnCalendar: true,
+          existing: {
+            guestName: duplicate.guestName,
+            checkIn: duplicate.checkIn.toISOString().slice(0, 10),
+            checkOut: duplicate.checkOut.toISOString().slice(0, 10),
+          },
+          note: "A matching stay already overlaps these dates — tell the user it's already on the calendar.",
+        };
+      }
+
+      let roomId: string | null = null;
+      if (args.roomName) {
+        const room = await prisma.room.findFirst({
+          where: { name: { contains: (args.roomName as string).trim(), mode: "insensitive" } },
+        });
+        roomId = room?.id ?? null;
+      }
+
+      const stay = await createStayWithCalendarSync({
+        guestName,
+        checkIn,
+        checkOut,
+        roomId,
+        notes: (args.notes as string)?.trim() || (username ? `Added by Jarvis for ${username}` : "Added by Jarvis"),
+      });
+      return {
+        success: true,
+        stay: {
+          id: stay.id,
+          guestName: stay.guestName,
+          checkIn: stay.checkIn.toISOString().slice(0, 10),
+          checkOut: stay.checkOut.toISOString().slice(0, 10),
+          room: stay.room?.name ?? null,
+        },
       };
     }
     case "add_maintenance_record": {
@@ -986,6 +1071,7 @@ WHAT YOU CAN DO:
    - Property info: Address, room details, local recommendations
 
 2. TAKE ACTIONS using your tools:
+   - Add stays/visits to the calendar (e.g., "We'll be up August 3-8" — creates the stay and syncs it to the family Google Calendar; if a matching stay already overlaps those dates you'll be told, so you don't create duplicates)
    - Add items to the grocery/shopping list (e.g., "Add paper towels and milk")
    - Add items to the pantry inventory (e.g., "We have 6 cans of black beans")
    - Log maintenance records (e.g., "The plumber fixed the upstairs bathroom today, cost $350")

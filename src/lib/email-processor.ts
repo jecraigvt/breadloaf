@@ -6,7 +6,7 @@ import { fetchUnseenEmails, emailConfigured, type InboundEmail, type InboundAtta
 import { categorizeDocument, categorizeText, embedAndStore } from "@/lib/ai";
 import { extractTextFromFile, isExtractableType } from "@/lib/extract-text";
 import { resolveDocumentCategory } from "@/lib/document-categories";
-import { createCalendarEvent } from "@/lib/google-calendar";
+import { findOverlappingStay, createStayWithCalendarSync } from "@/lib/stays";
 import { generateId } from "@/lib/utils";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
@@ -131,25 +131,17 @@ async function processEmail(email: InboundEmail): Promise<EmailActions> {
         );
         continue;
       }
-      const duplicate = await findOverlappingStay(stay);
+      const duplicate = await findOverlappingStay(stay.guestName, checkIn, checkOut);
       if (duplicate) {
         actions.staysAlreadyOnCalendar.push(stay);
         continue;
       }
-      const created = await prisma.stay.create({
-        data: {
-          guestName: stay.guestName,
-          checkIn: new Date(stay.checkIn),
-          checkOut: new Date(stay.checkOut),
-          status: "confirmed",
-          notes: `Added by Mail Room from ${email.fromName}'s email "${email.subject}"`,
-        },
+      await createStayWithCalendarSync({
+        guestName: stay.guestName,
+        checkIn,
+        checkOut,
+        notes: `Added by Mail Room from ${email.fromName}'s email "${email.subject}"`,
       });
-      try {
-        await createCalendarEvent(created);
-      } catch (err) {
-        console.error("[Mail Room] calendar sync failed for emailed stay:", err);
-      }
       actions.staysCreated.push(stay);
     }
   }
@@ -291,53 +283,6 @@ async function archiveBodyAsDocument(
     console.error("[Mail Room] body archive failed:", err);
     return null;
   }
-}
-
-// A stay is a duplicate if the date ranges overlap AND the guest names
-// share a word — overlapping stays by different branches are normal.
-async function findOverlappingStay(stay: ExtractedStay) {
-  const overlapping = await prisma.stay.findMany({
-    where: {
-      checkIn: { lt: new Date(stay.checkOut) },
-      checkOut: { gt: new Date(stay.checkIn) },
-    },
-    select: { id: true, guestName: true },
-  });
-  return overlapping.find((s) => guestNamesMatch(s.guestName, stay.guestName)) ?? null;
-}
-
-function guestNamesMatch(a: string, b: string): boolean {
-  const at = nameTokens(a);
-  const bt = nameTokens(b);
-  // Prefer first names/nicknames — surnames are shared family-wide
-  if (at.length > 0 && bt.length > 0) return at.some((t) => bt.includes(t));
-  // One side is surname-only ("The Kellers") — compare with surnames included
-  const aAll = allNameTokens(a);
-  const bAll = allNameTokens(b);
-  return aAll.some((t) => bAll.includes(t));
-}
-
-// Family surnames are shared by everyone, so they can't distinguish one
-// branch's stay from another's — only first names/nicknames count.
-const NAME_STOPWORDS = new Set([
-  "the", "and", "family", "families", "kids", "crew",
-  "craig", "craigs", "keller", "kellers", "devlin", "devlins", "noyes", "noye",
-]);
-
-const GENERIC_STOPWORDS = new Set(["the", "and", "family", "families", "kids", "crew"]);
-
-function allNameTokens(name: string): string[] {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .split(/\s+/)
-    .filter((t) => t.length > 2 && !GENERIC_STOPWORDS.has(t))
-    // singularize so "the Kellers" matches "Rob Keller" (consistent both sides)
-    .map((t) => (t.length > 4 && t.endsWith("s") ? t.slice(0, -1) : t));
-}
-
-function nameTokens(name: string): string[] {
-  return allNameTokens(name).filter((t) => !NAME_STOPWORDS.has(t));
 }
 
 // ─── Attachment filing ──────────────────────────────────────────
