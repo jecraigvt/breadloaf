@@ -65,7 +65,7 @@ const HUB_PHOTO: PhotoTile[] = [
 ];
 
 const HUB_TEXT: TextTile[] = [
-  { lbl: "AI · XI", big: <><em>Jarvis</em><br/>Craig</>,          sub: "Ask the house anything", href: "/assistant" },
+  { lbl: "AI · XI", big: <><em>Bucky</em><br/>Dragon</>,          sub: "Ask the house anything", href: "/assistant" },
   { lbl: "XII",     big: <>The <em>Family</em></>,                sub: "Directory, by branch",   href: "/family" },
   { lbl: "XIII",    big: <><em>Maintenance</em></>,               sub: "Service log",            href: "/maintenance" },
   { lbl: "XIV",     big: <>Emergency</>,                          sub: "Contacts · tap to call", href: "/emergency" },

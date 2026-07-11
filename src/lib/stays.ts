@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { createCalendarEvent } from "@/lib/google-calendar";
 
 // Shared stay creation + dedupe, used by the Mail Room (email inlet) and
-// Jarvis (assistant inlet) so both behave identically: same duplicate
+// Bucky (assistant inlet) so both behave identically: same duplicate
 // detection, same Google Calendar sync.
 
 // Family surnames are shared by everyone, so they can't distinguish one

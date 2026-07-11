@@ -88,7 +88,7 @@ export default function AssistantPage() {
   return (
     <div className="flex flex-col h-screen">
       <Header
-        title="Jarvis Craig"
+        title="Bucky Dragon"
         subtitle="Your family property assistant"
       />
 
@@ -101,7 +101,7 @@ export default function AssistantPage() {
           <div className="text-center py-12">
             <Mountain size={48} className="mx-auto text-green-200 mb-4" />
             <h2 className="text-lg font-semibold text-stone-700">
-              Jarvis Craig
+              Bucky Dragon
             </h2>
             <p className="text-stone-400 text-sm mt-2 max-w-xs mx-auto">
               Your family property hub — I know about visits, rooms, documents,

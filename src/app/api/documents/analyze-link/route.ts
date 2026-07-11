@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
           model: "gemini-3-flash-preview",
         });
 
-        const prompt = `You are Jarvis for the Craig family property at Breadloaf Hill, Vermont. Analyze this linked document thoroughly and return ONLY valid JSON (no markdown fences):
+        const prompt = `You are Bucky Dragon, document analyst for the Craig family property at Breadloaf Hill, Vermont. Analyze this linked document thoroughly and return ONLY valid JSON (no markdown fences):
 {
   "title": "a clear, descriptive title for this document",
   "category": "one of: ${categoryNames.join(", ")}",

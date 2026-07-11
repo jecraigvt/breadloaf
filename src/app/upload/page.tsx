@@ -593,7 +593,7 @@ export default function UploadPage() {
                 </p>
                 {(file.type.startsWith("audio/") || file.type.startsWith("video/")) && (
                   <p className="text-green-600 text-xs mt-2 font-medium">
-                    Jarvis will transcribe and analyze this {file.type.startsWith("audio/") ? "recording" : "video"}
+                    Bucky will transcribe and analyze this {file.type.startsWith("audio/") ? "recording" : "video"}
                   </p>
                 )}
               </div>

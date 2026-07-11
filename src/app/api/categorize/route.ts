@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         suggestedCategory: "",
         title: path.basename(filePath),
-        summary: "Document uploaded — categorize manually or ask Jarvis about it",
+        summary: "Document uploaded — categorize manually or ask Bucky about it",
         extractedText: "",
         tags: [],
         confidence: 0.3,
