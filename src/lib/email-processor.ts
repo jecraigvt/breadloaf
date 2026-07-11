@@ -71,7 +71,11 @@ export async function processInbox(): Promise<InboxRunSummary> {
       continue;
     }
 
-    if (!allowed.has(email.fromEmail)) {
+    // MAIL_ROOM_ALLOW_ALL=true disables the sender allowlist (set via
+    // Railway env). Anyone who emails the address can then add stays/docs/
+    // notes — flip it back off after the family's addresses are collected.
+    const allowAll = process.env.MAIL_ROOM_ALLOW_ALL === "true";
+    if (!allowAll && !allowed.has(email.fromEmail)) {
       console.log(`[Mail Room] Ignoring email from non-family sender: ${email.fromEmail}`);
       await updateLog(email.messageId, { ignored: "sender not on family allowlist" });
       summary.skipped.push({ from: email.fromEmail, subject: email.subject, reason: "sender not on allowlist" });
