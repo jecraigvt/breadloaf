@@ -106,12 +106,16 @@ export default function DocumentsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "plan" }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || "");
+      }
       const p: LibrarianPlan = await res.json();
       setPlan(p);
       setLibrarianState("reviewing");
-    } catch {
-      setLibrarianMessage("The librarian hit a snag — try again in a minute.");
+    } catch (err) {
+      const detail = err instanceof Error && err.message ? err.message : "The librarian hit a snag — try again in a minute.";
+      setLibrarianMessage(detail);
       setLibrarianState("idle");
     }
   };

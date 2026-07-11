@@ -25,6 +25,13 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error("Librarian error:", error);
+    const msg = String(error);
+    if (msg.includes("429") || msg.toLowerCase().includes("quota")) {
+      return NextResponse.json(
+        { error: "The AI's daily free-tier quota is used up — upgrade the Gemini API key to pay-as-you-go, or try again tomorrow." },
+        { status: 429 }
+      );
+    }
     return NextResponse.json(
       { error: "Librarian failed — try again" },
       { status: 500 }
