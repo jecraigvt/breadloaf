@@ -50,6 +50,7 @@ The app uses a "family magazine" editorial style — warm paper tones, italic se
 - `FAMILY_PINS` — Per-family auth PINs (format: `Tom:1234,Jim:5678,Sandy:9012,Greg:3456`)
 - `GMAIL_APP_PASSWORD` — App password for breadloafhillsite@gmail.com (Mail Room IMAP polling; spaces tolerated)
 - `FAMILY_EMAILS` — Extra allowlisted sender addresses for Mail Room, comma-separated (jecraigvt@gmail.com and the site's own address are always allowed)
+- `MAIL_ROOM_ALLOW_ALL` — "true" disables the Mail Room sender allowlist (currently true, set July 2026 during family onboarding; collect real addresses from the poll endpoint's recentLog, add to FAMILY_EMAILS, then set back to false)
 
 ## Local Development
 ```bash
