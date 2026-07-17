@@ -38,7 +38,7 @@ The app uses a "family magazine" editorial style — warm paper tones, italic se
 - Server components for data-fetching pages (homepage), client components for interactive pages
 - Google Calendar sync runs on every page load (homepage, calendar, stays, assistant) to keep data fresh
 - Service account auth (GoogleAuth, not JWT) for Calendar API
-- SQLite locally, PostgreSQL in production — schema is the same
+- PostgreSQL in production. schema.prisma is checked in with `provider = "postgresql"`, so `DATABASE_URL="file:./dev.db"` alone no longer works locally — to dev against SQLite, temporarily flip the provider to `sqlite`, `npx prisma db push && npx prisma db seed`, and flip it back before committing (verified July 2026). Note `mode: "insensitive"` queries (ai.ts room lookup, documents/pantry routes) are postgres-only and will error at runtime on SQLite.
 - Deploys: GitHub auto-deploy is enabled (push to `main` deploys); `railway up` also works for deploying without pushing. `.railwayignore` excludes Photos/ dir
 - ESLint ignored during builds (`next.config.mjs`) to prevent agent-generated lint issues from blocking deploys
 
@@ -94,9 +94,9 @@ src/app/
   expenses/             # S-Corp expense tracker with financial dashboard and family splits
   checklists/           # Opening/closing checklists for seasonal use
   bulletin/             # Family message board
-  assistant/            # AI property assistant (Gemini, function-calling for actions)
+  assistant/            # AI property assistant (Gemini, function-calling for actions; paperclip attachments file docs into the archive via /api/assistant multipart + lib/file-document.ts)
   documents/            # Document archive: AI categorization, Needs Review bucket, AI "librarian" reorganization (Tidy Up button)
-  upload/               # Document intake: camera, single or BATCH file upload (drop many files, they auto-file), link by URL
+  upload/               # Document intake: camera, single or BATCH file upload (drop many files, they auto-file), link by URL. No longer a hub tile (July 2026) — main intake is now Bucky chat attachments + Mail Room email; page still works at /upload
   maintenance/          # Maintenance log with timeline view
   emergency/            # Emergency contacts (tap-to-call)
   guide/                # Local guide (swimming, hikes, restaurants)
@@ -120,6 +120,7 @@ src/lib/
   librarian.ts          # AI filing-system review: generates + applies merge/rename/refile plans (user-approved)
   email-inbox.ts        # IMAP reader for breadloafhillsite@gmail.com (unseen messages + attachments)
   email-processor.ts    # "Mail Room": allowlisted family emails → stay extraction/dedupe → calendar; attachments → doc pipeline; audit notes to bulletin. Add-only by design.
+  file-document.ts      # Shared server-side doc filing (buffer → save/categorize/guardrails/Document row/maintenance cross-link/embedding). Used by Bucky chat attachments.
   google-calendar.ts    # Two-way Google Calendar sync service
   utils.ts              # Formatting helpers
   upload.ts             # File upload handling (images, PDF, Word, Excel, CSV, TXT)
@@ -146,7 +147,7 @@ src/lib/
 - API routes follow REST pattern: `route.ts` for GET/POST, `[id]/route.ts` for PATCH/DELETE
 - Store user's name in localStorage under key `breadloaf-username`
 - Icons from lucide-react, green-700 primary color, stone neutrals
-- Hub cards on homepage ordered by assumed frequency of use
+- Hub cards on homepage ordered by assumed frequency of use. Slimmed July 2026: Board, Maintenance, and Add Docs tiles removed (Board lives in bottom nav + homepage preview; maintenance logging and doc intake go through Bucky). Sections now I–XIII — renumber Roman numerals + FIG numbers if tiles change again.
 - Prisma models use cuid() for IDs, DateTime for timestamps
 - Google Calendar sync uses GoogleAuth (not JWT) — see `src/lib/google-calendar.ts`
 - Calendar sync runs on homepage, calendar page, stays page, and assistant message

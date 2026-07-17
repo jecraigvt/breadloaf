@@ -2,19 +2,24 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Header } from "@/components/layout/header";
-import { Send, Loader2, Mountain, User, Trash2 } from "lucide-react";
+import { Send, Loader2, Mountain, User, Trash2, Paperclip, FileText, X } from "lucide-react";
 
 interface Message {
   role: "user" | "model";
   content: string;
 }
 
+const ACCEPTED_FILES =
+  "image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,audio/*,video/*";
+
 export default function AssistantPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -24,12 +29,20 @@ export default function AssistantPage() {
   }, [messages]);
 
   const sendMessage = async () => {
-    if (!input.trim() || loading) return;
+    if ((!input.trim() && attachments.length === 0) || loading) return;
 
-    const userMessage: Message = { role: "user", content: input.trim() };
+    const files = attachments;
+    // Attachment names go into the visible message (and the transcript the
+    // model sees) so the conversation reads naturally later
+    const attachmentLines = files.map((f) => `📎 ${f.name}`).join("\n");
+    const content =
+      [input.trim(), attachmentLines].filter(Boolean).join("\n") || "📎";
+
+    const userMessage: Message = { role: "user", content };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInput("");
+    setAttachments([]);
     setLoading(true);
 
     try {
@@ -37,11 +50,21 @@ export default function AssistantPage() {
         typeof window !== "undefined"
           ? localStorage.getItem("breadloaf-username") || ""
           : "";
-      const res = await fetch("/api/assistant", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newMessages, username: storedName }),
-      });
+      let res: Response;
+      if (files.length > 0) {
+        // Multipart: server files the attachments into the archive, then chats
+        const formData = new FormData();
+        formData.append("messages", JSON.stringify(newMessages));
+        formData.append("username", storedName);
+        for (const f of files) formData.append("files", f);
+        res = await fetch("/api/assistant", { method: "POST", body: formData });
+      } else {
+        res = await fetch("/api/assistant", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: newMessages, username: storedName }),
+        });
+      }
 
       if (!res.ok) throw new Error("Failed to get response");
 
@@ -105,8 +128,9 @@ export default function AssistantPage() {
             </h2>
             <p className="text-stone-400 text-sm mt-2 max-w-xs mx-auto">
               Your family property hub — I know about visits, rooms, documents,
-              expenses, supplies, and everything Breadloaf Hill. Ask me anything
-              or tell me to do something.
+              expenses, supplies, and everything Breadloaf Hill. Ask me anything,
+              tell me to do something, or attach a document (📎) and I&apos;ll
+              file it in the archive.
             </p>
             <div className="flex flex-wrap gap-2 justify-center mt-6">
               {[
@@ -162,8 +186,13 @@ export default function AssistantPage() {
             <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
               <Mountain size={16} className="text-green-700" />
             </div>
-            <div className="bg-white border border-stone-200 rounded-2xl px-4 py-3">
+            <div className="bg-white border border-stone-200 rounded-2xl px-4 py-3 flex items-center gap-2">
               <Loader2 size={16} className="animate-spin text-green-700" />
+              {messages[messages.length - 1]?.content.includes("📎") && (
+                <span className="text-xs text-stone-400">
+                  Reading &amp; filing your document...
+                </span>
+              )}
             </div>
           </div>
         )}
@@ -171,31 +200,81 @@ export default function AssistantPage() {
 
       {/* Input Bar */}
       <div className="fixed bottom-16 left-0 right-0 bg-white border-t border-stone-200 px-4 py-3">
-        <div className="max-w-lg mx-auto flex gap-2">
-          {messages.length > 0 && (
-            <button
-              onClick={clearChat}
-              className="p-3 rounded-xl text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-            >
-              <Trash2 size={20} />
-            </button>
+        <div className="max-w-lg mx-auto space-y-2">
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {attachments.map((f, i) => (
+                <span
+                  key={`${f.name}-${i}`}
+                  className="flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-800 rounded-full pl-2.5 pr-1.5 py-1 text-xs font-medium"
+                >
+                  <FileText size={12} />
+                  <span className="max-w-[140px] truncate">{f.name}</span>
+                  <button
+                    onClick={() =>
+                      setAttachments((prev) => prev.filter((_, idx) => idx !== i))
+                    }
+                    className="rounded-full p-0.5 hover:bg-green-100"
+                    aria-label={`Remove ${f.name}`}
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
           )}
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-            placeholder="Ask about your property..."
-            className="flex-1 px-4 py-3 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-          />
-          <button
-            onClick={sendMessage}
-            disabled={!input.trim() || loading}
-            className="p-3 rounded-xl bg-green-700 text-white hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <Send size={20} />
-          </button>
+          <div className="flex gap-2">
+            {messages.length > 0 && (
+              <button
+                onClick={clearChat}
+                className="p-3 rounded-xl text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+              >
+                <Trash2 size={20} />
+              </button>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ACCEPTED_FILES}
+              className="hidden"
+              onChange={(e) => {
+                const picked = Array.from(e.target.files || []);
+                if (picked.length > 0) {
+                  setAttachments((prev) => [...prev, ...picked]);
+                }
+                e.target.value = "";
+              }}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+              className="p-3 rounded-xl text-stone-400 hover:text-green-700 hover:bg-green-50 disabled:opacity-50 transition-colors"
+              aria-label="Attach a document"
+            >
+              <Paperclip size={20} />
+            </button>
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+              placeholder={
+                attachments.length > 0
+                  ? "Add a note about these files (optional)..."
+                  : "Ask, or attach a document to file..."
+              }
+              className="flex-1 px-4 py-3 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            />
+            <button
+              onClick={sendMessage}
+              disabled={(!input.trim() && attachments.length === 0) || loading}
+              className="p-3 rounded-xl bg-green-700 text-white hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Send size={20} />
+            </button>
+          </div>
         </div>
       </div>
     </div>

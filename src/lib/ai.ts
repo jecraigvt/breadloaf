@@ -813,7 +813,10 @@ function classifyIntent(message: string): QueryIntent {
 
 export async function chatWithAssistant(
   messages: { role: "user" | "model"; content: string }[],
-  username?: string
+  username?: string,
+  // Server-injected note describing attachments already filed this turn
+  // (see /api/assistant) — appended to the user's message, never shown in UI
+  attachmentContext?: string
 ): Promise<string> {
   const lastUserMessage = messages.filter((m) => m.role === "user").pop();
   let documentContext = "";
@@ -1017,9 +1020,15 @@ export async function chatWithAssistant(
     memoryContext = parts.join("\n\n");
   }
 
-  // Route to the right model based on query intent
+  // Route to the right model based on query intent. Attachment turns need
+  // real document comprehension, so never drop those to the lite model.
   const intent = lastUserMessage ? classifyIntent(lastUserMessage.content) : "lookup";
-  const selectedModel = intent === "action" ? MODELS.lite : intent === "analysis" ? MODELS.pro : MODELS.flash;
+  const selectedModel =
+    intent === "action" && !attachmentContext
+      ? MODELS.lite
+      : intent === "analysis"
+        ? MODELS.pro
+        : MODELS.flash;
 
   const model = genAI.getGenerativeModel({
     model: selectedModel,
@@ -1081,7 +1090,14 @@ WHAT YOU CAN DO:
    - Post messages to the family bulletin board (e.g., "Post that the driveway needs plowing")
    - Sign up to cook dinner (e.g., "Sign me up to make tacos on Saturday for 8 people")
 
-3. REMEMBER important information using save_memory:
+3. FILE DOCUMENTS sent in chat:
+   - Family members can attach files (photos of receipts, PDFs, Word/Excel docs, audio, video) directly in this chat using the paperclip button
+   - Attachments are automatically categorized and filed into the document archive BEFORE you see them — you'll get a system note describing what was filed and where
+   - When that happens: confirm where each document landed, summarize what's in it, and if it contains important facts (costs, decisions, dates, vendor info, how-to steps), save a memory so you can recall it later
+   - If something lands in the Needs Review bucket, tell them they can fix the category on the Documents page
+   - If someone ASKS how to add a document, tell them: attach it right here in chat, email it to breadloafhillsite@gmail.com, or use the upload page at /upload
+
+4. REMEMBER important information using save_memory:
    - SEMANTIC memories for facts & preferences: "Greg prefers the loft", "insurance renews March 2027", "the well pump is a Grundfos SQ 5-70"
    - EPISODIC memories for events & decisions: "July 2026 board meeting approved $15K roof repair", "Tom replaced the water heater in June"
    - PROCEDURAL memories for how-to knowledge: "Winterization steps: drain pipes, close main shutoff, set thermostat to 55"
@@ -1089,7 +1105,7 @@ WHAT YOU CAN DO:
    - If a memory on the same topic exists, update it rather than creating a duplicate
    - You should reference your memories when they're relevant to the conversation
 
-4. HELP WITH S-CORP matters:
+5. HELP WITH S-CORP matters:
    - Track expenses by category (utilities, maintenance, insurance, taxes, improvements, supplies, professional services)
    - Classify expenses as operating vs. capital
    - Track who paid for what (Tom, Jim, Sandy, Greg, or Shared)
@@ -1121,9 +1137,12 @@ Guidelines:
   });
 
   const lastMessage = messages[messages.length - 1];
+  const outgoing = attachmentContext
+    ? lastMessage.content + attachmentContext
+    : lastMessage.content;
 
   // Send message and handle function calls in a loop
-  let result = await chat.sendMessage(lastMessage.content);
+  let result = await chat.sendMessage(outgoing);
   let functionCalls = result.response.functionCalls();
   let iterations = 0;
 
