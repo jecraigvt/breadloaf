@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "@/lib/prisma";
+import { MODELS } from "@/lib/ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
@@ -119,7 +120,7 @@ export async function POST(request: NextRequest) {
     if (process.env.GOOGLE_AI_API_KEY && imageUrls.length > 0) {
       try {
         const model = genAI.getGenerativeModel({
-          model: "gemini-3-flash-preview",
+          model: MODELS.flash,
         });
 
         // Fetch up to 3 images and describe them
@@ -171,7 +172,7 @@ export async function POST(request: NextRequest) {
     if (process.env.GOOGLE_AI_API_KEY) {
       try {
         const model = genAI.getGenerativeModel({
-          model: "gemini-3-flash-preview",
+          model: MODELS.flash,
         });
 
         const prompt = `You are Bucky Dragon, document analyst for the Craig family property at Breadloaf Hill, Vermont. Analyze this linked document thoroughly and return ONLY valid JSON (no markdown fences):

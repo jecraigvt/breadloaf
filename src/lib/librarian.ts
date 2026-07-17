@@ -4,6 +4,7 @@ import { readFile, unlink } from "fs/promises";
 import path from "path";
 import { prisma } from "@/lib/prisma";
 import { slugifyCategory } from "@/lib/document-categories";
+import { MODELS } from "@/lib/ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
@@ -89,11 +90,11 @@ Return ONLY valid JSON (no markdown fences):
   // fall back to Flash rather than failing the whole review.
   let result;
   try {
-    const pro = genAI.getGenerativeModel({ model: "gemini-3.1-pro-preview" });
+    const pro = genAI.getGenerativeModel({ model: MODELS.pro });
     result = await pro.generateContent(prompt);
   } catch (err) {
     console.warn("[Librarian] Pro model unavailable, falling back to Flash:", String(err).slice(0, 200));
-    const flash = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+    const flash = genAI.getGenerativeModel({ model: MODELS.flash });
     result = await flash.generateContent(prompt);
   }
 

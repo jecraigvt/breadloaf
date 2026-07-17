@@ -3,7 +3,7 @@ import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { prisma } from "@/lib/prisma";
 import { fetchUnseenEmails, emailConfigured, type InboundEmail, type InboundAttachment } from "@/lib/email-inbox";
-import { categorizeDocument, categorizeText, embedAndStore } from "@/lib/ai";
+import { categorizeDocument, categorizeText, embedAndStore, MODELS } from "@/lib/ai";
 import { extractTextFromFile, isExtractableType } from "@/lib/extract-text";
 import { resolveDocumentCategory } from "@/lib/document-categories";
 import { findOverlappingStay, createStayWithCalendarSync } from "@/lib/stays";
@@ -182,7 +182,7 @@ interface BodyAnalysis {
 }
 
 async function analyzeEmailBody(email: InboundEmail): Promise<BodyAnalysis> {
-  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+  const model = genAI.getGenerativeModel({ model: MODELS.flash });
   const today = new Date().toISOString().slice(0, 10);
 
   const result = await model.generateContent(

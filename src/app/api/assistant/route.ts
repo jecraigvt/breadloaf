@@ -8,7 +8,17 @@ interface ChatMessage {
   content: string;
 }
 
+function isOverloaded(error: unknown): boolean {
+  const status = (error as { status?: number })?.status;
+  return status === 503 || status === 429;
+}
+
+const OVERLOADED_MESSAGE =
+  "Bucky's AI service (Google Gemini) is overloaded right now — this is on Google's end, not yours. Wait a minute and try again.";
+
 export async function POST(request: NextRequest) {
+  // Tracked outside the try so the catch can report what was already filed
+  const filed: FiledDocument[] = [];
   try {
     let messages: ChatMessage[];
     let username: string | undefined;
@@ -30,7 +40,6 @@ export async function POST(request: NextRequest) {
         .getAll("files")
         .filter((f): f is File => f instanceof File && f.size > 0);
 
-      const filed: FiledDocument[] = [];
       const failed: string[] = [];
       for (const file of files) {
         try {
@@ -91,6 +100,28 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Assistant error:", error);
+
+    // Attachments were already filed before the chat call — tell the user
+    // so they don't re-send the files and create duplicates.
+    if (filed.length > 0) {
+      const lines = filed.map((d) =>
+        d.needsReview
+          ? `• "${d.title}" — saved to the Needs Review bucket on the Documents page`
+          : `• "${d.title}" — filed under ${d.category}`
+      );
+      return new Response(
+        `Your attachment${filed.length > 1 ? "s are" : " is"} safely in the archive:\n${lines.join("\n")}\n\n${
+          isOverloaded(error)
+            ? "But the AI chat service (Google Gemini) is overloaded right now, so I can't say more about it. No need to re-send the files — just ask me about them in a minute."
+            : "But something went wrong answering your message. No need to re-send the files — just ask me about them again."
+        }`,
+        { headers: { "Content-Type": "text/plain; charset=utf-8" } }
+      );
+    }
+
+    if (isOverloaded(error)) {
+      return new Response(OVERLOADED_MESSAGE, { status: 503 });
+    }
     return new Response("Failed to get response from assistant", {
       status: 500,
     });

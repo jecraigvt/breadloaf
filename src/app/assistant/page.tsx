@@ -66,7 +66,11 @@ export default function AssistantPage() {
         });
       }
 
-      if (!res.ok) throw new Error("Failed to get response");
+      if (!res.ok) {
+        // The server sends a human-readable reason (e.g. Gemini overloaded)
+        const serverMessage = await res.text().catch(() => "");
+        throw new Error(serverMessage || "Failed to get response");
+      }
 
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
@@ -90,14 +94,16 @@ export default function AssistantPage() {
           return [...updated];
         });
       }
-    } catch {
+    } catch (err) {
+      // Prefer the server's specific reason (Gemini overloaded, etc.) over a
+      // generic — and misleading — connection message
+      const serverMessage =
+        err instanceof Error && err.message && err.message !== "Failed to get response"
+          ? err.message
+          : "Sorry, I had trouble answering that. Give it a moment and try again.";
       setMessages((prev) => [
         ...prev,
-        {
-          role: "model",
-          content:
-            "Sorry, I had trouble connecting. Please check that the Google AI API key is configured and try again.",
-        },
+        { role: "model", content: serverMessage },
       ]);
     } finally {
       setLoading(false);

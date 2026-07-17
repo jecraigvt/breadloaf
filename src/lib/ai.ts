@@ -6,15 +6,39 @@ import { findOverlappingStay, createStayWithCalendarSync } from "@/lib/stays";
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
 // ─── Model Routing ─────────────────────────────────────────────
-// Flash Lite 3.1: quick actions (grocery, expenses, etc.) — $0.25/$1.50 per 1M tokens
-// Flash 3: general chat, document processing — $0.50/$3.00 per 1M tokens
-// Pro 3.1: complex analysis, deep reasoning — $2-4/$12-18 per 1M tokens
-const MODELS = {
-  lite: "gemini-3.1-flash-lite-preview",
-  flash: "gemini-3-flash-preview",
+// Stable (GA) models preferred — preview models can be retired on 2 weeks'
+// notice (gemini-3-pro-preview was shut down March 2026 with a forced
+// migration). Verified against ai.google.dev July 2026.
+// Flash Lite 3.1 (stable): quick actions — $0.25/$1.50 per 1M tokens
+// Flash 3.5 (stable, GA May 2026): chat, document processing — $1.50/$9.00 per 1M tokens
+// Pro 3.1 (still preview-only; no stable Pro exists yet — revisit when one ships):
+//   complex analysis — $2-4/$12-18 per 1M tokens
+// Embedding 2 (stable, GA April 2026) — $0.20 per 1M tokens
+export const MODELS = {
+  lite: "gemini-3.1-flash-lite",
+  flash: "gemini-3.5-flash",
   pro: "gemini-3.1-pro-preview",
-  embedding: "gemini-embedding-2-preview",
+  embedding: "gemini-embedding-2",
 } as const;
+
+// Retry transient Gemini failures — 503 (model overloaded) and 429 (rate
+// limit) usually clear within seconds. Anything else rethrows immediately.
+export async function withGeminiRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const status = (err as { status?: number })?.status;
+      if (status !== 503 && status !== 429) throw err;
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastErr;
+}
 
 // ─── Embedding Functions ───────────────────────────────────────
 export async function generateEmbedding(text: string): Promise<number[]> {
@@ -119,7 +143,7 @@ export async function processMediaFile(
   const isAudio = mimeType.startsWith("audio/");
   const mediaType = isAudio ? "audio recording" : "video";
 
-  const result = await model.generateContent([
+  const result = await withGeminiRetry(() => model.generateContent([
     {
       inlineData: {
         mimeType: mimeType as string,
@@ -149,7 +173,7 @@ For board meetings: capture all votes, motions, decisions, assignments, deadline
 For property walkthroughs: note condition of structures, items needing attention, any damage or improvements.
 Be extremely thorough — extract every useful detail.`,
     },
-  ]);
+  ]));
 
   const text = result.response.text();
   try {
@@ -178,7 +202,7 @@ export async function categorizeDocument(
   // Gemini reads images AND PDFs inline
   const mimeType = fileType as "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
 
-  const result = await model.generateContent([
+  const result = await withGeminiRetry(() => model.generateContent([
     {
       inlineData: {
         mimeType,
@@ -218,7 +242,7 @@ This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Gre
 - Bank statements, account statements → "Bank Statements"
 - Capital account statements, shareholder equity → "Capital Accounts"`,
     },
-  ]);
+  ]));
 
   const text = result.response.text();
   try {
@@ -249,7 +273,7 @@ export async function categorizeText(
 ): Promise<CategorizationResult> {
   const model = genAI.getGenerativeModel({ model: MODELS.flash });
 
-  const result = await model.generateContent(
+  const result = await withGeminiRetry(() => model.generateContent(
     `You are a document categorization assistant for the Breadloaf Hill family property archive in Vermont.
 
 Existing categories:
@@ -281,7 +305,7 @@ This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Gre
 
 Document text:
 ${documentText}`
-  );
+  ));
 
   const text = result.response.text();
   try {
@@ -1142,12 +1166,14 @@ Guidelines:
     : lastMessage.content;
 
   // Send message and handle function calls in a loop
-  let result = await chat.sendMessage(outgoing);
+  let result = await withGeminiRetry(() => chat.sendMessage(outgoing));
   let functionCalls = result.response.functionCalls();
   let iterations = 0;
 
   while (functionCalls && functionCalls.length > 0 && iterations < 5) {
-    const functionResponses = [];
+    const functionResponses: {
+      functionResponse: { name: string; response: Record<string, unknown> };
+    }[] = [];
     for (const fc of functionCalls) {
       try {
         const response = await executeToolFunction(
@@ -1170,7 +1196,7 @@ Guidelines:
       }
     }
 
-    result = await chat.sendMessage(functionResponses);
+    result = await withGeminiRetry(() => chat.sendMessage(functionResponses));
     functionCalls = result.response.functionCalls();
     iterations++;
   }

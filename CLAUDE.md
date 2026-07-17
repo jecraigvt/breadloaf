@@ -8,7 +8,7 @@ Family hub website for the Craig family property at 3995 Vermont Route 125, Ript
 - **Styling:** Tailwind CSS 3.4 + editorial design system (see Design System below)
 - **Fonts:** Instrument Serif (italic display), Instrument Sans (body), JetBrains Mono (labels) via `next/font/google`
 - **Database:** PostgreSQL (Railway), Prisma ORM
-- **AI:** Google Gemini 3 Flash (document categorization, property assistant)
+- **AI:** Google Gemini (document categorization, property assistant). Model IDs centralized in the exported `MODELS` const in `src/lib/ai.ts` — never hardcode a model ID elsewhere. Stable models preferred (as of July 2026: gemini-3.5-flash, gemini-3.1-flash-lite, gemini-embedding-2; pro is still preview-only). If the embedding model ever changes again, run `railway run npx tsx scripts/re-embed.ts` to rebuild vectors in the new space.
 - **Calendar:** Two-way sync with Google Calendar via service account
 - **Weather:** Open-Meteo API (free, no key needed)
 - **Hosting:** Railway (hobby plan)
