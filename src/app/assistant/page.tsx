@@ -220,7 +220,7 @@ export default function AssistantPage() {
   };
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex flex-col flex-1 min-h-0">
       <Header
         title="Bucky Dragon"
         subtitle="Your family property assistant"
@@ -229,7 +229,7 @@ export default function AssistantPage() {
       {/* Chat Messages */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto chat-scroll px-4 py-4 space-y-4 pb-36"
+        className="flex-1 overflow-y-auto chat-scroll px-4 py-4 space-y-4"
       >
         {messages.length === 0 && (
           <div className="text-center py-12">
@@ -309,8 +309,9 @@ export default function AssistantPage() {
         )}
       </div>
 
-      {/* Input Bar */}
-      <div className="fixed bottom-16 left-0 right-0 bg-white border-t border-stone-200 px-4 py-3">
+      {/* Input Bar — in normal flow at the bottom of the chat column, so it
+          can never float over messages; the messages area scrolls above it */}
+      <div className="bg-white border-t border-stone-200 px-4 py-3">
         <div className="max-w-lg mx-auto space-y-2">
           {recError && (
             <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">

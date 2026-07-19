@@ -68,11 +68,16 @@ input, select, textarea {
   width: 100%;
   max-width: 440px;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--paper);
   color: var(--ink);
   position: relative;
   overflow: hidden;
   box-shadow: 0 40px 80px -20px rgba(0,0,0,0.5);
+  /* Column layout so a page can flex-fill the space above the bottom nav
+     (the chat page pins its input bar this way instead of floating it) */
+  display: flex;
+  flex-direction: column;
 }
 @media (min-width: 900px) {
   .shell {
@@ -179,6 +184,7 @@ h3.chapter {
   grid-template-columns: repeat(5, 1fr);
   padding: 8px 4px 14px;
   z-index: 20;
+  margin-top: auto; /* pin to the shell bottom on short pages */
 }
 .nav-item {
   display: flex; flex-direction: column; align-items: center; gap: 4px;
@@ -399,6 +405,7 @@ h3.chapter {
   font-family: var(--mono); font-size: 9px;
   text-transform: uppercase; letter-spacing: 0.18em;
   color: var(--muted); margin-bottom: 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .tile .meta .nm {
   font-family: var(--serif); font-size: 19px;
