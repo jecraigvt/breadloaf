@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Header } from "@/components/layout/header";
-import { Send, Loader2, Mountain, User, Trash2, Paperclip, FileText, X } from "lucide-react";
+import { Send, Loader2, Mountain, User, Trash2, Paperclip, FileText, X, Mic, Square } from "lucide-react";
 
 interface Message {
   role: "user" | "model";
@@ -12,6 +12,20 @@ interface Message {
 const ACCEPTED_FILES =
   "image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,audio/*,video/*";
 
+// Preferred recording formats, best first. Safari records AAC (audio/mp4 —
+// verified through the transcription pipeline); Chrome/Android record WebM.
+const RECORDING_MIME_TYPES = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"];
+
+// Transcription reads files up to ~15MB (~30 min of AAC) — nudge people to
+// wrap up before a memo silently exceeds what Bucky can listen to.
+const RECORDING_WARN_SECONDS = 25 * 60;
+
+function formatClock(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export default function AssistantPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -20,6 +34,97 @@ export default function AssistantPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Voice recording state — the finished recording becomes a normal
+  // attachment, so everything downstream (multipart send, transcription,
+  // filing, asset discovery) is the existing pipeline untouched.
+  const [recording, setRecording] = useState(false);
+  const [recSeconds, setRecSeconds] = useState(0);
+  const [recError, setRecError] = useState<string | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const discardRef = useRef(false);
+  const startingRef = useRef(false); // true while the mic permission prompt is pending
+
+  const releaseRecording = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    recorderRef.current = null;
+    setRecording(false);
+    setRecSeconds(0);
+  };
+
+  const startRecording = async () => {
+    // Guard double-taps and a still-pending permission prompt — a second
+    // start while one is underway would let the first's failure handler
+    // tear down the active recording
+    if (recording || startingRef.current || recorderRef.current) return;
+    startingRef.current = true;
+    setRecError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      const mimeType = RECORDING_MIME_TYPES.find(
+        (t) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(t)
+      );
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+      recorderRef.current = recorder;
+      chunksRef.current = [];
+      discardRef.current = false;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        if (!discardRef.current && chunksRef.current.length > 0) {
+          const type = recorder.mimeType || "audio/webm";
+          const ext = type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm";
+          const stamp = new Date().toLocaleString("en-US", {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          });
+          const file = new File(
+            [new Blob(chunksRef.current, { type })],
+            `Voice memo ${stamp}.${ext}`.replace(/[,:]/g, ""),
+            { type }
+          );
+          setAttachments((prev) => [...prev, file]);
+        }
+        releaseRecording();
+      };
+
+      recorder.start(1000); // collect chunks each second
+      startingRef.current = false;
+      setRecording(true);
+      setRecSeconds(0);
+      timerRef.current = setInterval(() => setRecSeconds((s) => s + 1), 1000);
+    } catch {
+      startingRef.current = false;
+      releaseRecording();
+      setRecError(
+        "Couldn't access the microphone — check that mic permission is allowed for this site."
+      );
+    }
+  };
+
+  const stopRecording = (discard: boolean) => {
+    discardRef.current = discard;
+    const rec = recorderRef.current;
+    if (rec && rec.state !== "inactive") {
+      rec.stop(); // onstop finishes up and releases the mic
+    } else {
+      releaseRecording();
+    }
+  };
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -135,8 +240,8 @@ export default function AssistantPage() {
             <p className="text-stone-400 text-sm mt-2 max-w-xs mx-auto">
               Your family property hub — I know about visits, rooms, documents,
               expenses, supplies, and everything Breadloaf Hill. Ask me anything,
-              tell me to do something, or attach a document (📎) and I&apos;ll
-              file it in the archive.
+              attach a document (📎) to file it, or tap the mic and just talk —
+              walkthroughs of the property become the family notebook.
             </p>
             <div className="flex flex-wrap gap-2 justify-center mt-6">
               {[
@@ -207,6 +312,41 @@ export default function AssistantPage() {
       {/* Input Bar */}
       <div className="fixed bottom-16 left-0 right-0 bg-white border-t border-stone-200 px-4 py-3">
         <div className="max-w-lg mx-auto space-y-2">
+          {recError && (
+            <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              <span className="flex-1">{recError}</span>
+              <button onClick={() => setRecError(null)} aria-label="Dismiss">
+                <X size={12} />
+              </button>
+            </div>
+          )}
+          {recording && (
+            <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+              <span className="text-sm font-medium text-red-700 tabular-nums">
+                Recording {formatClock(recSeconds)}
+              </span>
+              {recSeconds >= RECORDING_WARN_SECONDS && (
+                <span className="text-xs text-amber-700">
+                  Getting long — wrap up so Bucky can listen to all of it
+                </span>
+              )}
+              <span className="flex-1" />
+              <button
+                onClick={() => stopRecording(true)}
+                className="px-2 py-1 rounded-lg text-xs text-stone-500 hover:bg-stone-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => stopRecording(false)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700"
+              >
+                <Square size={12} fill="currentColor" />
+                Stop
+              </button>
+            </div>
+          )}
           {attachments.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {attachments.map((f, i) => (
@@ -254,11 +394,23 @@ export default function AssistantPage() {
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              disabled={loading}
+              disabled={loading || recording}
               className="p-3 rounded-xl text-stone-400 hover:text-green-700 hover:bg-green-50 disabled:opacity-50 transition-colors"
               aria-label="Attach a document"
             >
               <Paperclip size={20} />
+            </button>
+            <button
+              onClick={() => (recording ? stopRecording(false) : startRecording())}
+              disabled={loading}
+              className={`p-3 rounded-xl transition-colors disabled:opacity-50 ${
+                recording
+                  ? "text-red-600 bg-red-50"
+                  : "text-stone-400 hover:text-green-700 hover:bg-green-50"
+              }`}
+              aria-label={recording ? "Stop recording" : "Record a voice memo"}
+            >
+              <Mic size={20} />
             </button>
             <input
               ref={inputRef}
@@ -275,7 +427,7 @@ export default function AssistantPage() {
             />
             <button
               onClick={sendMessage}
-              disabled={(!input.trim() && attachments.length === 0) || loading}
+              disabled={(!input.trim() && attachments.length === 0) || loading || recording}
               className="p-3 rounded-xl bg-green-700 text-white hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <Send size={20} />
