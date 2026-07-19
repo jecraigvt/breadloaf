@@ -31,6 +31,32 @@ interface MaintenanceRecord {
   updatedAt: string;
 }
 
+interface Asset {
+  id: string;
+  name: string;
+  category: string;
+  location: string | null;
+  make: string | null;
+  model: string | null;
+  serial: string | null;
+  installedYear: number | null;
+  notes: string | null;
+  records: { id: string; title: string; performedAt: string; cost: number | null }[];
+  documents: { id: string; title: string }[];
+  _count: { records: number; documents: number };
+}
+
+const ASSET_CATEGORY_LABELS: Record<string, string> = {
+  water: "Water",
+  power: "Power",
+  hvac: "Heating & Air",
+  structure: "Structure",
+  appliance: "Appliances",
+  grounds: "Grounds",
+  safety: "Safety",
+  other: "Other",
+};
+
 const CATEGORIES = [
   "Septic",
   "Plumbing",
@@ -75,6 +101,8 @@ function toInputDate(date: string | null): string {
 
 export default function MaintenancePage() {
   const [records, setRecords] = useState<MaintenanceRecord[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [expandedAssetId, setExpandedAssetId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [filterCategory, setFilterCategory] = useState("All");
   const [showForm, setShowForm] = useState(false);
@@ -96,6 +124,13 @@ export default function MaintenancePage() {
   useEffect(() => {
     fetchRecords();
   }, [filterCategory]);
+
+  useEffect(() => {
+    fetch("/api/assets")
+      .then((res) => (res.ok ? res.json() : []))
+      .then(setAssets)
+      .catch(() => {});
+  }, []);
 
   const fetchRecords = async () => {
     setLoading(true);
@@ -202,6 +237,94 @@ export default function MaintenancePage() {
                   </span>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Property systems — the equipment "notebook" Bucky maintains */}
+        {assets.length > 0 && (
+          <div>
+            <h2 className="font-semibold text-stone-800 text-sm mb-2 flex items-center gap-2">
+              <Wrench size={15} className="text-green-700" />
+              Property Systems
+              <span className="text-xs font-normal text-stone-400">
+                — tell Bucky about equipment and it shows up here
+              </span>
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {assets.map((asset) => {
+                const isOpen = expandedAssetId === asset.id;
+                const specs = [
+                  asset.make,
+                  asset.model,
+                  asset.installedYear ? `installed ${asset.installedYear}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
+                return (
+                  <button
+                    key={asset.id}
+                    onClick={() => setExpandedAssetId(isOpen ? null : asset.id)}
+                    className={`text-left bg-white rounded-xl border p-3 transition-colors ${
+                      isOpen ? "border-green-300 sm:col-span-2" : "border-stone-200 hover:border-green-200"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-stone-800 text-sm truncate">
+                        {asset.name}
+                      </span>
+                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600 flex-shrink-0">
+                        {ASSET_CATEGORY_LABELS[asset.category] || asset.category}
+                      </span>
+                    </div>
+                    <div className="text-xs text-stone-400 mt-0.5 truncate">
+                      {[asset.location, specs].filter(Boolean).join(" — ") || "No details yet"}
+                    </div>
+                    {isOpen && (
+                      <div className="mt-3 space-y-2 text-sm text-stone-600">
+                        {asset.serial && (
+                          <p className="text-xs text-stone-500">Serial: {asset.serial}</p>
+                        )}
+                        {asset.notes && (
+                          <p className="bg-stone-50 rounded-lg p-3 whitespace-pre-wrap text-sm">
+                            {asset.notes}
+                          </p>
+                        )}
+                        {asset.records.length > 0 && (
+                          <div>
+                            <p className="text-xs font-medium text-stone-500 mb-1">
+                              Service history ({asset._count.records})
+                            </p>
+                            {asset.records.map((r) => (
+                              <p key={r.id} className="text-xs text-stone-500">
+                                • {r.title} — {formatDate(r.performedAt)}
+                                {r.cost != null ? ` ($${r.cost.toFixed(2)})` : ""}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                        {asset.documents.length > 0 && (
+                          <div>
+                            <p className="text-xs font-medium text-stone-500 mb-1">
+                              Documents ({asset._count.documents})
+                            </p>
+                            {asset.documents.map((d) => (
+                              <p key={d.id} className="text-xs text-green-700">
+                                • {d.title}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                        {!asset.notes && asset.records.length === 0 && asset.documents.length === 0 && (
+                          <p className="text-xs text-stone-400">
+                            Nothing recorded yet — tell Bucky what you know about it.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}

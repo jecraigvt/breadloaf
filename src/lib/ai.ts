@@ -465,8 +465,59 @@ const assistantTools: FunctionDeclarationsTool[] = [
               type: SchemaType.NUMBER,
               description: "Cost in dollars if known",
             },
+            assetName: {
+              type: SchemaType.STRING,
+              description:
+                "Name of the property system/equipment this work was done on (e.g. 'Well & Water System', 'Generator'), if it maps to one. Links the record to that system's history.",
+            },
           },
           required: ["title"],
+        },
+      },
+      {
+        name: "save_asset",
+        description:
+          "Create or update a property system/equipment record (the 'notebook' of permanently installed systems: well pump, furnace, generator, septic, installed dehumidifier, etc.). Use PROACTIVELY whenever you learn about a permanently installed system or major piece of equipment — from conversation, a document, or a voice-memo walkthrough. If a matching system already exists, it is updated (details filled in, notes appended) rather than duplicated. NOT for consumables, portable items, or supplies.",
+        parameters: {
+          type: SchemaType.OBJECT,
+          properties: {
+            name: {
+              type: SchemaType.STRING,
+              description:
+                "Name of the system as the family would say it (e.g. 'Well & Water System', 'Basement Dehumidifier'). Check the PROPERTY SYSTEMS list first and reuse an existing name when you mean the same system.",
+            },
+            category: {
+              type: SchemaType.STRING,
+              description:
+                "One of: water, power, hvac, structure, appliance, grounds, safety, other",
+            },
+            location: {
+              type: SchemaType.STRING,
+              description: "Where it is on the property (e.g. 'basement, north wall')",
+            },
+            make: {
+              type: SchemaType.STRING,
+              description: "Manufacturer if known",
+            },
+            model: {
+              type: SchemaType.STRING,
+              description: "Model number/name if known",
+            },
+            serial: {
+              type: SchemaType.STRING,
+              description: "Serial number if known",
+            },
+            installedYear: {
+              type: SchemaType.NUMBER,
+              description: "Year installed, if known",
+            },
+            notes: {
+              type: SchemaType.STRING,
+              description:
+                "Quirks, tips, history, warnings — anything a new caretaker would need. When UPDATING an existing system, send ONLY the new information (existing notes are kept automatically — do not restate them).",
+            },
+          },
+          required: ["name"],
         },
       },
       {
@@ -619,6 +670,25 @@ const assistantTools: FunctionDeclarationsTool[] = [
   },
 ];
 
+// Fuzzy asset lookup: exact (case-insensitive) name first, then containment
+// either direction ("Well Pump" matches "Well & Water System" only via
+// explicit containment, so near-misses update instead of duplicating).
+// In-memory scan keeps this portable across postgres and sqlite dev.
+async function findAssetByName(name: string) {
+  const lower = name.trim().toLowerCase();
+  if (!lower) return null;
+  const all = await prisma.asset.findMany();
+  return (
+    all.find((a) => a.name.toLowerCase() === lower) ||
+    all.find(
+      (a) =>
+        a.name.toLowerCase().includes(lower) ||
+        lower.includes(a.name.toLowerCase())
+    ) ||
+    null
+  );
+}
+
 // Execute a function call from the assistant
 async function executeToolFunction(
   name: string,
@@ -691,6 +761,9 @@ async function executeToolFunction(
       };
     }
     case "add_maintenance_record": {
+      const asset = args.assetName
+        ? await findAssetByName(args.assetName as string)
+        : null;
       const record = await prisma.maintenanceRecord.create({
         data: {
           title: args.title as string,
@@ -699,11 +772,74 @@ async function executeToolFunction(
           performedBy: (args.performedBy as string) || username || undefined,
           performedAt: new Date(),
           cost: args.cost ? parseFloat(String(args.cost)) : undefined,
+          assetId: asset?.id,
         },
       });
       return {
         success: true,
         record: { id: record.id, title: record.title },
+        linkedAsset: asset?.name ?? null,
+      };
+    }
+    case "save_asset": {
+      const name = (args.name as string)?.trim();
+      if (!name) return { success: false, error: "name is required" };
+
+      const incomingNotes = (args.notes as string)?.trim();
+      const existing = await findAssetByName(name);
+
+      if (existing) {
+        // Merge notes: keep existing when incoming adds nothing, replace when
+        // incoming restates-and-extends them, append only genuinely new info
+        const oldNotes = existing.notes || "";
+        const mergedNotes = !incomingNotes
+          ? existing.notes
+          : oldNotes.toLowerCase().includes(incomingNotes.toLowerCase())
+            ? existing.notes
+            : incomingNotes.toLowerCase().includes(oldNotes.toLowerCase().slice(0, 80))
+              ? incomingNotes
+              : [oldNotes, incomingNotes].filter(Boolean).join("\n— ");
+        const updated = await prisma.asset.update({
+          where: { id: existing.id },
+          data: {
+            category: (args.category as string) || existing.category,
+            location: (args.location as string) || existing.location,
+            make: (args.make as string) || existing.make,
+            model: (args.model as string) || existing.model,
+            serial: (args.serial as string) || existing.serial,
+            installedYear: args.installedYear
+              ? parseInt(String(args.installedYear))
+              : existing.installedYear,
+            notes: mergedNotes,
+          },
+        });
+        return {
+          success: true,
+          action: "updated",
+          asset: { id: updated.id, name: updated.name },
+          note: `Matched existing system "${existing.name}" — details merged, not duplicated.`,
+        };
+      }
+
+      const created = await prisma.asset.create({
+        data: {
+          name,
+          category: (args.category as string) || "other",
+          location: (args.location as string) || undefined,
+          make: (args.make as string) || undefined,
+          model: (args.model as string) || undefined,
+          serial: (args.serial as string) || undefined,
+          installedYear: args.installedYear
+            ? parseInt(String(args.installedYear))
+            : undefined,
+          notes: incomingNotes || undefined,
+          addedBy: username || undefined,
+        },
+      });
+      return {
+        success: true,
+        action: "created",
+        asset: { id: created.id, name: created.name },
       };
     }
     case "add_bulletin_message": {
@@ -913,7 +1049,7 @@ export async function chatWithAssistant(
 
   // Get upcoming stays and room info
   const currentYear = new Date().getFullYear();
-  const [upcomingStays, rooms, groceryItems, pantryItems, upcomingDinners, recentMaintenance, recentExpenses, expenseSummary, allMemories] =
+  const [upcomingStays, rooms, groceryItems, pantryItems, upcomingDinners, recentMaintenance, recentExpenses, expenseSummary, allMemories, assets] =
     await Promise.all([
       prisma.stay.findMany({
         where: { checkOut: { gte: new Date() } },
@@ -953,6 +1089,13 @@ export async function chatWithAssistant(
       prisma.jarvisMemory.findMany({
         orderBy: [{ relevance: "desc" }, { updatedAt: "desc" }],
         take: 50,
+      }),
+      prisma.asset.findMany({
+        where: { status: "active" },
+        orderBy: [{ category: "asc" }, { name: "asc" }],
+        include: {
+          records: { orderBy: { performedAt: "desc" }, take: 3 },
+        },
       }),
     ]);
 
@@ -1002,6 +1145,21 @@ export async function chatWithAssistant(
           )
           .join("\n")
       : "No upcoming dinners signed up.";
+
+  const assetContext =
+    assets.length > 0
+      ? assets
+          .map((a) => {
+            const specs = [a.make, a.model, a.serial ? `s/n ${a.serial}` : "", a.installedYear ? `installed ${a.installedYear}` : ""]
+              .filter(Boolean)
+              .join(" ");
+            const recent = a.records.length
+              ? ` | Recent work: ${a.records.map((r) => `${r.title} (${new Date(r.performedAt).toLocaleDateString()})`).join("; ")}`
+              : "";
+            return `- ${a.name} [${a.category}]${a.location ? ` — ${a.location}` : ""}${specs ? ` | ${specs}` : ""}${a.notes ? ` | Notes: ${a.notes.slice(0, 400)}` : ""}${recent}`;
+          })
+          .join("\n")
+      : "No property systems recorded yet — start creating them with save_asset as you learn about them.";
 
   const maintenanceContext =
     recentMaintenance.length > 0
@@ -1080,6 +1238,9 @@ ${pantryContext}
 UPCOMING DINNERS:
 ${dinnerContext}
 
+PROPERTY SYSTEMS (the equipment "notebook" — permanently installed systems and major equipment):
+${assetContext}
+
 RECENT MAINTENANCE:
 ${maintenanceContext}
 
@@ -1121,7 +1282,16 @@ WHAT YOU CAN DO:
    - If something lands in the Needs Review bucket, tell them they can fix the category on the Documents page
    - If someone ASKS how to add a document, tell them: attach it right here in chat, email it to breadloafhillsite@gmail.com, or use the upload page at /upload
 
-4. REMEMBER important information using save_memory:
+4. MAINTAIN THE PROPERTY SYSTEMS NOTEBOOK using save_asset:
+   - The family's goal: get the property knowledge OUT of a couple of people's heads and INTO this notebook, so anyone can look after the place
+   - Whenever you learn about a PERMANENTLY INSTALLED system or major piece of equipment — from chat, a filed document, or a voice-memo walkthrough transcript — call save_asset for it. Examples: well pump, pressure tank, furnace, generator, septic system, water heater, sump pump, a permanently installed dehumidifier
+   - Capture everything offered: make/model/serial, location, install year, and especially the QUIRKS ("reset button sticks", "close valve A first or it airlocks")
+   - A voice-memo walkthrough may describe SEVERAL systems — create or update one asset per system described
+   - Reuse existing system names from the PROPERTY SYSTEMS list; the tool merges into an existing match rather than duplicating, but help it by using consistent names
+   - Do NOT create assets for consumables, supplies, portable tools, or one-off repairs (those are maintenance records — link them with assetName instead)
+   - When logging maintenance that maps to a system, pass assetName so the work lands in that system's history
+
+5. REMEMBER important information using save_memory:
    - SEMANTIC memories for facts & preferences: "Greg prefers the loft", "insurance renews March 2027", "the well pump is a Grundfos SQ 5-70"
    - EPISODIC memories for events & decisions: "July 2026 board meeting approved $15K roof repair", "Tom replaced the water heater in June"
    - PROCEDURAL memories for how-to knowledge: "Winterization steps: drain pipes, close main shutoff, set thermostat to 55"
@@ -1129,7 +1299,7 @@ WHAT YOU CAN DO:
    - If a memory on the same topic exists, update it rather than creating a duplicate
    - You should reference your memories when they're relevant to the conversation
 
-5. HELP WITH S-CORP matters:
+6. HELP WITH S-CORP matters:
    - Track expenses by category (utilities, maintenance, insurance, taxes, improvements, supplies, professional services)
    - Classify expenses as operating vs. capital
    - Track who paid for what (Tom, Jim, Sandy, Greg, or Shared)
@@ -1170,7 +1340,9 @@ Guidelines:
   let functionCalls = result.response.functionCalls();
   let iterations = 0;
 
-  while (functionCalls && functionCalls.length > 0 && iterations < 5) {
+  // Walkthrough memos can legitimately produce many tool calls (one asset
+  // per system described, plus memories) — allow more rounds than plain chat
+  while (functionCalls && functionCalls.length > 0 && iterations < 8) {
     const functionResponses: {
       functionResponse: { name: string; response: Record<string, unknown> };
     }[] = [];

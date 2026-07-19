@@ -21,11 +21,14 @@ model Document {
   aiSummary       String?
   aiExtractedText String?
   uploadedBy      String?
+  assetId         String?
+  asset           Asset?   @relation(fields: [assetId], references: [id])
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@index([categoryId])
   @@index([createdAt])
+  @@index([assetId])
 }
 
 model Category {
@@ -138,11 +141,37 @@ model MaintenanceRecord {
   performedAt DateTime
   nextDueAt   DateTime?
   cost        Float?
+  assetId     String?
+  asset       Asset?    @relation(fields: [assetId], references: [id])
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   @@index([category])
   @@index([performedAt])
+  @@index([assetId])
+}
+
+// Permanently installed systems & major equipment — the property's
+// "notebook". Bucky creates/updates these as he learns about them from
+// conversation, documents, and voice-memo walkthroughs (save_asset tool).
+model Asset {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  category      String   @default("other") // water, power, hvac, structure, appliance, grounds, safety, other
+  location      String?  // where on the property
+  make          String?
+  model         String?
+  serial        String?
+  installedYear Int?
+  notes         String?  // quirks, tips, history — appended over time
+  status        String   @default("active") // active, retired
+  addedBy       String?
+  records       MaintenanceRecord[]
+  documents     Document[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([category])
 }
 
 model FamilyMember {

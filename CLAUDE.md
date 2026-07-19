@@ -97,7 +97,7 @@ src/app/
   assistant/            # AI property assistant (Gemini, function-calling for actions; paperclip attachments file docs into the archive via /api/assistant multipart + lib/file-document.ts)
   documents/            # Document archive: AI categorization, Needs Review bucket, AI "librarian" reorganization (Tidy Up button)
   upload/               # Document intake: camera, single or BATCH file upload (drop many files, they auto-file), link by URL. No longer a hub tile (July 2026) — main intake is now Bucky chat attachments + Mail Room email; page still works at /upload
-  maintenance/          # Maintenance log with timeline view
+  maintenance/          # Maintenance log (timeline) + Property Systems "notebook" (Asset registry — Bucky creates/updates assets via save_asset as he learns about equipment from chat/docs/voice-memo walkthroughs; records and documents link to assets via assetId)
   emergency/            # Emergency contacts (tap-to-call)
   guide/                # Local guide (swimming, hikes, restaurants)
   family/               # Family directory by Craig branch
