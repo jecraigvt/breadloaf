@@ -8,6 +8,7 @@ import { extractTextFromFile, isExtractableType } from "@/lib/extract-text";
 import { resolveDocumentCategory } from "@/lib/document-categories";
 import { findOverlappingStay, createStayWithCalendarSync } from "@/lib/stays";
 import { generateId } from "@/lib/utils";
+import { sha256 } from "@/lib/archive-integrity";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
@@ -273,6 +274,7 @@ async function archiveBodyAsDocument(
         aiSummary: result.summary || null,
         aiExtractedText: result.extractedText || null,
         uploadedBy: `${email.fromName} (email)`,
+        checksum: sha256(buffer),
       },
       include: { category: true },
     });
@@ -406,6 +408,7 @@ async function fileAttachment(
       aiSummary: result?.summary || null,
       aiExtractedText: result?.extractedText || null,
       uploadedBy: `${email.fromName} (email)`,
+      checksum: sha256(attachment.content),
     },
     include: { category: true },
   });

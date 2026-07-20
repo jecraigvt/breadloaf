@@ -8,7 +8,7 @@ datasource db {
 }
 
 model Document {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   title           String
   description     String?
   fileName        String
@@ -21,14 +21,22 @@ model Document {
   aiSummary       String?
   aiExtractedText String?
   uploadedBy      String?
+  checksum        String?
+  accessScope     String    @default("family") // family, board, vault
+  backupStatus    String    @default("local-only")
+  deletedAt       DateTime?
+  deletedBy       String?
   assetId         String?
-  asset           Asset?   @relation(fields: [assetId], references: [id])
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  asset           Asset?    @relation(fields: [assetId], references: [id])
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([categoryId])
   @@index([createdAt])
   @@index([assetId])
+  @@index([checksum])
+  @@index([deletedAt])
+  @@index([accessScope])
 }
 
 model Category {
@@ -64,7 +72,7 @@ model Room {
   id          String  @id @default(cuid())
   name        String  @unique
   slug        String  @unique
-  type        String  // bedroom, annex, loft, cabin, tent, offsite
+  type        String // bedroom, annex, loft, cabin, tent, offsite
   minCapacity Int
   maxCapacity Int
   hasCrib     Boolean @default(false)
@@ -119,15 +127,15 @@ model GroceryItem {
 }
 
 model ChecklistItem {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   name      String
-  list      String   // "opening" or "closing"
-  section   String   @default("General")
-  sortOrder Int      @default(0)
-  checked   Boolean  @default(false)
+  list      String // "opening" or "closing"
+  section   String    @default("General")
+  sortOrder Int       @default(0)
+  checked   Boolean   @default(false)
   checkedBy String?
   checkedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([list])
 }
@@ -155,38 +163,136 @@ model MaintenanceRecord {
 // "notebook". Bucky creates/updates these as he learns about them from
 // conversation, documents, and voice-memo walkthroughs (save_asset tool).
 model Asset {
-  id            String   @id @default(cuid())
-  name          String   @unique
-  category      String   @default("other") // water, power, hvac, structure, appliance, grounds, safety, other
-  location      String?  // where on the property
+  id            String              @id @default(cuid())
+  name          String              @unique
+  category      String              @default("other") // water, power, hvac, structure, appliance, grounds, safety, other
+  location      String? // where on the property
   make          String?
   model         String?
   serial        String?
   installedYear Int?
-  notes         String?  // quirks, tips, history — appended over time
-  status        String   @default("active") // active, retired
+  notes         String? // quirks, tips, history — appended over time
+  status        String              @default("active") // active, retired
   addedBy       String?
   records       MaintenanceRecord[]
   documents     Document[]
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
   @@index([category])
 }
 
 model FamilyMember {
-  id        String  @id @default(cuid())
-  name      String
-  email     String?
-  phone     String?
-  birthday  String?
-  branch    String? // which Craig brother's family
-  relation  String? // e.g. "spouse", "child", "grandchild"
-  boardRole     String?  // officer role: President, VP, Treasurer, Secretary
-  isBoardMember Boolean @default(false)
-  notes     String?
+  id            String               @id @default(cuid())
+  name          String
+  email         String?
+  phone         String?
+  birthday      String?
+  branch        String? // which Craig brother's family
+  relation      String? // e.g. "spouse", "child", "grandchild"
+  boardRole     String? // officer role: President, VP, Treasurer, Secretary
+  isBoardMember Boolean              @default(false)
+  notes         String?
+  positions     PositionAssignment[]
 
   @@index([branch])
+}
+
+model PositionAssignment {
+  id          String        @id @default(cuid())
+  position    String
+  personName  String
+  memberId    String?
+  member      FamilyMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  effectiveAt DateTime
+  endedAt     DateTime?
+  sourceType  String?
+  sourceId    String?
+  sourceLabel String?
+  createdBy   String        @default("Bucky")
+  createdAt   DateTime      @default(now())
+
+  @@index([position, endedAt])
+  @@index([memberId])
+  @@index([effectiveAt])
+}
+
+model BuckyQuestion {
+  id             String    @id @default(cuid())
+  question       String
+  context        String?
+  status         String    @default("open") // open, answered, dismissed
+  targetPerson   String?
+  questionType   String    @default("clarification")
+  sourceType     String?
+  sourceId       String?
+  sourceLabel    String?
+  options        Json?
+  proposedAction Json?
+  answer         String?
+  answeredBy     String?
+  answeredAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([targetPerson, status])
+}
+
+model BuckyLedgerEntry {
+  id          String    @id @default(cuid())
+  actionType  String
+  summary     String
+  details     String?
+  actor       String    @default("Bucky")
+  initiatedBy String?
+  entityType  String?
+  entityId    String?
+  sourceType  String?
+  sourceId    String?
+  sourceLabel String?
+  beforeState Json?
+  afterState  Json?
+  reversible  Boolean   @default(false)
+  revertedAt  DateTime?
+  revertedBy  String?
+  createdAt   DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([actionType])
+  @@index([entityType, entityId])
+}
+
+model CorporateAccount {
+  id                 String   @id @default(cuid())
+  serviceName        String
+  category           String   @default("utility")
+  loginUrl           String?
+  username           String?
+  accountNumberLast4 String?
+  responsiblePerson  String?
+  recoveryContact    String?
+  notes              String?
+  encryptedSecret    String?
+  secretIv           String?
+  encryptionVersion  Int      @default(1)
+  status             String   @default("active") // active, archived
+  createdBy          String?
+  updatedBy          String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([status, category])
+  @@index([serviceName])
+}
+
+model VaultConfiguration {
+  id           String   @id
+  passwordHash String
+  createdBy    String?
+  updatedBy    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model DinnerSignup {
@@ -212,7 +318,7 @@ model Expense {
   type        String   @default("operating") // operating, capital
   paidBy      String   @default("Shared") // Tom, Jim, Sandy, Greg, Shared
   vendor      String?
-  documentId  String?  // optional link to a scanned receipt/document
+  documentId  String? // optional link to a scanned receipt/document
   notes       String?
   fiscalYear  Int
   createdAt   DateTime @default(now())
@@ -226,10 +332,10 @@ model Expense {
 
 model JarvisMemory {
   id        String   @id @default(cuid())
-  type      String   // semantic (facts/prefs), episodic (events), procedural (how-to)
-  topic     String   // short label: "roof repair", "sandy's role", "insurance renewal"
-  content   String   // the actual memory
-  source    String?  // who/what triggered this: "conversation with Jim", "board meeting"
+  type      String // semantic (facts/prefs), episodic (events), procedural (how-to)
+  topic     String // short label: "roof repair", "sandy's role", "insurance renewal"
+  content   String // the actual memory
+  source    String? // who/what triggered this: "conversation with Jim", "board meeting"
   relevance Float    @default(1.0) // 0-1 relevance score, decays over time
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -240,10 +346,10 @@ model JarvisMemory {
 
 model Embedding {
   id         String   @id @default(cuid())
-  sourceType String   // document, expense, maintenance, bulletin, meeting
+  sourceType String // document, expense, maintenance, bulletin, meeting
   sourceId   String
-  content    String   // the text that was embedded (for reference)
-  vector     String   // JSON array of floats
+  content    String // the text that was embedded (for reference)
+  vector     String // JSON array of floats
   createdAt  DateTime @default(now())
 
   @@unique([sourceType, sourceId])

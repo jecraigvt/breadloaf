@@ -60,7 +60,7 @@ export default function DocumentDetailPage() {
   }, [params.id]);
 
   const handleDelete = async () => {
-    if (!confirm("Delete this document? This cannot be undone.")) return;
+    if (!confirm("Move this document to Recently Deleted? The original file will be kept.")) return;
     setDeleting(true);
     await fetch(`/api/documents/${params.id}`, { method: "DELETE" });
     router.push("/documents");
@@ -173,6 +173,13 @@ export default function DocumentDetailPage() {
               </span>
             </div>
           )}
+            <div className="flex items-center gap-3 px-4 py-3">
+              <FileText size={18} className="text-stone-400" />
+              <span className="text-sm text-stone-500">Protection</span>
+              <span className="ml-auto text-sm text-amber-700">
+                {doc.fileType === "link" ? "External link" : "Local copy only"}
+              </span>
+            </div>
         </div>
 
         {/* AI Summary */}
@@ -241,6 +248,7 @@ export default function DocumentDetailPage() {
             ) : (
               <Trash2 size={18} />
             )}
+            <span className="sr-only">Move to Recently Deleted</span>
           </button>
         </div>
       </div>

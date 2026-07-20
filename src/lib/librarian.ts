@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createHash } from "crypto";
-import { readFile, unlink } from "fs/promises";
+import { readFile } from "fs/promises";
 import path from "path";
 import { prisma } from "@/lib/prisma";
 import { slugifyCategory } from "@/lib/document-categories";
@@ -29,10 +29,11 @@ const MAX_OPERATIONS = 40;
 
 export async function generateLibrarianPlan(): Promise<LibrarianPlan> {
   const categories = await prisma.category.findMany({
-    include: { _count: { select: { documents: true } } },
+    include: { _count: { select: { documents: { where: { deletedAt: null } } } } },
     orderBy: { name: "asc" },
   });
   const documents = await prisma.document.findMany({
+    where: { deletedAt: null },
     select: {
       id: true,
       title: true,
@@ -121,6 +122,7 @@ async function hashDocumentFile(filePath: string): Promise<string | null> {
 
 export async function findDuplicateDocuments(): Promise<LibrarianPlan["duplicates"]> {
   const docs = await prisma.document.findMany({
+    where: { deletedAt: null },
     select: { id: true, title: true, filePath: true, fileSize: true, categoryId: true, createdAt: true },
     orderBy: { createdAt: "asc" },
   });
@@ -262,7 +264,7 @@ export async function applyLibrarianPlan(plan: LibrarianPlan): Promise<{
   const categories = await prisma.category.findMany({
     select: { id: true, slug: true, name: true },
   });
-  const documents = await prisma.document.findMany({ select: { id: true } });
+  const documents = await prisma.document.findMany({ where: { deletedAt: null }, select: { id: true } });
   const validated = validatePlan(plan, categories, documents);
 
   const byName = new Map(categories.map((c) => [c.name.toLowerCase(), c]));
@@ -363,13 +365,10 @@ export async function applyLibrarianPlan(plan: LibrarianPlan): Promise<{
       const doomedHash = await hashDocumentFile(doomed.filePath);
       if (!doomedHash || doomedHash !== keepHash) continue; // changed since plan — leave it
 
-      await prisma.document.delete({ where: { id: doomed.id } });
-      await prisma.embedding.deleteMany({
-        where: { sourceType: "document", sourceId: doomed.id },
+      await prisma.document.update({
+        where: { id: doomed.id },
+        data: { deletedAt: new Date(), deletedBy: "Bucky Librarian" },
       });
-      if (doomed.filePath !== keep.filePath) {
-        await unlink(path.join(process.cwd(), "public", doomed.filePath)).catch(() => {});
-      }
       duplicatesRemoved++;
     }
   }

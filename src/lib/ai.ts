@@ -2,6 +2,8 @@ import { GoogleGenerativeAI, SchemaType, type FunctionDeclarationsTool } from "@
 import { prisma } from "@/lib/prisma";
 import { GROCERY_CATEGORIES, resolveCategory } from "@/lib/grocery-categories";
 import { findOverlappingStay, createStayWithCalendarSync } from "@/lib/stays";
+import { recordBuckyLedgerEntry, recordBuckyToolResult } from "@/lib/bucky-ledger";
+import { sendBuckyQuestionNotification } from "@/lib/outbound-email";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
@@ -666,6 +668,85 @@ const assistantTools: FunctionDeclarationsTool[] = [
           required: ["type", "topic", "content"],
         },
       },
+      {
+        name: "ask_family",
+        description:
+          "Create a persistent question for the family when information is ambiguous, conflicting, or consequential enough that you should not guess. The question remains available after the chat closes. Do not use this for a question the current user can answer immediately in the active conversation unless they are leaving or the question belongs to someone else.",
+        parameters: {
+          type: SchemaType.OBJECT,
+          properties: {
+            question: {
+              type: SchemaType.STRING,
+              description: "One clear question that can be answered without rereading the full source",
+            },
+            context: {
+              type: SchemaType.STRING,
+              description: "Why you are asking and the evidence that made the issue ambiguous",
+            },
+            targetPerson: {
+              type: SchemaType.STRING,
+              description: "The person most likely to know, or omit to ask the whole family",
+            },
+            questionType: {
+              type: SchemaType.STRING,
+              description: "clarification, duplicate, governance, archive, or safety",
+            },
+            options: {
+              type: SchemaType.ARRAY,
+              description: "Two to four concise suggested answers when useful",
+              items: { type: SchemaType.STRING },
+            },
+            sourceType: {
+              type: SchemaType.STRING,
+              description: "conversation, document, meeting-minutes, archive, or property-system",
+            },
+            sourceId: {
+              type: SchemaType.STRING,
+              description: "Related record ID when known",
+            },
+            source: {
+              type: SchemaType.STRING,
+              description: "Human-readable source label, such as a document title",
+            },
+          },
+          required: ["question", "context"],
+        },
+      },
+      {
+        name: "update_position",
+        description:
+          "Record a current family or corporate position and preserve the prior holder in history. Use when a direct instruction or authoritative approved record clearly appoints someone. If the source is a draft, discussion, nomination, or unclear, use ask_family instead.",
+        parameters: {
+          type: SchemaType.OBJECT,
+          properties: {
+            personName: {
+              type: SchemaType.STRING,
+              description: "Full name of the new position holder",
+            },
+            position: {
+              type: SchemaType.STRING,
+              description: "Position name, such as President, Treasurer, or Secretary",
+            },
+            effectiveDate: {
+              type: SchemaType.STRING,
+              description: "Effective date in YYYY-MM-DD format; use today's date only for a direct current instruction",
+            },
+            sourceType: {
+              type: SchemaType.STRING,
+              description: "conversation or meeting-minutes",
+            },
+            sourceId: {
+              type: SchemaType.STRING,
+              description: "Related document ID when known",
+            },
+            source: {
+              type: SchemaType.STRING,
+              description: "Human-readable source, such as Approved 2026 board meeting minutes",
+            },
+          },
+          required: ["personName", "position", "effectiveDate", "sourceType", "source"],
+        },
+      },
     ],
   },
 ];
@@ -942,6 +1023,136 @@ async function executeToolFunction(
         },
       };
     }
+    case "ask_family": {
+      const targetPerson =
+        typeof args.targetPerson === "string" ? args.targetPerson.trim() : undefined;
+      const question = await prisma.buckyQuestion.create({
+        data: {
+          question: String(args.question).trim(),
+          context: String(args.context).trim(),
+          targetPerson,
+          questionType: typeof args.questionType === "string" ? args.questionType : "clarification",
+          options: Array.isArray(args.options) ? args.options.map(String) : undefined,
+          sourceType: typeof args.sourceType === "string" ? args.sourceType : "conversation",
+          sourceId: typeof args.sourceId === "string" ? args.sourceId : undefined,
+          sourceLabel: typeof args.source === "string" ? args.source : undefined,
+        },
+      });
+      let notification: "sent" | "not_configured" | "no_recipients" | "failed" =
+        "not_configured";
+      try {
+        const result = await sendBuckyQuestionNotification({
+          questionId: question.id,
+          targetPerson,
+        });
+        notification = result.status;
+      } catch (error) {
+        notification = "failed";
+        console.error("Bucky question notification failed:", error);
+      }
+      return {
+        success: true,
+        question: { id: question.id, question: question.question },
+        notification,
+        note: "The question is now in the persistent Questions tab.",
+      };
+    }
+    case "update_position": {
+      const personName = String(args.personName || "").trim();
+      const position = String(args.position || "").trim();
+      const effectiveAt = new Date(`${args.effectiveDate}T12:00:00`);
+      if (!personName || !position || Number.isNaN(effectiveAt.getTime())) {
+        return { success: false, error: "personName, position, and a valid effectiveDate are required" };
+      }
+
+      const change = await prisma.$transaction(async (tx) => {
+        const member = await tx.familyMember.findFirst({
+          where: { name: { equals: personName, mode: "insensitive" } },
+        });
+        const previous = await tx.positionAssignment.findFirst({
+          where: { position: { equals: position, mode: "insensitive" }, endedAt: null },
+          orderBy: { effectiveAt: "desc" },
+        });
+
+        if (previous?.personName.toLowerCase() === personName.toLowerCase()) {
+          return { previous, current: previous, unchanged: true, member };
+        }
+
+        if (previous) {
+          await tx.positionAssignment.update({
+            where: { id: previous.id },
+            data: { endedAt: effectiveAt },
+          });
+          if (previous.memberId) {
+            const previousMember = await tx.familyMember.findUnique({ where: { id: previous.memberId } });
+            if (previousMember) {
+              const remainingRoles = (previousMember.boardRole || "")
+                .split(",")
+                .map((role) => role.trim())
+                .filter((role) => role && role.toLowerCase() !== position.toLowerCase());
+              await tx.familyMember.update({
+                where: { id: previousMember.id },
+                data: { boardRole: remainingRoles.join(", ") || null },
+              });
+            }
+          }
+        }
+
+        const current = await tx.positionAssignment.create({
+          data: {
+            position,
+            personName: member?.name || personName,
+            memberId: member?.id,
+            effectiveAt,
+            sourceType: String(args.sourceType),
+            sourceId: typeof args.sourceId === "string" ? args.sourceId : undefined,
+            sourceLabel: String(args.source),
+          },
+        });
+
+        if (member) {
+          const roles = (member.boardRole || "")
+            .split(",")
+            .map((role) => role.trim())
+            .filter(Boolean);
+          if (!roles.some((role) => role.toLowerCase() === position.toLowerCase())) roles.push(position);
+          await tx.familyMember.update({
+            where: { id: member.id },
+            data: { boardRole: roles.join(", ") || null, isBoardMember: true },
+          });
+        }
+
+        return { previous, current, unchanged: false, member };
+      });
+
+      if (!change.unchanged) {
+        await recordBuckyLedgerEntry({
+          actionType: "update_position",
+          summary: `${change.current.personName} became ${position}${change.previous ? `, replacing ${change.previous.personName}` : ""}`,
+          initiatedBy: username,
+          entityType: "position",
+          entityId: change.current.id,
+          sourceType: String(args.sourceType),
+          sourceId: typeof args.sourceId === "string" ? args.sourceId : undefined,
+          sourceLabel: String(args.source),
+          beforeState: change.previous
+            ? JSON.parse(JSON.stringify(change.previous))
+            : undefined,
+          afterState: JSON.parse(JSON.stringify(change.current)),
+          reversible: true,
+        });
+      }
+
+      return {
+        success: true,
+        action: change.unchanged ? "unchanged" : "updated",
+        previousHolder: change.previous?.personName || null,
+        currentHolder: change.current.personName,
+        position,
+        effectiveDate: String(args.effectiveDate),
+        directoryMatch: Boolean(change.member),
+      };
+    }
     default:
       return { error: `Unknown function: ${name}` };
   }
@@ -1049,7 +1260,7 @@ export async function chatWithAssistant(
 
   // Get upcoming stays and room info
   const currentYear = new Date().getFullYear();
-  const [upcomingStays, rooms, groceryItems, pantryItems, upcomingDinners, recentMaintenance, recentExpenses, expenseSummary, allMemories, assets] =
+  const [upcomingStays, rooms, groceryItems, pantryItems, upcomingDinners, recentMaintenance, recentExpenses, expenseSummary, allMemories, assets, currentPositions, openQuestions] =
     await Promise.all([
       prisma.stay.findMany({
         where: { checkOut: { gte: new Date() } },
@@ -1096,6 +1307,15 @@ export async function chatWithAssistant(
         include: {
           records: { orderBy: { performedAt: "desc" }, take: 3 },
         },
+      }),
+      prisma.positionAssignment.findMany({
+        where: { endedAt: null },
+        orderBy: { position: "asc" },
+      }),
+      prisma.buckyQuestion.findMany({
+        where: { status: "open" },
+        orderBy: { createdAt: "asc" },
+        take: 20,
       }),
     ]);
 
@@ -1202,6 +1422,18 @@ export async function chatWithAssistant(
     memoryContext = parts.join("\n\n");
   }
 
+  const positionContext = currentPositions.length
+    ? currentPositions
+        .map((assignment) => `- ${assignment.position}: ${assignment.personName} (effective ${assignment.effectiveAt.toISOString().slice(0, 10)}${assignment.sourceLabel ? `; source: ${assignment.sourceLabel}` : ""})`)
+        .join("\n")
+    : "No dated position assignments have been recorded yet.";
+
+  const questionContext = openQuestions.length
+    ? openQuestions
+        .map((question) => `- [${question.id}] ${question.question}${question.targetPerson ? ` (for ${question.targetPerson})` : ""}${question.context ? ` — ${question.context}` : ""}`)
+        .join("\n")
+    : "No open family questions.";
+
   // Route to the right model based on query intent. Attachment turns need
   // real document comprehension, so never drop those to the lite model.
   const intent = lastUserMessage ? classifyIntent(lastUserMessage.content) : "lookup";
@@ -1250,6 +1482,12 @@ ${expenseContext}
 ${documentContext ? `DOCUMENTS IN ARCHIVE:\n${documentContext}` : "The document archive is currently empty."}
 
 ${memoryContext ? `YOUR MEMORIES (things you've learned from past conversations):\n${memoryContext}` : ""}
+
+CURRENT POSITIONS:
+${positionContext}
+
+OPEN QUESTIONS YOU HAVE ASKED:
+${questionContext}
 
 PROPERTY OWNERSHIP:
 The property is owned by an S-Corp with four equal shareholders: Tom Craig, Jim Craig, Sandy Craig, and Greg Craig. All expenses are split equally (25% each).
@@ -1305,6 +1543,14 @@ WHAT YOU CAN DO:
    - Track who paid for what (Tom, Jim, Sandy, Greg, or Shared)
    - Answer questions about the 4-way family split
 
+7. SERVE AS THE FAMILY SECRETARY:
+   - When a direct instruction or approved/final meeting record clearly changes a position, use update_position and cite the source
+   - Discussion, nominations, draft minutes, and ambiguous wording are not authoritative; use ask_family instead
+   - Act autonomously on clear, reversible organization and recordkeeping work; every successful tool action is written to your ledger automatically
+   - When information conflicts, a likely duplicate could lose history, or the right answer belongs to someone else, use ask_family so the issue survives this chat
+   - Do not repeat an open question already listed above unless new evidence materially changes it
+   - Vault access, permanent deletion, external communications, and security changes always require explicit human confirmation
+
 When someone asks what you can do or how you can help, explain these capabilities in a friendly way.
 When users ask you to add or manage items, use the appropriate tool. Confirm what you've done in your response.
 If a request is ambiguous, ask for clarification before taking action.
@@ -1351,6 +1597,12 @@ Guidelines:
         const response = await executeToolFunction(
           fc.name,
           fc.args as Record<string, unknown>,
+          username
+        );
+        await recordBuckyToolResult(
+          fc.name,
+          fc.args as Record<string, unknown>,
+          response,
           username
         );
         functionResponses.push({

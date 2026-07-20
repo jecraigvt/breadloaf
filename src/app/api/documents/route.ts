@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   // Return categories with counts if requested
   if (searchParams.get("categoriesOnly") === "true") {
     const categories = await prisma.category.findMany({
-      include: { _count: { select: { documents: true } } },
+      include: { _count: { select: { documents: { where: { deletedAt: null } } } } },
       orderBy: { name: "asc" },
     });
     return NextResponse.json(categories);
@@ -17,8 +17,11 @@ export async function GET(request: NextRequest) {
 
   const query = searchParams.get("q") || "";
   const categorySlug = searchParams.get("category");
+  const showDeleted = searchParams.get("deleted") === "true";
 
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = {
+    deletedAt: showDeleted ? { not: null } : null,
+  };
 
   if (query) {
     where.OR = [
@@ -67,6 +70,8 @@ export async function POST(request: NextRequest) {
       aiSummary,
       aiExtractedText,
       uploadedBy,
+      checksum,
+      accessScope,
     } = body;
 
     // Strict category lookup: exact slug or exact (case-insensitive) name.
@@ -99,6 +104,8 @@ export async function POST(request: NextRequest) {
         aiSummary,
         aiExtractedText,
         uploadedBy,
+        checksum: checksum || null,
+        accessScope: ["family", "board", "vault"].includes(accessScope) ? accessScope : "family",
       },
       include: { category: true },
     });

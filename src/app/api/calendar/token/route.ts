@@ -6,7 +6,7 @@ import {
 } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
-  const family = getFamilyFromAuthToken(
+  const family = await getFamilyFromAuthToken(
     request.cookies.get(getAuthCookieName())?.value
   );
 

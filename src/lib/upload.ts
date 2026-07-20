@@ -1,6 +1,7 @@
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { generateId } from "./utils";
+import { sha256 } from "./archive-integrity";
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
 
@@ -77,6 +78,7 @@ export async function saveUploadedFile(file: File) {
     filePath: `/uploads/${uniqueName}`,
     fileType: file.type,
     fileSize: file.size,
+    checksum: sha256(buffer),
   };
 }
 

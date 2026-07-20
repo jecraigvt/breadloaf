@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Header } from "@/components/layout/header";
-import { Search, Grid, List, FolderOpen, Tag, Calendar, Sparkles, Loader2, X, ArrowRight } from "lucide-react";
+import { Search, Grid, List, FolderOpen, Tag, Calendar, Sparkles, Loader2, X, ArrowRight, Trash2, ArchiveRestore } from "lucide-react";
 import Link from "next/link";
 import type { DocumentWithCategory } from "@/types";
 import { formatDate } from "@/lib/utils";
@@ -50,6 +50,7 @@ export default function DocumentsPage() {
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [showDeleted, setShowDeleted] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -61,12 +62,13 @@ export default function DocumentsPage() {
   useEffect(() => {
     const timer = setTimeout(() => fetchDocuments(), 300);
     return () => clearTimeout(timer);
-  }, [search, selectedCategory]);
+  }, [search, selectedCategory, showDeleted]);
 
   const fetchDocuments = async () => {
     const params = new URLSearchParams();
     if (search) params.set("q", search);
     if (selectedCategory) params.set("category", selectedCategory);
+    if (showDeleted) params.set("deleted", "true");
 
     const res = await fetch(`/api/documents?${params}`);
     if (res.ok) {
@@ -132,7 +134,7 @@ export default function DocumentsPage() {
       if (!res.ok) throw new Error();
       const { applied } = await res.json();
       setLibrarianMessage(
-        `Tidied up: ${applied.merges} merged, ${applied.renames} renamed, ${applied.newCategories} new, ${applied.refiles} re-filed, ${applied.duplicatesRemoved ?? 0} duplicate${(applied.duplicatesRemoved ?? 0) === 1 ? "" : "s"} removed.`
+        `Tidied up: ${applied.merges} merged, ${applied.renames} renamed, ${applied.newCategories} new, ${applied.refiles} re-filed, ${applied.duplicatesRemoved ?? 0} duplicate${(applied.duplicatesRemoved ?? 0) === 1 ? "" : "s"} moved to Recently Deleted.`
       );
       setPlan(null);
       setLibrarianState("idle");
@@ -162,6 +164,19 @@ export default function DocumentsPage() {
     }
   };
 
+  const restoreDocument = async (docId: string) => {
+    const response = await fetch(`/api/documents/${docId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "restore" }),
+    });
+    if (response.ok) {
+      await fetchDocuments();
+      await fetchCategories();
+      await fetchUncategorizedCount();
+    }
+  };
+
   return (
     <div>
       <Header title="Document Archive" subtitle="Browse and search all property documents" />
@@ -180,6 +195,7 @@ export default function DocumentsPage() {
         </div>
 
         {/* Category Filters */}
+        {!showDeleted && (
         <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
           <button
             onClick={() => setSelectedCategory(null)}
@@ -225,6 +241,7 @@ export default function DocumentsPage() {
               </button>
             ))}
         </div>
+        )}
 
         {/* View Toggle + Librarian */}
         <div className="flex items-center justify-between">
@@ -232,12 +249,28 @@ export default function DocumentsPage() {
             {documents.length} document{documents.length !== 1 ? "s" : ""}
           </span>
           <div className="flex items-center gap-1">
+            <button
+              onClick={() => {
+                setShowDeleted((current) => !current);
+                setSelectedCategory(null);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                showDeleted ? "bg-stone-800 text-white" : "text-stone-600 bg-stone-100 hover:bg-stone-200"
+              }`}
+              title="Recently Deleted"
+            >
+              <Trash2 size={14} />
+              <span>Deleted</span>
+            </button>
+            {!showDeleted && (
             <Link
               href="/upload"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-white bg-green-700 hover:bg-green-800 transition-colors"
             >
               + Add
             </Link>
+            )}
+            {!showDeleted && (
             <button
               onClick={runLibrarian}
               disabled={librarianState !== "idle"}
@@ -251,18 +284,25 @@ export default function DocumentsPage() {
               )}
               {librarianState === "planning" ? "Reviewing..." : "Tidy Up"}
             </button>
-            <button
-              onClick={() => setViewMode("grid")}
-              className={`p-2 rounded-lg ${viewMode === "grid" ? "bg-stone-200" : "hover:bg-stone-100"}`}
-            >
-              <Grid size={16} />
-            </button>
-            <button
-              onClick={() => setViewMode("list")}
-              className={`p-2 rounded-lg ${viewMode === "list" ? "bg-stone-200" : "hover:bg-stone-100"}`}
-            >
-              <List size={16} />
-            </button>
+            )}
+            {!showDeleted && (
+              <>
+                <button
+                  onClick={() => setViewMode("grid")}
+                  className={`p-2 rounded-lg ${viewMode === "grid" ? "bg-stone-200" : "hover:bg-stone-100"}`}
+                  title="Grid view"
+                >
+                  <Grid size={16} />
+                </button>
+                <button
+                  onClick={() => setViewMode("list")}
+                  className={`p-2 rounded-lg ${viewMode === "list" ? "bg-stone-200" : "hover:bg-stone-100"}`}
+                  title="List view"
+                >
+                  <List size={16} />
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -417,11 +457,11 @@ export default function DocumentsPage() {
         ) : documents.length === 0 ? (
           <div className="text-center py-12">
             <FolderOpen size={48} className="mx-auto text-stone-300 mb-3" />
-            <p className="text-stone-500 font-medium">No documents found</p>
+            <p className="text-stone-500 font-medium">{showDeleted ? "Recently Deleted is empty" : "No documents found"}</p>
             <p className="text-stone-400 text-sm mt-1">
-              {search ? "Try a different search" : "Start by scanning a document"}
+              {search ? "Try a different search" : showDeleted ? "Deleted documents will remain recoverable here." : "Start by scanning a document"}
             </p>
-            {!search && (
+            {!search && !showDeleted && (
               <Link
                 href="/upload"
                 className="inline-block mt-4 px-6 py-2 bg-green-700 text-white rounded-xl font-medium hover:bg-green-800"
@@ -429,6 +469,28 @@ export default function DocumentsPage() {
                 Scan Document
               </Link>
             )}
+          </div>
+        ) : showDeleted ? (
+          <div className="space-y-2">
+            {documents.map((doc) => (
+              <div key={doc.id} className="flex items-center gap-3 rounded-lg border border-stone-200 bg-white p-3">
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-stone-100">
+                  <Trash2 size={17} className="text-stone-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-stone-800">{doc.title}</p>
+                  <p className="mt-0.5 text-xs text-stone-400">
+                    Deleted {doc.deletedAt ? formatDate(doc.deletedAt) : "recently"}{doc.deletedBy ? ` by ${doc.deletedBy}` : ""}
+                  </p>
+                </div>
+                <button
+                  onClick={() => void restoreDocument(doc.id)}
+                  className="flex items-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs font-medium text-green-800 hover:bg-green-100"
+                >
+                  <ArchiveRestore size={14} /> Restore
+                </button>
+              </div>
+            ))}
           </div>
         ) : viewMode === "grid" ? (
           <div className="grid grid-cols-2 gap-3">

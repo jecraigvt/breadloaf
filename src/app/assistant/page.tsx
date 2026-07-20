@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Header } from "@/components/layout/header";
-import { Send, Loader2, Mountain, User, Trash2, Paperclip, FileText, X, Mic, Square } from "lucide-react";
+import { Send, Loader2, Mountain, User, Trash2, Paperclip, FileText, X, Mic, Square, MessageCircle, CircleHelp, History } from "lucide-react";
+import { BuckyLedgerPanel, BuckyQuestionsPanel } from "@/components/bucky/oversight-panel";
 
 interface Message {
   role: "user" | "model";
@@ -27,6 +28,8 @@ function formatClock(totalSeconds: number): string {
 }
 
 export default function AssistantPage() {
+  const [activeTab, setActiveTab] = useState<"chat" | "questions" | "ledger">("chat");
+  const [questionCount, setQuestionCount] = useState(0);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -133,6 +136,20 @@ export default function AssistantPage() {
     });
   }, [messages]);
 
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    if (requestedTab === "questions" || requestedTab === "ledger" || requestedTab === "chat") {
+      setActiveTab(requestedTab);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/bucky/questions?status=open")
+      .then((response) => response.ok ? response.json() : [])
+      .then((questions: unknown[]) => setQuestionCount(questions.length))
+      .catch(() => {});
+  }, []);
+
   const sendMessage = async () => {
     if ((!input.trim() && attachments.length === 0) || loading) return;
 
@@ -225,6 +242,33 @@ export default function AssistantPage() {
         title="Bucky Dragon"
         subtitle="Your family property assistant"
       />
+
+      <div className="border-b border-stone-200 bg-white px-4 py-2">
+        <div className="mx-auto grid max-w-lg grid-cols-3 gap-1 rounded-lg bg-stone-100 p-1">
+          {([
+            { id: "chat", label: "Chat", icon: MessageCircle },
+            { id: "questions", label: "Questions", icon: CircleHelp },
+            { id: "ledger", label: "Ledger", icon: History },
+          ] as const).map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className={`flex min-h-9 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors ${
+                activeTab === id ? "bg-white text-stone-900 shadow-sm" : "text-stone-500 hover:text-stone-800"
+              }`}
+            >
+              <Icon size={14} />
+              <span>{label}</span>
+              {id === "questions" && questionCount > 0 && (
+                <span className="min-w-4 rounded-full bg-amber-500 px-1 text-[10px] leading-4 text-white">{questionCount}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {activeTab === "chat" ? (
+        <>
 
       {/* Chat Messages */}
       <div
@@ -436,6 +480,12 @@ export default function AssistantPage() {
           </div>
         </div>
       </div>
+        </>
+      ) : activeTab === "questions" ? (
+        <BuckyQuestionsPanel onCountChange={setQuestionCount} />
+      ) : (
+        <BuckyLedgerPanel />
+      )}
     </div>
   );
 }

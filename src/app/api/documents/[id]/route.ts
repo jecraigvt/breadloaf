@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { unlink } from "fs/promises";
-import path from "path";
+import { getAuthCookieName, getFamilyFromAuthToken } from "@/lib/auth";
 
 export async function GET(
   _request: NextRequest,
@@ -27,9 +26,26 @@ export async function PATCH(
   const { id } = await params;
   const body = await request.json();
 
+  if (body.action === "restore") {
+    const document = await prisma.document.update({
+      where: { id },
+      data: { deletedAt: null, deletedBy: null },
+      include: { category: true },
+    });
+    return NextResponse.json(document);
+  }
+
+  const data: Record<string, unknown> = {};
+  for (const key of ["title", "description", "categoryId", "tags", "assetId"]) {
+    if (key in body) data[key] = body[key];
+  }
+  if (typeof body.accessScope === "string" && ["family", "board", "vault"].includes(body.accessScope)) {
+    data.accessScope = body.accessScope;
+  }
+
   const document = await prisma.document.update({
     where: { id },
-    data: body,
+    data,
     include: { category: true },
   });
 
@@ -47,15 +63,13 @@ export async function DELETE(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Delete the file
-  try {
-    const fullPath = path.join(process.cwd(), "public", document.filePath);
-    await unlink(fullPath);
-  } catch {
-    // File may already be deleted
-  }
+  const deletedBy = await getFamilyFromAuthToken(
+    _request.cookies.get(getAuthCookieName())?.value
+  );
+  await prisma.document.update({
+    where: { id },
+    data: { deletedAt: new Date(), deletedBy: deletedBy || undefined },
+  });
 
-  await prisma.document.delete({ where: { id } });
-
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, recoverable: true });
 }

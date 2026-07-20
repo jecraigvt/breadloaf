@@ -10,6 +10,7 @@ import {
 import { extractTextFromFile, isExtractableType } from "@/lib/extract-text";
 import { resolveDocumentCategory } from "@/lib/document-categories";
 import { generateId } from "@/lib/utils";
+import { sha256 } from "@/lib/archive-integrity";
 
 // Shared server-side document filing: save to /uploads, categorize with AI,
 // apply category guardrails, create the Document row, cross-link maintenance
@@ -97,6 +98,7 @@ export async function fileDocumentFromBuffer(opts: {
       aiSummary: result?.summary || null,
       aiExtractedText: result?.extractedText || null,
       uploadedBy: uploadedBy || undefined,
+      checksum: sha256(buffer),
     },
     include: { category: true },
   });

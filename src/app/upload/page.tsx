@@ -16,6 +16,7 @@ import {
   ChevronDown,
   Mic,
   Video,
+  ShieldAlert,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -272,6 +273,7 @@ export default function UploadPage() {
             filePath: uploadData.filePath,
             fileType: uploadData.fileType,
             fileSize: uploadData.fileSize,
+            checksum: uploadData.checksum,
             categorySlug: catData.resolvedCategorySlug ?? "",
             tags: catData.tags,
             aiSummary: catData.summary,
@@ -317,6 +319,7 @@ export default function UploadPage() {
           filePath: uploadData.filePath,
           fileType: uploadData.fileType,
           fileSize: uploadData.fileSize,
+          checksum: uploadData.checksum,
           categorySlug: result.resolvedCategorySlug ?? result.suggestedCategory,
           tags: result.tags,
           aiSummary: result.summary,
@@ -373,6 +376,13 @@ export default function UploadPage() {
 
         {step === "select" && (
           <>
+            <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+              <ShieldAlert size={18} className="mt-0.5 flex-shrink-0" />
+              <p>
+                Vault protection is not active yet. Do not upload passwords, account numbers,
+                or safe-deposit details.
+              </p>
+            </div>
             <CameraCapture onCapture={handleFile} />
             <div className="relative flex items-center gap-4">
               <div className="flex-1 h-px bg-stone-200" />

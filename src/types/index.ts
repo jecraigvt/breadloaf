@@ -11,6 +11,11 @@ export interface DocumentWithCategory {
   aiSummary: string | null;
   aiExtractedText: string | null;
   uploadedBy: string | null;
+  checksum: string | null;
+  accessScope: string;
+  backupStatus: string;
+  deletedAt: Date | null;
+  deletedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
   category: {

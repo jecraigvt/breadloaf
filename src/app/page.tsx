@@ -68,6 +68,7 @@ const HUB_TEXT: TextTile[] = [
   { lbl: "XI",     big: <>The <em>Family</em></>,                 sub: "Directory, by branch",   href: "/family" },
   { lbl: "XII",    big: <>Emergency</>,                           sub: "Contacts · tap to call", href: "/emergency" },
   { lbl: "XIII",   big: <>The <em>Archive</em></>,                sub: "Documents · auto-filed", href: "/documents" },
+  { lbl: "XIV", big: <>Corporation<br/><em>Accounts</em></>, sub: "Utilities and access", href: "/accounts" },
 ];
 
 const PHOTO_STRIP = [

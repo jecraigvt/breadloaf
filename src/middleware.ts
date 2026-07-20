@@ -8,12 +8,20 @@ import {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // If no FAMILY_PINS configured, skip auth (local dev convenience)
+  // Local development may run without family auth. Production must fail closed.
   if (!process.env.FAMILY_PINS) {
-    return NextResponse.next();
+    if (process.env.NODE_ENV !== "production") return NextResponse.next();
+
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        { error: "Site authentication is not configured" },
+        { status: 503 }
+      );
+    }
+    return new NextResponse("Site authentication is not configured.", { status: 503 });
   }
 
-  const authenticatedFamily = getFamilyFromAuthToken(
+  const authenticatedFamily = await getFamilyFromAuthToken(
     request.cookies.get(getAuthCookieName())?.value
   );
 

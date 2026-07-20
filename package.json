@@ -10,6 +10,7 @@
     "db:migrate": "npx prisma migrate dev",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:reset": "npx prisma migrate reset",
+    "archive:verify": "npx tsx scripts/verify-archive.ts",
     "postinstall": "npx prisma generate"
   },
   "dependencies": {
@@ -26,6 +27,7 @@
     "mailparser": "^3.9.14",
     "mammoth": "^1.12.0",
     "next": "14.2.35",
+    "nodemailer": "^9.0.3",
     "playwright": "^1.59.1",
     "prisma": "^6.19.2",
     "react": "^18",
@@ -39,6 +41,7 @@
   "devDependencies": {
     "@types/mailparser": "^3.4.6",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.1",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "eslint": "^8",
