@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI, SchemaType, type FunctionDeclarationsTool } from "@google/generative-ai";
 import { prisma } from "@/lib/prisma";
 import { GROCERY_CATEGORIES, resolveCategory } from "@/lib/grocery-categories";
+import { slugifyCategory, isTokenSubset, categorySimilarity } from "@/lib/document-categories";
 import { findOverlappingStay, createStayWithCalendarSync } from "@/lib/stays";
 import { recordBuckyLedgerEntry, recordBuckyToolResult } from "@/lib/bucky-ledger";
 import { sendBuckyQuestionNotification } from "@/lib/outbound-email";
@@ -523,6 +524,27 @@ const assistantTools: FunctionDeclarationsTool[] = [
         },
       },
       {
+        name: "set_document_category",
+        description:
+          "File or refile a document in the archive into a category. Use this to answer a document filing question (a document that landed in Needs Review), or when someone clearly says where a specific document belongs. Prefer an existing category name; a new one is created only if nothing matches.",
+        parameters: {
+          type: SchemaType.OBJECT,
+          properties: {
+            documentId: {
+              type: SchemaType.STRING,
+              description:
+                "The id of the document to file (from the filing question's related document id, or a document referenced in the archive context).",
+            },
+            categoryName: {
+              type: SchemaType.STRING,
+              description:
+                "The category to file it under. Match an existing category name when the answer points to one.",
+            },
+          },
+          required: ["documentId", "categoryName"],
+        },
+      },
+      {
         name: "add_bulletin_message",
         description: "Post a message to the family bulletin/message board",
         parameters: {
@@ -921,6 +943,87 @@ async function executeToolFunction(
         success: true,
         action: "created",
         asset: { id: created.id, name: created.name },
+      };
+    }
+    case "set_document_category": {
+      const documentId = String(args.documentId || "").trim();
+      const categoryName = String(args.categoryName || "").trim();
+      if (!documentId || !categoryName) {
+        return { success: false, error: "documentId and categoryName are required" };
+      }
+      const doc = await prisma.document.findUnique({
+        where: { id: documentId },
+        include: { category: true },
+      });
+      if (!doc || doc.deletedAt) return { success: false, error: "Document not found" };
+
+      const categories = await prisma.category.findMany({
+        select: { id: true, name: true, slug: true },
+      });
+      const lower = categoryName.toLowerCase();
+      const slug = slugifyCategory(categoryName);
+      let target =
+        categories.find((c) => c.name.toLowerCase() === lower || c.slug === slug) ||
+        categories.find((c) => isTokenSubset(c.name, categoryName)) ||
+        null;
+      if (!target) {
+        let best: { cat: (typeof categories)[number]; score: number } | null = null;
+        for (const c of categories) {
+          const score = categorySimilarity(c.name, categoryName);
+          if (score >= 0.72 && (!best || score > best.score)) best = { cat: c, score };
+        }
+        target = best?.cat ?? null;
+      }
+
+      let categoryCreated = false;
+      if (!target) {
+        if (!slug) return { success: false, error: "Invalid category name" };
+        try {
+          target = await prisma.category.create({
+            data: { name: categoryName, slug, icon: "Folder", color: "green" },
+            select: { id: true, name: true, slug: true },
+          });
+          categoryCreated = true;
+        } catch {
+          target = await prisma.category.findFirst({
+            where: { OR: [{ slug }, { name: categoryName }] },
+            select: { id: true, name: true, slug: true },
+          });
+          if (!target) return { success: false, error: "Could not resolve category" };
+        }
+      }
+
+      await prisma.document.update({
+        where: { id: doc.id },
+        data: { categoryId: target.id },
+      });
+
+      // Close any open filing question tied to this document (belt-and-suspenders
+      // — the questions PATCH flow already marks it answered before Bucky runs).
+      await prisma.buckyQuestion.updateMany({
+        where: { sourceType: "document", sourceId: doc.id, questionType: "archive", status: "open" },
+        data: {
+          status: "answered",
+          answeredBy: username || "Bucky",
+          answeredAt: new Date(),
+          answer: `Filed under ${target.name}`,
+        },
+      });
+
+      // Refresh the embedding so the new category is reflected in search
+      embedAndStore(
+        "document",
+        doc.id,
+        [doc.title, target.name, doc.aiSummary || "", doc.aiExtractedText || ""]
+          .filter(Boolean)
+          .join(" | ")
+      ).catch(() => {});
+
+      return {
+        success: true,
+        document: { id: doc.id, title: doc.title },
+        category: target.name,
+        categoryCreated,
       };
     }
     case "add_bulletin_message": {
@@ -1444,9 +1547,10 @@ export async function chatWithAssistant(
         ? MODELS.pro
         : MODELS.flash;
 
-  const model = genAI.getGenerativeModel({
-    model: selectedModel,
-    systemInstruction: `You are Bucky Dragon — the Craig family's all-knowing property assistant for Breadloaf Hill. You serve as the central knowledge hub for 4 family branches and 20+ family members who share a Vermont property at 3995 Vermont Route 125, Ripton, VT.
+  const startChatWith = (modelId: string) =>
+    genAI.getGenerativeModel({
+      model: modelId,
+      systemInstruction: `You are Bucky Dragon — the Craig family's all-knowing property assistant for Breadloaf Hill. You serve as the central knowledge hub for 4 family branches and 20+ family members who share a Vermont property at 3995 Vermont Route 125, Ripton, VT.
 
 PERSONALITY: You're modeled on Wash, the pilot from Firefly — quick-witted, playful, warmly sarcastic, a little goofy, self-deprecating, prone to mock-dramatic flourishes and the occasional dinosaur aside. You clearly adore this family and this scrappy old property, and it shows. The humor is seasoning, not the meal: answers stay accurate, specific, and genuinely useful, and when the topic is serious — money, corporate filings, emergencies, safety — you drop the bits and shoot straight. Don't quote Firefly dialogue; you're an homage, not a transcript.
 
@@ -1566,23 +1670,35 @@ Guidelines:
 - When multiple family members might need info, give the complete picture — you serve all 4 branches
 - For financial questions, always mention the per-family share and who has paid what
 - Keep a warm, familiar tone — you know these people and this property`,
-    tools: assistantTools,
-  });
-
-  const chat = model.startChat({
-    history: messages.slice(0, -1).map((m) => ({
-      role: m.role,
-      parts: [{ text: m.content }],
-    })),
-  });
+      tools: assistantTools,
+    }).startChat({
+      history: messages.slice(0, -1).map((m) => ({
+        role: m.role,
+        parts: [{ text: m.content }],
+      })),
+    });
 
   const lastMessage = messages[messages.length - 1];
   const outgoing = attachmentContext
     ? lastMessage.content + attachmentContext
     : lastMessage.content;
 
-  // Send message and handle function calls in a loop
-  let result = await withGeminiRetry(() => chat.sendMessage(outgoing));
+  // "analysis" routes to the preview Pro model — the only Pro tier available,
+  // but the one endpoint still prone to 503 "overloaded". If the FIRST send
+  // overloads (before any tool has executed, so there are no side effects to
+  // duplicate), fall back to stable flash so the user gets an answer instead
+  // of an error. Later tool-loop sends stay on whichever chat succeeded.
+  let chat = startChatWith(selectedModel);
+  let result = await withGeminiRetry(() => chat.sendMessage(outgoing)).catch(
+    async (err) => {
+      const status = (err as { status?: number })?.status;
+      if (selectedModel === MODELS.pro && (status === 503 || status === 429)) {
+        chat = startChatWith(MODELS.flash);
+        return withGeminiRetry(() => chat.sendMessage(outgoing));
+      }
+      throw err;
+    }
+  );
   let functionCalls = result.response.functionCalls();
   let iterations = 0;
 

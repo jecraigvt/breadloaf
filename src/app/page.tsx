@@ -109,7 +109,7 @@ export default async function HomePage() {
   // Check the family inbox (rate-limited, non-blocking — same pattern as calendar sync)
   pollInboxInBackground();
 
-  const [docCount, bulletinMessages, upcomingStays] = await Promise.all([
+  const [docCount, bulletinMessages, upcomingStays, openQuestions] = await Promise.all([
     prisma.document.count(),
     prisma.bulletinMessage.findMany({
       orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
@@ -118,6 +118,7 @@ export default async function HomePage() {
     prisma.stay.count({
       where: { checkOut: { gte: new Date() } },
     }).catch(() => 0),
+    prisma.buckyQuestion.count({ where: { status: "open" } }).catch(() => 0),
   ]);
 
   const now = new Date();
@@ -162,6 +163,33 @@ export default async function HomePage() {
           <div className="v">{docCount}<span className="u">Docs</span></div>
         </div>
       </div>
+
+      {/* Bucky's open questions — surfaced here so they don't sit unseen in the
+          assistant's Questions tab */}
+      {openQuestions > 0 && (
+        <Link
+          href="/assistant?tab=questions"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            padding: "12px 20px",
+            background: "var(--paper-2)",
+            borderBottom: "1px solid var(--rule)",
+            fontFamily: "var(--mono)",
+            fontSize: 10,
+            letterSpacing: "0.16em",
+            textTransform: "uppercase",
+            color: "var(--ember-deep)",
+          }}
+        >
+          <span>
+            Bucky has {openQuestions} question{openQuestions === 1 ? "" : "s"} for the family
+          </span>
+          <span aria-hidden>Answer →</span>
+        </Link>
+      )}
 
       {/* Chapter intro */}
       <div className="chapter-intro">

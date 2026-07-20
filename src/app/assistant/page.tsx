@@ -154,6 +154,7 @@ export default function AssistantPage() {
     if ((!input.trim() && attachments.length === 0) || loading) return;
 
     const files = attachments;
+    const typedText = input;
     // Attachment names go into the visible message (and the transcript the
     // model sees) so the conversation reads naturally later
     const attachmentLines = files.map((f) => `📎 ${f.name}`).join("\n");
@@ -167,6 +168,10 @@ export default function AssistantPage() {
     setAttachments([]);
     setLoading(true);
 
+    // Until the server accepts the turn, nothing has been processed server-side,
+    // so a failure is safe to recover from by restoring the composer for a
+    // one-tap retry (crucial for a voice memo that can't be re-typed).
+    let responseStarted = false;
     try {
       const storedName =
         typeof window !== "undefined"
@@ -193,6 +198,11 @@ export default function AssistantPage() {
         const serverMessage = await res.text().catch(() => "");
         throw new Error(serverMessage || "Failed to get response");
       }
+
+      // Server accepted the turn — for attachments it has ALREADY filed them,
+      // so from here a later error must not restore the composer (that would
+      // risk re-sending and duplicating).
+      responseStarted = true;
 
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
@@ -223,10 +233,19 @@ export default function AssistantPage() {
         err instanceof Error && err.message && err.message !== "Failed to get response"
           ? err.message
           : "Sorry, I had trouble answering that. Give it a moment and try again.";
-      setMessages((prev) => [
-        ...prev,
-        { role: "model", content: serverMessage },
-      ]);
+      if (!responseStarted) {
+        // Nothing was processed server-side. Drop the optimistic user bubble
+        // and put the text + attachments back in the composer so a voice memo
+        // isn't lost — one tap of Send retries the whole message.
+        setMessages([...messages, { role: "model", content: serverMessage }]);
+        setInput(typedText);
+        setAttachments(files);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          { role: "model", content: serverMessage },
+        ]);
+      }
     } finally {
       setLoading(false);
     }

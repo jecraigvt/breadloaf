@@ -29,6 +29,9 @@ export interface FiledDocument {
   needsReview: boolean;
   summary: string | null;
   extractedText: string | null;
+  // True when an identical file was already in the archive and we returned
+  // the existing document instead of creating a duplicate.
+  alreadyExisted: boolean;
 }
 
 export async function fileDocumentFromBuffer(opts: {
@@ -42,6 +45,28 @@ export async function fileDocumentFromBuffer(opts: {
 
   if (buffer.length > SAVE_SIZE_LIMIT) {
     throw new Error(`File too large (${Math.round(buffer.length / 1024 / 1024)}MB, max 100MB)`);
+  }
+
+  // Dedup at the source: if a byte-identical file is already filed, return the
+  // existing document instead of manufacturing a second row — this is exactly
+  // the exact-copy case the Tidy Up librarian used to clean up after the fact
+  // (e.g. the same receipt both emailed in and attached in chat).
+  const checksum = sha256(buffer);
+  const existingCopy = await prisma.document.findFirst({
+    where: { checksum, deletedAt: null },
+    include: { category: true },
+  });
+  if (existingCopy) {
+    return {
+      id: existingCopy.id,
+      title: existingCopy.title,
+      category: existingCopy.category?.name ?? null,
+      categoryCreated: false,
+      needsReview: existingCopy.categoryId === null,
+      summary: existingCopy.aiSummary,
+      extractedText: existingCopy.aiExtractedText,
+      alreadyExisted: true,
+    };
   }
 
   // Save to the uploads volume first — never lose a family document
@@ -98,7 +123,7 @@ export async function fileDocumentFromBuffer(opts: {
       aiSummary: result?.summary || null,
       aiExtractedText: result?.extractedText || null,
       uploadedBy: uploadedBy || undefined,
-      checksum: sha256(buffer),
+      checksum,
     },
     include: { category: true },
   });
@@ -136,6 +161,31 @@ export async function fileDocumentFromBuffer(opts: {
     console.error("Document embedding failed:", e)
   );
 
+  // If we couldn't confidently file it, raise a persistent question so the
+  // uncertain case is surfaced actively (Questions tab + homepage badge)
+  // instead of sitting silently in the Needs Review bucket. No email here —
+  // a batch of unclear uploads shouldn't blast the family's inbox; the badge
+  // and tab are enough. Answering it lets Bucky refile via set_document_category.
+  if (resolution.needsReview) {
+    try {
+      await prisma.buckyQuestion.create({
+        data: {
+          question: `Where should "${doc.title}" be filed?`,
+          context: result?.suggestedCategory
+            ? `My best guess was "${result.suggestedCategory}", but I wasn't confident enough to file it automatically. Open the document to set a category, or just reply with one.`
+            : `I couldn't read or confidently categorize this ${type || "file"} on intake. Open the document to set a category, or just reply with one.`,
+          questionType: "archive",
+          sourceType: "document",
+          sourceId: doc.id,
+          sourceLabel: doc.title,
+          options: result?.suggestedCategory ? [result.suggestedCategory, "Other"] : undefined,
+        },
+      });
+    } catch (e) {
+      console.error("Needs-review question creation failed:", e);
+    }
+  }
+
   return {
     id: doc.id,
     title: doc.title,
@@ -144,5 +194,6 @@ export async function fileDocumentFromBuffer(opts: {
     needsReview: resolution.needsReview,
     summary: doc.aiSummary,
     extractedText: doc.aiExtractedText,
+    alreadyExisted: false,
   };
 }

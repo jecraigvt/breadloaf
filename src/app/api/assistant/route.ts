@@ -62,9 +62,11 @@ export async function POST(request: NextRequest) {
 
       if (filed.length > 0 || failed.length > 0) {
         const lines = filed.map((d, i) => {
-          const where = d.needsReview
-            ? "saved to the NEEDS REVIEW bucket (couldn't confidently categorize)"
-            : `filed under "${d.category}"${d.categoryCreated ? " (new category created)" : ""}`;
+          const where = d.alreadyExisted
+            ? `was ALREADY in the archive (identical copy) under "${d.category ?? "Needs Review"}" — not filed again, so no duplicate was created`
+            : d.needsReview
+              ? "saved to the NEEDS REVIEW bucket (couldn't confidently categorize)"
+              : `filed under "${d.category}"${d.categoryCreated ? " (new category created)" : ""}`;
           const details = [
             d.summary ? `Summary: ${d.summary}` : null,
             d.extractedText ? `Key content: ${d.extractedText.slice(0, 1500)}` : null,
