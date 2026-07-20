@@ -2,9 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   createAuthToken,
   getAuthCookieName,
+  getLegacyAuthCookieName,
   getFamilyFromAuthToken,
   getFamilyPins,
 } from "@/lib/auth";
+
+// Expire any legacy "breadloaf_auth" cookie at BOTH scopes it may have been
+// set under (host-only from old code, and domain-scoped). A leftover host-only
+// copy shadows the renamed cookie and causes an infinite login loop, so we
+// actively clear it whenever we set or clear the session.
+function clearLegacyCookie(response: NextResponse, request: NextRequest): void {
+  const secure = process.env.NODE_ENV === "production";
+  const base = `${getLegacyAuthCookieName()}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
+  response.headers.append("Set-Cookie", base); // host-only
+  const domain = cookieDomain(request);
+  if (domain) response.headers.append("Set-Cookie", `${base}; Domain=${domain}`);
+}
 
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const MAX_LOGIN_ATTEMPTS = 8;
@@ -71,6 +84,7 @@ export async function POST(request: NextRequest) {
       path: "/",
       domain: cookieDomain(request),
     });
+    clearLegacyCookie(response, request);
 
     return response;
   } catch {
@@ -102,5 +116,6 @@ export async function DELETE(request: NextRequest) {
     path: "/",
     domain: cookieDomain(request),
   });
+  clearLegacyCookie(response, request);
   return response;
 }

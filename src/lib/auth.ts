@@ -1,4 +1,10 @@
-const AUTH_COOKIE_NAME = "breadloaf_auth";
+// v2 renamed the cookie from the legacy "breadloaf_auth" so the new
+// domain-scoped token can't be shadowed by a stale host-only "breadloaf_auth"
+// left in browsers by older code — same name + different scope = two cookies,
+// and Next reads the wrong one, causing an infinite login loop. The legacy
+// cookie is expired on login (see /api/auth). Do not reuse "breadloaf_auth".
+const AUTH_COOKIE_NAME = "breadloaf_session";
+const LEGACY_AUTH_COOKIE_NAME = "breadloaf_auth";
 const AUTH_TOKEN_PREFIX = "breadloaf-session:v2";
 const CALENDAR_FEED_TOKEN_PREFIX = "calendar-feed:v1";
 const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
@@ -25,6 +31,10 @@ export function getFamilyPins(): Record<string, string> {
 
 export function getAuthCookieName(): string {
   return AUTH_COOKIE_NAME;
+}
+
+export function getLegacyAuthCookieName(): string {
+  return LEGACY_AUTH_COOKIE_NAME;
 }
 
 function toBase64Url(bytes: Uint8Array): string {
