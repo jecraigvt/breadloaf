@@ -6,11 +6,15 @@
 //   npm run archive:retitle -- --apply
 // Ask Bucky to reread unresolved files, sequentially:
 //   npm run archive:retitle -- --reanalyze --limit=20
+// Ask Bucky to reread every filename-like candidate for the best title:
+//   npm run archive:retitle -- --reanalyze-all --write-plan=/tmp/archive-title-plan.json
+// Apply the exact reviewed titles (and refuse stale rows):
+//   npm run archive:retitle -- --apply-plan=/tmp/archive-title-plan.json
 // Resume after a reviewed batch:
 //   npm run archive:retitle -- --reanalyze --offset=20 --limit=20
 
 import "dotenv/config";
-import { readFile } from "fs/promises";
+import { readFile, writeFile } from "fs/promises";
 import path from "path";
 import { prisma } from "../src/lib/prisma";
 import { categorizeDocument, categorizeText, processMediaFile } from "../src/lib/ai";
@@ -20,8 +24,13 @@ import { indexDocument } from "../src/lib/embeddings";
 
 const AI_SIZE_LIMIT = 15 * 1024 * 1024;
 const apply = process.argv.includes("--apply");
-const reanalyze = process.argv.includes("--reanalyze");
+const reanalyzeAll = process.argv.includes("--reanalyze-all");
+const reanalyze = process.argv.includes("--reanalyze") || reanalyzeAll;
 const skipIndex = process.argv.includes("--skip-index");
+const writePlanArg = process.argv.find((arg) => arg.startsWith("--write-plan="));
+const applyPlanArg = process.argv.find((arg) => arg.startsWith("--apply-plan="));
+const writePlanPath = writePlanArg?.slice("--write-plan=".length);
+const applyPlanPath = applyPlanArg?.slice("--apply-plan=".length);
 const limitArg = process.argv.find((arg) => arg.startsWith("--limit="));
 const offsetArg = process.argv.find((arg) => arg.startsWith("--offset="));
 const parsedLimit = limitArg ? Number.parseInt(limitArg.split("=")[1], 10) : undefined;
@@ -38,6 +47,19 @@ interface ArchiveDocument {
   aiSummary: string | null;
   aiExtractedText: string | null;
   createdAt: Date;
+}
+
+interface TitlePlanItem {
+  id: string;
+  oldTitle: string;
+  newTitle: string;
+  fileName: string;
+}
+
+interface TitlePlan {
+  version: 1;
+  createdAt: string;
+  items: TitlePlanItem[];
 }
 
 function isFallbackTitle(title: string): boolean {
@@ -82,7 +104,73 @@ async function rereadTitle(
   return result?.title || null;
 }
 
+function assertTitlePlan(value: unknown): asserts value is TitlePlan {
+  if (!value || typeof value !== "object") throw new Error("Invalid title plan");
+  const plan = value as Partial<TitlePlan>;
+  if (plan.version !== 1 || !Array.isArray(plan.items)) throw new Error("Unsupported title plan");
+
+  for (const item of plan.items) {
+    if (
+      !item ||
+      typeof item.id !== "string" ||
+      typeof item.oldTitle !== "string" ||
+      typeof item.newTitle !== "string" ||
+      typeof item.fileName !== "string" ||
+      !item.newTitle.trim() ||
+      item.newTitle.length > 100 ||
+      item.oldTitle === item.newTitle
+    ) {
+      throw new Error("Title plan contains an invalid item");
+    }
+  }
+}
+
+async function applySavedPlan(planPath: string) {
+  const parsed: unknown = JSON.parse(await readFile(planPath, "utf8"));
+  assertTitlePlan(parsed);
+  console.log(`Applying ${parsed.items.length} reviewed title change(s) from ${planPath}`);
+
+  let changed = 0;
+  let conflicts = 0;
+  let indexFailed = 0;
+  for (const item of parsed.items) {
+    const current = await prisma.document.findFirst({
+      where: { id: item.id, deletedAt: null },
+      select: { title: true, fileName: true },
+    });
+    if (!current || current.title !== item.oldTitle || current.fileName !== item.fileName) {
+      conflicts++;
+      console.warn(`  STALE, NOT CHANGED: ${item.fileName}`);
+      continue;
+    }
+
+    await prisma.document.update({ where: { id: item.id }, data: { title: item.newTitle } });
+    console.log(`  RENAME: ${item.oldTitle} -> ${item.newTitle}`);
+    changed++;
+    if (!skipIndex) {
+      try {
+        await indexDocument(item.id, { throwOnError: true });
+      } catch (error) {
+        indexFailed++;
+        console.warn(`  INDEX PENDING: ${item.newTitle}: ${String(error).slice(0, 140)}`);
+      }
+    }
+  }
+
+  console.log(`Done: ${changed} renamed, ${conflicts} stale, ${indexFailed} need reindexing`);
+  if (conflicts > 0) process.exitCode = 1;
+}
+
 async function main() {
+  if (writePlanPath && apply) throw new Error("Use --write-plan only during preview");
+  if (applyPlanPath) {
+    if (apply || reanalyze || writePlanPath || limit || offset) {
+      throw new Error("Use --apply-plan by itself (optionally with --skip-index)");
+    }
+    await applySavedPlan(applyPlanPath);
+    return;
+  }
+
   const documents = await prisma.document.findMany({
     where: { deletedAt: null },
     select: {
@@ -110,12 +198,17 @@ async function main() {
   console.log(
     `${apply ? "Applying" : "Previewing"} title changes for ${candidates.length} filename-like document(s)${offset ? ` after offset ${offset}` : ""}`
   );
-  if (reanalyze) console.log("Bucky rereading is enabled and runs one file at a time");
+  if (reanalyze) {
+    console.log(
+      `Bucky rereading is enabled for ${reanalyzeAll ? "all candidates" : "unresolved files"} and runs one file at a time`
+    );
+  }
 
   let changed = 0;
   let unresolved = 0;
   let failed = 0;
   let indexFailed = 0;
+  const planItems: TitlePlanItem[] = [];
   for (const document of candidates) {
     try {
       let nextTitle = resolveDocumentTitle({
@@ -126,7 +219,7 @@ async function main() {
         createdAt: document.createdAt,
       });
 
-      if (isFallbackTitle(nextTitle) && reanalyze) {
+      if (reanalyze && (reanalyzeAll || isFallbackTitle(nextTitle))) {
         nextTitle = (await rereadTitle(document, categories)) || nextTitle;
         await new Promise((resolve) => setTimeout(resolve, 750));
       }
@@ -138,6 +231,12 @@ async function main() {
       }
 
       console.log(`  ${apply ? "RENAME" : "WOULD RENAME"}: ${document.title} -> ${nextTitle}`);
+      planItems.push({
+        id: document.id,
+        oldTitle: document.title,
+        newTitle: nextTitle,
+        fileName: document.fileName,
+      });
       if (apply) {
         await prisma.document.update({ where: { id: document.id }, data: { title: nextTitle } });
         if (!skipIndex) {
@@ -159,6 +258,15 @@ async function main() {
   console.log(
     `Done: ${changed} ${apply ? "renamed" : "rename candidates"}, ${unresolved} need review, ${failed} failed, ${indexFailed} need reindexing`
   );
+  if (writePlanPath) {
+    const plan: TitlePlan = {
+      version: 1,
+      createdAt: new Date().toISOString(),
+      items: planItems,
+    };
+    await writeFile(writePlanPath, `${JSON.stringify(plan, null, 2)}\n`, "utf8");
+    console.log(`Review plan written to ${writePlanPath}`);
+  }
   if (failed > 0) process.exitCode = 1;
 }
 

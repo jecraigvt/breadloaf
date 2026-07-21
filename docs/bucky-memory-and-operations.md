@@ -108,7 +108,14 @@ npm run archive:retitle -- --reanalyze --limit=20
 npm run archive:retitle -- --reanalyze --offset=20 --limit=20
 ```
 
-Add `--apply` after reviewing a batch. Add `--skip-index` only during a Google outage, then run `npm run memory:reindex` later.
+For a one-time high-quality review, `--reanalyze-all` asks Bucky to reread every filename-like candidate even when stored text produced a plausible title. Write the preview to a plan, review the printed titles, then apply that exact plan:
+
+```bash
+npm run archive:retitle -- --reanalyze-all --limit=20 --write-plan=/tmp/archive-title-plan.json
+npm run archive:retitle -- --apply-plan=/tmp/archive-title-plan.json
+```
+
+The apply step rejects documents whose title or filename changed after preview. For stored-content-only batches, add `--apply` after reviewing a preview. Add `--skip-index` only during a Google outage, then run `npm run memory:reindex` later.
 
 ## Production Rollout
 
