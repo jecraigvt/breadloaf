@@ -47,6 +47,19 @@ test("uses an honest review title when no content is available", () => {
   );
 });
 
+test("does not turn an intake status message into a title", () => {
+  assert.equal(
+    resolveDocumentTitle({
+      suggestedTitle: "a6a9b27a-dcc4-49f3-97b7-aa1453bb6355.docx",
+      fileName: "a6a9b27a-dcc4-49f3-97b7-aa1453bb6355.docx",
+      summary: "Document uploaded — categorize manually or ask Bucky about it",
+      fileType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      createdAt: "2026-07-20T12:00:00.000Z",
+    }),
+    "Archived Document (2026-07-20)"
+  );
+});
+
 test("flags raw filenames and generic labels for backfill", () => {
   assert.equal(needsDocumentRetitle("scan003.pdf", "scan003.pdf"), true);
   assert.equal(needsDocumentRetitle("Untitled Document", "taxes.pdf"), true);

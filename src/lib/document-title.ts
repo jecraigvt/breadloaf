@@ -76,12 +76,15 @@ function titleFromNarrative(value?: string | null): string {
     .replace(/^(?:this|the)\s+(?:document|file|image|photo|recording|audio|video|email)\s+(?:is|contains|shows|describes|details|documents|summarizes|covers|provides)\s+/i, "")
     .replace(/^(?:it|this)\s+(?:shows|describes|details|documents|summarizes|covers|provides)\s+/i, "")
     .replace(/^(?:a|an|the)\s+(?=[A-Za-z])/i, "");
+  const processingMessage =
+    /\b(?:categorize manually|ask Bucky|AI analysis|AI categorization|could not (?:be )?(?:read|analy[sz]ed)|unable to analy[sz]e)\b/i;
 
   if (
     !firstSentence ||
     firstSentence.startsWith("{") ||
     firstSentence.startsWith("[") ||
     firstSentence.includes("``` ") ||
+    processingMessage.test(firstSentence) ||
     firstSentence.split(/\s+/).length < 3
   ) {
     return "";
@@ -106,11 +109,13 @@ function titleFromExtractedText(value?: string | null): string {
 }
 
 function humanizeFileName(fileName?: string | null): string {
-  const stem = stemFor(fileName)
+  const rawStem = stemFor(fileName);
+  if (!rawStem || looksMachineGenerated(rawStem)) return "";
+
+  const stem = rawStem
     .replace(/[_-]+/g, " ")
     .replace(/\s+\(?(?:copy|final|scan)\)?\s*$/i, "")
     .replace(/([a-z])([A-Z])/g, "$1 $2");
-  if (!stem || looksMachineGenerated(stem)) return "";
 
   const words = collapseWhitespace(stem).split(" ");
   return cleanTitle(

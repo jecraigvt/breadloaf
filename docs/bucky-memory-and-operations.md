@@ -121,7 +121,7 @@ The app runs `prisma migrate deploy` at startup. For the tiered-memory release:
 5. Reread remaining generic files in small batches only if Gemini is healthy.
 
 ```bash
-railway up
+git push origin main
 railway logs --lines 100
 railway ssh npm run memory:reindex
 railway ssh npm run archive:retitle

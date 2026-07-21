@@ -62,7 +62,7 @@ npm run memory:reindex
 
 ## Deployment
 
-This project is **not** auto-deployed from GitHub. Pushing to `origin` only updates the repository history. Production deploys happen through Railway.
+The Railway service is connected to GitHub. A push to `main` starts a production deployment automatically. Do not also run `railway up` after the same push, because that starts a duplicate build.
 
 Standard deploy flow:
 
@@ -70,14 +70,13 @@ Standard deploy flow:
 git add ...
 git commit -m "..."
 git push origin main
-railway up
 railway logs
 ```
 
 Useful Railway commands:
 
 ```bash
-railway up
+railway up # alternative for an intentional local-tree deploy without pushing
 railway logs
 railway logs --build
 ```
