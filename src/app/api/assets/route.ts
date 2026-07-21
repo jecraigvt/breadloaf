@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { indexAsset } from "@/lib/embeddings";
 
 export async function GET() {
   const assets = await prisma.asset.findMany({
@@ -40,6 +41,7 @@ export async function POST(request: NextRequest) {
         addedBy: body.addedBy || undefined,
       },
     });
+    void indexAsset(asset.id);
     return NextResponse.json(asset);
   } catch (error) {
     console.error("Create asset error:", error);

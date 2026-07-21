@@ -5,12 +5,13 @@ import {
   categorizeDocument,
   categorizeText,
   processMediaFile,
-  embedAndStore,
 } from "@/lib/ai";
+import { indexDocument, indexMaintenance } from "@/lib/embeddings";
 import { extractTextFromFile, isExtractableType } from "@/lib/extract-text";
 import { resolveDocumentCategory } from "@/lib/document-categories";
 import { generateId } from "@/lib/utils";
 import { sha256 } from "@/lib/archive-integrity";
+import { resolveDocumentTitle } from "@/lib/document-title";
 
 // Shared server-side document filing: save to /uploads, categorize with AI,
 // apply category guardrails, create the Document row, cross-link maintenance
@@ -84,15 +85,21 @@ export async function fileDocumentFromBuffer(opts: {
 
   let result = null;
   if (buffer.length <= AI_SIZE_LIMIT) {
-    if (type.startsWith("audio/") || type.startsWith("video/")) {
-      result = await processMediaFile(buffer.toString("base64"), type, categories);
-    } else if (type.startsWith("image/") || type === "application/pdf") {
-      result = await categorizeDocument(buffer.toString("base64"), type, categories);
-    } else if (isExtractableType(type)) {
-      const extracted = await extractTextFromFile(buffer, type);
-      if (extracted?.trim()) {
-        result = await categorizeText(extracted, fileName, categories);
+    try {
+      if (type.startsWith("audio/") || type.startsWith("video/")) {
+        result = await processMediaFile(buffer.toString("base64"), type, categories, fileName);
+      } else if (type.startsWith("image/") || type === "application/pdf") {
+        result = await categorizeDocument(buffer.toString("base64"), type, categories, fileName);
+      } else if (isExtractableType(type)) {
+        const extracted = await extractTextFromFile(buffer, type);
+        if (extracted?.trim()) {
+          result = await categorizeText(extracted, fileName, categories);
+        }
       }
+    } catch (error) {
+      // The file is already durable on disk. AI enrichment must never prevent
+      // the archive row from being created during a provider outage.
+      console.error(`[Archive] AI analysis failed for ${fileName}; filing for review:`, error);
     }
   }
 
@@ -112,7 +119,14 @@ export async function fileDocumentFromBuffer(opts: {
 
   const doc = await prisma.document.create({
     data: {
-      title: result?.title || fileName,
+      title: resolveDocumentTitle({
+        suggestedTitle: result?.title,
+        fileName,
+        summary: result?.summary,
+        extractedText: result?.extractedText,
+        fileType: type,
+        createdAt: new Date(),
+      }),
       description: result?.summary || null,
       fileName,
       filePath: `/uploads/${uniqueName}`,
@@ -133,7 +147,7 @@ export async function fileDocumentFromBuffer(opts: {
   const isMaintenance = categoryName === "maintenance" || categoryName === "receipts";
   if (isMaintenance && (result?.maintenanceCost || result?.maintenanceVendor)) {
     try {
-      await prisma.maintenanceRecord.create({
+      const maintenance = await prisma.maintenanceRecord.create({
         data: {
           title: doc.title || "Maintenance Receipt",
           description: doc.aiSummary || undefined,
@@ -143,21 +157,14 @@ export async function fileDocumentFromBuffer(opts: {
           cost: result?.maintenanceCost ? parseFloat(String(result.maintenanceCost)) : undefined,
         },
       });
+      void indexMaintenance(maintenance.id);
     } catch (e) {
       console.error("Cross-link maintenance record failed:", e);
     }
   }
 
   // Embed for semantic search so Bucky can recall it later
-  const embeddingContent = [
-    doc.title,
-    doc.category?.name || "",
-    doc.aiSummary || "",
-    doc.aiExtractedText || "",
-  ]
-    .filter(Boolean)
-    .join(" | ");
-  embedAndStore("document", doc.id, embeddingContent).catch((e) =>
+  indexDocument(doc.id).catch((e) =>
     console.error("Document embedding failed:", e)
   );
 

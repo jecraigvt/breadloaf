@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "@/lib/prisma";
 import { MODELS } from "@/lib/ai";
+import { resolveDocumentTitle } from "@/lib/document-title";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
@@ -184,6 +185,11 @@ export async function POST(request: NextRequest) {
   "extractedContent": "all important factual content from the page — names, dates, dollar amounts, decisions, action items, addresses, contact info, specifications, measurements — anything a family member might ask about later"
 }
 
+Title rules:
+- Use a concise, human-readable title based on the page content, usually 4-12 words.
+- Identify the specific document type and subject; include a useful date, vendor, person, or location when supported.
+- Do not copy the URL, page filename, or a generic label such as "Document" or "Untitled".
+
 URL: ${url}
 Page title: ${pageTitle || "unknown"}
 Meta description: ${metaDescription || "none"}
@@ -226,7 +232,14 @@ Be thorough — extract every useful detail. The family assistant needs this to 
     );
 
     return NextResponse.json({
-      title: suggestedTitle,
+      title: resolveDocumentTitle({
+        suggestedTitle,
+        fileName: pageTitle || null,
+        summary: contentSummary || suggestedDescription,
+        extractedText: allExtractedText,
+        fileType: "text/html",
+        createdAt: new Date(),
+      }),
       categorySlug: matchedCategory?.slug || "",
       categoryName: matchedCategory?.name || suggestedCategory,
       description: suggestedDescription,

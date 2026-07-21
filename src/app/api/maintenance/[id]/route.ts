@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { indexMaintenance, removeFromIndex } from "@/lib/embeddings";
 
 export async function PATCH(
   request: NextRequest,
@@ -23,6 +24,7 @@ export async function PATCH(
       where: { id },
       data,
     });
+    void indexMaintenance(record.id);
 
     return NextResponse.json(record);
   } catch (error) {
@@ -41,6 +43,9 @@ export async function DELETE(
   try {
     const { id } = await params;
     await prisma.maintenanceRecord.delete({ where: { id } });
+    void removeFromIndex("maintenance", id).catch((error) =>
+      console.error("Maintenance index cleanup failed:", error)
+    );
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Maintenance delete error:", error);

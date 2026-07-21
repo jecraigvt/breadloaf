@@ -1,108 +1,86 @@
-// One-time backfill: regenerate every embedding with the current
-// MODELS.embedding (run after switching embedding model IDs so stored
-// vectors and query vectors live in the same space).
+// Rebuild Bucky's derived knowledge index. Safe to run repeatedly.
 //
-// Usage (against production):  railway run npx tsx scripts/re-embed.ts
-// Usage (local dev):           npx tsx scripts/re-embed.ts
-//
-// Safe to re-run — embedAndStore upserts by (sourceType, sourceId).
-// Orphaned embedding rows (source deleted) are removed.
+// Production: railway run npx tsx scripts/re-embed.ts
+// Local:      npx tsx scripts/re-embed.ts
 
 import { prisma } from "../src/lib/prisma";
-import { generateEmbedding, MODELS } from "../src/lib/ai";
+import {
+  EMBEDDING_MODEL,
+  indexAsset,
+  indexDocument,
+  indexExpense,
+  indexMaintenance,
+  indexMemory,
+} from "../src/lib/embeddings";
 
-// Same store shape as embedAndStore in ai.ts, but throws on failure so the
-// script can count and report errors (embedAndStore swallows them).
-async function reEmbed(sourceType: string, sourceId: string, content: string) {
-  const vector = await generateEmbedding(content.slice(0, 5000));
-  await prisma.embedding.upsert({
-    where: { sourceType_sourceId: { sourceType, sourceId } },
-    update: { content: content.slice(0, 2000), vector: JSON.stringify(vector) },
-    create: {
-      sourceType,
-      sourceId,
-      content: content.slice(0, 2000),
-      vector: JSON.stringify(vector),
-    },
-  });
+interface IndexItem {
+  sourceType: string;
+  sourceId: string;
+  label: string;
+  run: () => Promise<void>;
 }
 
 async function main() {
-  console.log(`Re-embedding with model: ${MODELS.embedding}`);
+  console.log(`Rebuilding Bucky knowledge index with ${EMBEDDING_MODEL}`);
 
-  const [documents, memories, existing] = await Promise.all([
-    prisma.document.findMany({ include: { category: true } }),
-    prisma.jarvisMemory.findMany(),
+  const [documents, memories, assets, maintenance, expenses, existing] = await Promise.all([
+    prisma.document.findMany({ select: { id: true, title: true } }),
+    prisma.jarvisMemory.findMany({ select: { id: true, topic: true } }),
+    prisma.asset.findMany({ select: { id: true, name: true } }),
+    prisma.maintenanceRecord.findMany({ select: { id: true, title: true } }),
+    prisma.expense.findMany({ select: { id: true, description: true } }),
     prisma.embedding.findMany({ select: { sourceType: true, sourceId: true } }),
   ]);
-  console.log(
-    `${documents.length} documents, ${memories.length} memories, ${existing.length} existing embedding rows`
-  );
+
+  const items: IndexItem[] = [
+    ...documents.map((item) => ({ sourceType: "document", sourceId: item.id, label: item.title, run: () => indexDocument(item.id, { throwOnError: true }) })),
+    ...memories.map((item) => ({ sourceType: "memory", sourceId: item.id, label: item.topic, run: () => indexMemory(item.id, { throwOnError: true }) })),
+    ...assets.map((item) => ({ sourceType: "asset", sourceId: item.id, label: item.name, run: () => indexAsset(item.id, { throwOnError: true }) })),
+    ...maintenance.map((item) => ({ sourceType: "maintenance", sourceId: item.id, label: item.title, run: () => indexMaintenance(item.id, { throwOnError: true }) })),
+    ...expenses.map((item) => ({ sourceType: "expense", sourceId: item.id, label: item.description, run: () => indexExpense(item.id, { throwOnError: true }) })),
+  ];
+  console.log(`${items.length} source records, ${existing.length} existing chunks`);
 
   let ok = 0;
   let failed = 0;
-
-  // Same content shape as the document creation sites (documents route,
-  // file-document.ts, email-processor.ts)
-  for (const doc of documents) {
-    const content = [
-      doc.title,
-      doc.category?.name || "",
-      doc.aiSummary || doc.description || "",
-      doc.aiExtractedText || "",
-    ]
-      .filter(Boolean)
-      .join(" | ");
-    if (!content.trim()) continue;
+  for (const item of items) {
     try {
-      await reEmbed("document", doc.id, content);
+      await item.run();
       ok++;
-      console.log(`  doc ok: ${doc.title}`);
-    } catch (err) {
+      console.log(`  ${item.sourceType} ok: ${item.label}`);
+    } catch (error) {
       failed++;
-      console.error(`  doc FAILED: ${doc.title}:`, String(err).slice(0, 150));
+      console.error(`  ${item.sourceType} FAILED: ${item.label}:`, String(error).slice(0, 180));
     }
-    // Gentle pacing for the embedding API
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
 
-  // Same content shape as save_memory in ai.ts
-  for (const mem of memories) {
-    try {
-      await reEmbed("memory", mem.id, `${mem.topic}: ${mem.content}`);
-      ok++;
-      console.log(`  memory ok: ${mem.topic}`);
-    } catch (err) {
-      failed++;
-      console.error(`  memory FAILED: ${mem.topic}:`, String(err).slice(0, 150));
+  const live = new Map<string, Set<string>>([
+    ["document", new Set(documents.map((item) => item.id))],
+    ["memory", new Set(memories.map((item) => item.id))],
+    ["asset", new Set(assets.map((item) => item.id))],
+    ["maintenance", new Set(maintenance.map((item) => item.id))],
+    ["expense", new Set(expenses.map((item) => item.id))],
+  ]);
+  const orphanSources = new Map<string, { sourceType: string; sourceId: string }>();
+  for (const entry of existing) {
+    const knownIds = live.get(entry.sourceType);
+    if (knownIds && !knownIds.has(entry.sourceId)) {
+      orphanSources.set(`${entry.sourceType}:${entry.sourceId}`, entry);
     }
-    await new Promise((r) => setTimeout(r, 300));
+  }
+  for (const orphan of Array.from(orphanSources.values())) {
+    await prisma.embedding.deleteMany({ where: orphan });
+    console.log(`  removed orphan: ${orphan.sourceType}:${orphan.sourceId}`);
   }
 
-  // Remove orphans: embedding rows whose source row no longer exists
-  const liveDocIds = new Set(documents.map((d) => d.id));
-  const liveMemIds = new Set(memories.map((m) => m.id));
-  const orphans = existing.filter(
-    (e) =>
-      (e.sourceType === "document" && !liveDocIds.has(e.sourceId)) ||
-      (e.sourceType === "memory" && !liveMemIds.has(e.sourceId))
-  );
-  for (const o of orphans) {
-    await prisma.embedding.deleteMany({
-      where: { sourceType: o.sourceType, sourceId: o.sourceId },
-    });
-    console.log(`  removed orphan: ${o.sourceType}:${o.sourceId}`);
-  }
-
-  console.log(
-    `Done — ${ok} re-embedded, ${failed} failed, ${orphans.length} orphans removed`
-  );
+  console.log(`Done: ${ok} indexed, ${failed} failed, ${orphanSources.size} orphan sources removed`);
   if (failed > 0) process.exitCode = 1;
 }
 
 main()
-  .catch((err) => {
-    console.error("Backfill failed:", err);
+  .catch((error) => {
+    console.error("Backfill failed:", error);
     process.exitCode = 1;
   })
   .finally(() => prisma.$disconnect());

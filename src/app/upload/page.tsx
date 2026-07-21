@@ -13,7 +13,6 @@ import {
   X,
   Wrench,
   Link2,
-  ChevronDown,
   Mic,
   Video,
   ShieldAlert,
@@ -192,6 +191,7 @@ export default function UploadPage() {
         body: JSON.stringify({
           filePath: uploadData.filePath,
           fileType: uploadData.fileType,
+          fileName: uploadData.fileName,
         }),
       });
 
@@ -257,7 +257,11 @@ export default function UploadPage() {
         const catRes = await fetch("/api/categorize", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filePath: uploadData.filePath, fileType: uploadData.fileType }),
+          body: JSON.stringify({
+            filePath: uploadData.filePath,
+            fileType: uploadData.fileType,
+            fileName: uploadData.fileName,
+          }),
         });
         const catData: CategorizationResult = catRes.ok
           ? await catRes.json()
@@ -285,10 +289,11 @@ export default function UploadPage() {
           }),
         });
         if (!saveRes.ok) throw new Error(await saveRes.text());
+        const savedDocument = await saveRes.json();
 
         updateBatchItem(i, {
           status: catData.needsReview ? "needs-review" : "filed",
-          title: catData.title || items[i].file.name,
+          title: savedDocument.title,
           categoryName: catData.resolvedCategoryName,
           categoryCreated: catData.categoryCreated,
         });
@@ -585,6 +590,8 @@ export default function UploadPage() {
           <div className="space-y-4">
             {preview && (
               <div className="rounded-xl overflow-hidden border border-stone-200">
+                {/* Local object URLs cannot be optimized by next/image. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={preview} alt="Preview" className="w-full" />
               </div>
             )}

@@ -3,12 +3,14 @@ import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { prisma } from "@/lib/prisma";
 import { fetchUnseenEmails, emailConfigured, type InboundEmail, type InboundAttachment } from "@/lib/email-inbox";
-import { categorizeDocument, categorizeText, embedAndStore, MODELS } from "@/lib/ai";
+import { categorizeDocument, categorizeText, processMediaFile, MODELS } from "@/lib/ai";
+import { indexDocument } from "@/lib/embeddings";
 import { extractTextFromFile, isExtractableType } from "@/lib/extract-text";
 import { resolveDocumentCategory } from "@/lib/document-categories";
 import { findOverlappingStay, createStayWithCalendarSync } from "@/lib/stays";
 import { generateId } from "@/lib/utils";
 import { sha256 } from "@/lib/archive-integrity";
+import { resolveDocumentTitle } from "@/lib/document-title";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
@@ -115,39 +117,46 @@ async function processEmail(email: InboundEmail): Promise<EmailActions> {
   // 1. Analyze the body: stay announcements + is the body itself a document?
   let bodyIsDocument = false;
   if (email.text.trim()) {
-    const analysis = await analyzeEmailBody(email);
-    bodyIsDocument = analysis.bodyIsDocument;
-    const stays = analysis.stays;
-    for (const stay of stays) {
-      // Hard guards regardless of model confidence: never create stays in
-      // the past (forwarded/old emails) or implausibly far out
-      const checkOut = new Date(stay.checkOut);
-      const checkIn = new Date(stay.checkIn);
-      const monthsAhead = (checkIn.getTime() - Date.now()) / (30 * 24 * 3600 * 1000);
-      if (checkOut <= new Date() || monthsAhead > 18) {
-        actions.notes.push(
-          `Skipped ${stay.guestName} ${stay.checkIn}–${stay.checkOut} (dates in the past or too far out — old/forwarded email?)`
-        );
-        continue;
+    try {
+      const analysis = await analyzeEmailBody(email);
+      bodyIsDocument = analysis.bodyIsDocument;
+      const stays = analysis.stays;
+      for (const stay of stays) {
+        // Hard guards regardless of model confidence: never create stays in
+        // the past (forwarded/old emails) or implausibly far out
+        const checkOut = new Date(stay.checkOut);
+        const checkIn = new Date(stay.checkIn);
+        const monthsAhead = (checkIn.getTime() - Date.now()) / (30 * 24 * 3600 * 1000);
+        if (checkOut <= new Date() || monthsAhead > 18) {
+          actions.notes.push(
+            `Skipped ${stay.guestName} ${stay.checkIn}–${stay.checkOut} (dates in the past or too far out — old/forwarded email?)`
+          );
+          continue;
+        }
+        if (stay.confidence < 0.7) {
+          actions.notes.push(
+            `Possible visit mentioned (${stay.guestName}, ${stay.checkIn}–${stay.checkOut}) but not confident enough to add`
+          );
+          continue;
+        }
+        const duplicate = await findOverlappingStay(stay.guestName, checkIn, checkOut);
+        if (duplicate) {
+          actions.staysAlreadyOnCalendar.push(stay);
+          continue;
+        }
+        await createStayWithCalendarSync({
+          guestName: stay.guestName,
+          checkIn,
+          checkOut,
+          notes: `Added by Mail Room from ${email.fromName}'s email "${email.subject}"`,
+        });
+        actions.staysCreated.push(stay);
       }
-      if (stay.confidence < 0.7) {
-        actions.notes.push(
-          `Possible visit mentioned (${stay.guestName}, ${stay.checkIn}–${stay.checkOut}) but not confident enough to add`
-        );
-        continue;
-      }
-      const duplicate = await findOverlappingStay(stay.guestName, checkIn, checkOut);
-      if (duplicate) {
-        actions.staysAlreadyOnCalendar.push(stay);
-        continue;
-      }
-      await createStayWithCalendarSync({
-        guestName: stay.guestName,
-        checkIn,
-        checkOut,
-        notes: `Added by Mail Room from ${email.fromName}'s email "${email.subject}"`,
-      });
-      actions.staysCreated.push(stay);
+    } catch (error) {
+      // Attachment filing remains available even if body interpretation is
+      // temporarily unavailable.
+      console.error(`[Mail Room] body analysis failed for "${email.subject}":`, error);
+      actions.notes.push("Bucky could not analyze the email body; attachments were still archived.");
     }
   }
 
@@ -253,36 +262,74 @@ async function archiveBodyAsDocument(
       select: { name: true, description: true },
       orderBy: { name: "asc" },
     });
-    const result = await categorizeText(content, email.subject, categories);
-    const resolution = await resolveDocumentCategory({
-      suggestedCategory: result.suggestedCategory,
-      newCategoryProposal: result.newCategoryProposal,
-      confidence: result.confidence,
-    });
+    let result = null;
+    try {
+      result = await categorizeText(content, email.subject, categories);
+    } catch (error) {
+      console.error(
+        `[Mail Room] AI analysis failed for email body "${email.subject}"; filing for review:`,
+        error
+      );
+    }
+    const resolution = result
+      ? await resolveDocumentCategory({
+          suggestedCategory: result.suggestedCategory,
+          newCategoryProposal: result.newCategoryProposal,
+          confidence: result.confidence,
+        })
+      : {
+          categoryId: null,
+          categoryName: null,
+          categorySlug: null,
+          categoryCreated: false,
+          needsReview: true,
+        };
 
     const safeName = (email.subject || "email").replace(/[^\w\- ]+/g, "").trim().slice(0, 60) || "email";
     const doc = await prisma.document.create({
       data: {
-        title: result.title || email.subject,
-        description: result.summary || null,
+        title: resolveDocumentTitle({
+          suggestedTitle: result?.title,
+          fileName: `${safeName}.txt`,
+          summary: result?.summary,
+          extractedText: result?.extractedText || content,
+          fileType: "text/plain",
+          createdAt: email.receivedAt,
+        }),
+        description: result?.summary || null,
         fileName: `${safeName}.txt`,
         filePath: `/uploads/${uniqueName}`,
         fileType: "text/plain",
         fileSize: buffer.length,
         categoryId: resolution.categoryId,
-        tags: result.tags?.length ? JSON.stringify(result.tags) : null,
-        aiSummary: result.summary || null,
-        aiExtractedText: result.extractedText || null,
+        tags: result?.tags?.length ? JSON.stringify(result.tags) : null,
+        aiSummary: result?.summary || null,
+        aiExtractedText: result?.extractedText || content,
         uploadedBy: `${email.fromName} (email)`,
         checksum: sha256(buffer),
       },
       include: { category: true },
     });
 
-    const embeddingContent = [doc.title, doc.category?.name || "", doc.aiSummary || "", doc.aiExtractedText || ""]
-      .filter(Boolean)
-      .join(" | ");
-    embedAndStore("document", doc.id, embeddingContent).catch(() => {});
+    void indexDocument(doc.id);
+
+    if (resolution.needsReview) {
+      try {
+        await prisma.buckyQuestion.create({
+          data: {
+            question: `Where should "${doc.title}" be filed?`,
+            context: `This substantive email body could not be confidently categorized. It came from ${email.fromName} with subject "${email.subject}".`,
+            questionType: "archive",
+            sourceType: "document",
+            sourceId: doc.id,
+            sourceLabel: doc.title,
+            options: result?.suggestedCategory ? [result.suggestedCategory, "Other"] : undefined,
+          },
+        });
+      } catch (error) {
+        console.error("[Mail Room] body filing question creation failed:", error);
+      }
+    }
 
     return { title: doc.title, category: resolution.categoryName };
   } catch (err) {
@@ -316,6 +363,13 @@ const EXT_TYPE_MAP: Record<string, string> = {
   png: "image/png",
   webp: "image/webp",
   heic: "image/heic",
+  m4a: "audio/m4a",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  avi: "video/x-msvideo",
 };
 
 // Formats we can't read yet but should still archive (→ Needs Review)
@@ -347,7 +401,11 @@ async function fileAttachment(
 
   const type = effectiveType(attachment);
   const aiReadable =
-    type.startsWith("image/") || type === "application/pdf" || isExtractableType(type);
+    type.startsWith("image/") ||
+    type.startsWith("audio/") ||
+    type.startsWith("video/") ||
+    type === "application/pdf" ||
+    isExtractableType(type);
   const saveOnly = SAVE_ONLY_TYPES.has(type);
 
   if (!aiReadable && !saveOnly) {
@@ -373,17 +431,32 @@ async function fileAttachment(
 
   let result = null;
   if (attachment.size <= AI_SIZE_LIMIT) {
-    if (type.startsWith("image/") || type === "application/pdf") {
-      result = await categorizeDocument(
-        attachment.content.toString("base64"),
-        type,
-        categories
-      );
-    } else if (isExtractableType(type)) {
-      const extracted = await extractTextFromFile(attachment.content, type);
-      if (extracted?.trim()) {
-        result = await categorizeText(extracted, attachment.filename, categories);
+    try {
+      if (type.startsWith("audio/") || type.startsWith("video/")) {
+        result = await processMediaFile(
+          attachment.content.toString("base64"),
+          type,
+          categories,
+          attachment.filename
+        );
+      } else if (type.startsWith("image/") || type === "application/pdf") {
+        result = await categorizeDocument(
+          attachment.content.toString("base64"),
+          type,
+          categories,
+          attachment.filename
+        );
+      } else if (isExtractableType(type)) {
+        const extracted = await extractTextFromFile(attachment.content, type);
+        if (extracted?.trim()) {
+          result = await categorizeText(extracted, attachment.filename, categories);
+        }
       }
+    } catch (error) {
+      console.error(
+        `[Mail Room] AI analysis failed for ${attachment.filename}; filing for review:`,
+        error
+      );
     }
   }
 
@@ -397,7 +470,14 @@ async function fileAttachment(
 
   const doc = await prisma.document.create({
     data: {
-      title: result?.title || attachment.filename,
+      title: resolveDocumentTitle({
+        suggestedTitle: result?.title,
+        fileName: attachment.filename,
+        summary: result?.summary,
+        extractedText: result?.extractedText,
+        fileType: type,
+        createdAt: email.receivedAt,
+      }),
       description: result?.summary || null,
       fileName: attachment.filename,
       filePath: `/uploads/${uniqueName}`,
@@ -413,10 +493,27 @@ async function fileAttachment(
     include: { category: true },
   });
 
-  const embeddingContent = [doc.title, doc.category?.name || "", doc.aiSummary || "", doc.aiExtractedText || ""]
-    .filter(Boolean)
-    .join(" | ");
-  embedAndStore("document", doc.id, embeddingContent).catch(() => {});
+  void indexDocument(doc.id);
+
+  if (resolution.needsReview) {
+    try {
+      await prisma.buckyQuestion.create({
+        data: {
+          question: `Where should "${doc.title}" be filed?`,
+          context: result?.suggestedCategory
+            ? `My best guess was "${result.suggestedCategory}", but I wasn't confident enough to file it automatically. It arrived as an attachment to "${email.subject}".`
+            : `I couldn't read or confidently categorize this attachment to "${email.subject}".`,
+          questionType: "archive",
+          sourceType: "document",
+          sourceId: doc.id,
+          sourceLabel: doc.title,
+          options: result?.suggestedCategory ? [result.suggestedCategory, "Other"] : undefined,
+        },
+      });
+    } catch (error) {
+      console.error("[Mail Room] needs-review question creation failed:", error);
+    }
+  }
 
   return { filed: { title: doc.title, category: resolution.categoryName } };
 }

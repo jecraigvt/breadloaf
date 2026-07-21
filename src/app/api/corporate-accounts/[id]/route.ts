@@ -99,7 +99,7 @@ export async function PATCH(
     initiatedBy: changedBy,
     entityType: "corporate_account",
     entityId: account.id,
-    reversible: true,
+    reversible: false,
   });
   return NextResponse.json(account);
 }
@@ -126,7 +126,7 @@ export async function DELETE(
     initiatedBy: changedBy,
     entityType: "corporate_account",
     entityId: account.id,
-    reversible: true,
+    reversible: false,
   });
   return NextResponse.json(account);
 }

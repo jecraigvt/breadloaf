@@ -3,8 +3,18 @@ import { prisma } from "@/lib/prisma";
 import { GROCERY_CATEGORIES, resolveCategory } from "@/lib/grocery-categories";
 import { slugifyCategory, isTokenSubset, categorySimilarity } from "@/lib/document-categories";
 import { findOverlappingStay, createStayWithCalendarSync } from "@/lib/stays";
-import { recordBuckyLedgerEntry, recordBuckyToolResult } from "@/lib/bucky-ledger";
+import { recordBuckyToolResult, stripToolAuditMetadata } from "@/lib/bucky-ledger";
 import { sendBuckyQuestionNotification } from "@/lib/outbound-email";
+import { buildBuckyContext } from "@/lib/bucky-context";
+import { selectAssistantModelTier } from "@/lib/bucky-routing";
+import {
+  indexAsset,
+  indexDocument,
+  indexExpense,
+  indexMaintenance,
+  indexMemory,
+} from "@/lib/embeddings";
+import { resolveDocumentTitle } from "@/lib/document-title";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
@@ -12,13 +22,11 @@ const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 // Stable (GA) models preferred — preview models can be retired on 2 weeks'
 // notice (gemini-3-pro-preview was shut down March 2026 with a forced
 // migration). Verified against ai.google.dev July 2026.
-// Flash Lite 3.1 (stable): quick actions — $0.25/$1.50 per 1M tokens
 // Flash 3.5 (stable, GA May 2026): chat, document processing — $1.50/$9.00 per 1M tokens
 // Pro 3.1 (still preview-only; no stable Pro exists yet — revisit when one ships):
 //   complex analysis — $2-4/$12-18 per 1M tokens
 // Embedding 2 (stable, GA April 2026) — $0.20 per 1M tokens
 export const MODELS = {
-  lite: "gemini-3.1-flash-lite",
   flash: "gemini-3.5-flash",
   pro: "gemini-3.1-pro-preview",
   embedding: "gemini-embedding-2",
@@ -44,64 +52,6 @@ export async function withGeminiRetry<T>(fn: () => Promise<T>, retries = 2): Pro
 }
 
 // ─── Embedding Functions ───────────────────────────────────────
-export async function generateEmbedding(text: string): Promise<number[]> {
-  const model = genAI.getGenerativeModel({ model: MODELS.embedding });
-  const result = await model.embedContent(text);
-  return result.embedding.values;
-}
-
-export async function embedAndStore(
-  sourceType: string,
-  sourceId: string,
-  content: string
-): Promise<void> {
-  if (!content.trim() || !process.env.GOOGLE_AI_API_KEY) return;
-
-  try {
-    const vector = await generateEmbedding(content.slice(0, 5000));
-    await prisma.embedding.upsert({
-      where: { sourceType_sourceId: { sourceType, sourceId } },
-      update: { content: content.slice(0, 2000), vector: JSON.stringify(vector) },
-      create: { sourceType, sourceId, content: content.slice(0, 2000), vector: JSON.stringify(vector) },
-    });
-  } catch (err) {
-    console.error(`[Embedding] Failed to embed ${sourceType}:${sourceId}:`, err);
-  }
-}
-
-function cosineSimilarity(a: number[], b: number[]): number {
-  let dot = 0, magA = 0, magB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    magA += a[i] * a[i];
-    magB += b[i] * b[i];
-  }
-  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
-}
-
-export async function semanticSearch(
-  query: string,
-  limit = 10,
-  sourceType?: string
-): Promise<{ sourceType: string; sourceId: string; content: string; score: number }[]> {
-  const queryVector = await generateEmbedding(query);
-
-  const where = sourceType ? { sourceType } : {};
-  const allEmbeddings = await prisma.embedding.findMany({ where });
-
-  const scored = allEmbeddings
-    .map((e) => ({
-      sourceType: e.sourceType,
-      sourceId: e.sourceId,
-      content: e.content,
-      score: cosineSimilarity(queryVector, JSON.parse(e.vector)),
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
-
-  return scored.filter((s) => s.score > 0.3);
-}
-
 export interface CategoryOption {
   name: string;
   description?: string | null;
@@ -135,11 +85,36 @@ const NEW_CATEGORY_RULES = `Category rules:
 - A new category must be a recurring TYPE of document the family will file again (e.g. "Utility Bills"), never a one-off topic, a person's name, or a near-synonym of an existing category.
 - If you are unsure, use the existing "Other" category rather than proposing something new.`;
 
+const DOCUMENT_TITLE_RULES = `Title rules:
+- Write a concise, human-readable title based on the CONTENT, usually 4-12 words.
+- Identify the specific document or recording type and subject. Include a useful date, vendor, person, or location when the content supports it.
+- Never copy the source filename or include a file extension.
+- Never use a generic label such as "Document", "Untitled Document", "Scan", "Image", "Audio Recording", "Voice Memo", or "Video".
+- Return only the title in the JSON title field, with no quotation marks or trailing period.`;
+
+function finalizeCategorizationTitle(
+  result: CategorizationResult,
+  input: { fileName?: string; fileType: string }
+): CategorizationResult {
+  return {
+    ...result,
+    title: resolveDocumentTitle({
+      suggestedTitle: result.title,
+      fileName: input.fileName,
+      summary: result.summary,
+      extractedText: result.extractedText,
+      fileType: input.fileType,
+      createdAt: new Date(),
+    }),
+  };
+}
+
 // Process audio/video files — extract transcript, summary, key facts
 export async function processMediaFile(
   base64Data: string,
   mimeType: string,
-  existingCategories: CategoryOption[]
+  existingCategories: CategoryOption[],
+  fileName?: string
 ): Promise<CategorizationResult> {
   const model = genAI.getGenerativeModel({ model: MODELS.flash });
 
@@ -161,6 +136,10 @@ ${describeCategories(existingCategories)}
 
 ${NEW_CATEGORY_RULES}
 
+${DOCUMENT_TITLE_RULES}
+
+Source filename (provenance only; do not use it as the title): ${fileName || "unknown"}
+
 Analyze this ${mediaType} and return ONLY valid JSON (no markdown fences):
 {
   "suggestedCategory": "exact name of an existing category, or \\"\\" if proposing a new one",
@@ -181,24 +160,25 @@ Be extremely thorough — extract every useful detail.`,
   const text = result.response.text();
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) return JSON.parse(jsonMatch[0]);
-    return JSON.parse(text);
+    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text) as CategorizationResult;
+    return finalizeCategorizationTitle(parsed, { fileName, fileType: mimeType });
   } catch {
-    return {
+    return finalizeCategorizationTitle({
       suggestedCategory: isAudio ? "Meeting Minutes" : "Other",
-      title: `${isAudio ? "Audio Recording" : "Video"} — ${new Date().toLocaleDateString()}`,
+      title: "",
       summary: text.slice(0, 500),
       extractedText: text,
       tags: [],
       confidence: 0.5,
-    };
+    }, { fileName, fileType: mimeType });
   }
 }
 
 export async function categorizeDocument(
   fileBase64: string,
   fileType: string,
-  existingCategories: CategoryOption[]
+  existingCategories: CategoryOption[],
+  fileName?: string
 ): Promise<CategorizationResult> {
   const model = genAI.getGenerativeModel({ model: MODELS.flash });
 
@@ -219,6 +199,10 @@ Existing categories:
 ${describeCategories(existingCategories)}
 
 ${NEW_CATEGORY_RULES}
+
+${DOCUMENT_TITLE_RULES}
+
+Source filename (provenance only; do not use it as the title): ${fileName || "unknown"}
 
 Analyze this document and return ONLY valid JSON (no markdown fences, no extra text) with these fields:
 {
@@ -251,19 +235,17 @@ This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Gre
   try {
     // Try to extract JSON from the response
     const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-    return JSON.parse(text);
+    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text) as CategorizationResult;
+    return finalizeCategorizationTitle(parsed, { fileName, fileType });
   } catch {
-    return {
+    return finalizeCategorizationTitle({
       suggestedCategory: "Other",
-      title: "Untitled Document",
+      title: "",
       summary: text.slice(0, 200),
       extractedText: text,
       tags: [],
       confidence: 0.5,
-    };
+    }, { fileName, fileType });
   }
 }
 
@@ -283,6 +265,8 @@ Existing categories:
 ${describeCategories(existingCategories)}
 
 ${NEW_CATEGORY_RULES}
+
+${DOCUMENT_TITLE_RULES}
 
 Below is the text content extracted from an uploaded document (file name: "${fileName}"). Analyze it and return ONLY valid JSON (no markdown fences, no extra text) with these fields:
 {
@@ -313,17 +297,17 @@ ${documentText}`
   const text = result.response.text();
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) return JSON.parse(jsonMatch[0]);
-    return JSON.parse(text);
+    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text) as CategorizationResult;
+    return finalizeCategorizationTitle(parsed, { fileName, fileType: "text/plain" });
   } catch {
-    return {
+    return finalizeCategorizationTitle({
       suggestedCategory: "",
-      title: fileName,
+      title: "",
       summary: text.slice(0, 200),
       extractedText: documentText.slice(0, 2000),
       tags: [],
       confidence: 0.3,
-    };
+    }, { fileName, fileType: "text/plain" });
   }
 }
 
@@ -662,7 +646,7 @@ const assistantTools: FunctionDeclarationsTool[] = [
       {
         name: "save_memory",
         description:
-          "Save important information to your long-term memory. Use this proactively when you learn something worth remembering for future conversations. Types: 'semantic' for facts/preferences (Greg prefers the loft, insurance renews March), 'episodic' for events/decisions (board approved roof repair July 2026), 'procedural' for how-to knowledge (winterization steps). If a memory on the same topic exists, it will be updated rather than duplicated.",
+          "Save durable information to long-term memory when it does not belong in a native operational record or a physical asset. Types: 'semantic' for facts/preferences, 'episodic' for events/decisions, and 'procedural' for reusable how-to knowledge. Same-topic changes preserve the prior version as superseded history.",
         parameters: {
           type: SchemaType.OBJECT,
           properties: {
@@ -685,6 +669,38 @@ const assistantTools: FunctionDeclarationsTool[] = [
               type: SchemaType.STRING,
               description:
                 "Where this info came from (e.g., 'conversation with Jim', 'board meeting July 2026')",
+            },
+            sourceType: {
+              type: SchemaType.STRING,
+              description: "Structured source type when known, such as document, meeting-minutes, or conversation",
+            },
+            sourceId: {
+              type: SchemaType.STRING,
+              description: "ID of the source record when known",
+            },
+            scope: {
+              type: SchemaType.STRING,
+              description: "Recall scope: property, family, user, or entity. Defaults to property.",
+            },
+            subject: {
+              type: SchemaType.STRING,
+              description: "Person, system, organization, or topic this memory is primarily about",
+            },
+            confidence: {
+              type: SchemaType.NUMBER,
+              description: "Confidence from 0 to 1; use lower values for uncertain or second-hand information",
+            },
+            importance: {
+              type: SchemaType.NUMBER,
+              description: "Long-term importance from 0 to 1; routine details should stay near 0.5",
+            },
+            validFrom: {
+              type: SchemaType.STRING,
+              description: "Date this became true, in YYYY-MM-DD format, when known",
+            },
+            validUntil: {
+              type: SchemaType.STRING,
+              description: "Date this stops being true, in YYYY-MM-DD format, when known",
             },
           },
           required: ["type", "topic", "content"],
@@ -792,6 +808,17 @@ async function findAssetByName(name: string) {
   );
 }
 
+function optionalDate(value: unknown): Date | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+function boundedNumber(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), 1) : fallback;
+}
+
 // Execute a function call from the assistant
 async function executeToolFunction(
   name: string,
@@ -878,6 +905,8 @@ async function executeToolFunction(
           assetId: asset?.id,
         },
       });
+      void indexMaintenance(record.id);
+      if (asset) void indexAsset(asset.id);
       return {
         success: true,
         record: { id: record.id, title: record.title },
@@ -916,10 +945,17 @@ async function executeToolFunction(
             notes: mergedNotes,
           },
         });
+        void indexAsset(updated.id);
         return {
           success: true,
           action: "updated",
           asset: { id: updated.id, name: updated.name },
+          _audit: {
+            entityType: "asset",
+            entityId: updated.id,
+            beforeState: existing,
+            afterState: updated,
+          },
           note: `Matched existing system "${existing.name}" — details merged, not duplicated.`,
         };
       }
@@ -939,6 +975,7 @@ async function executeToolFunction(
           addedBy: username || undefined,
         },
       });
+      void indexAsset(created.id);
       return {
         success: true,
         action: "created",
@@ -951,11 +988,11 @@ async function executeToolFunction(
       if (!documentId || !categoryName) {
         return { success: false, error: "documentId and categoryName are required" };
       }
-      const doc = await prisma.document.findUnique({
-        where: { id: documentId },
-        include: { category: true },
+      const documentExists = await prisma.document.findFirst({
+        where: { id: documentId, deletedAt: null },
+        select: { id: true },
       });
-      if (!doc || doc.deletedAt) return { success: false, error: "Document not found" };
+      if (!documentExists) return { success: false, error: "Document not found" };
 
       const categories = await prisma.category.findMany({
         select: { id: true, name: true, slug: true },
@@ -993,37 +1030,89 @@ async function executeToolFunction(
         }
       }
 
-      await prisma.document.update({
-        where: { id: doc.id },
-        data: { categoryId: target.id },
+      const resolvedTarget = target;
+      const filingChange = await prisma.$transaction(async (tx) => {
+        const document = await tx.document.findUnique({
+          where: { id: documentId },
+          include: { category: true },
+        });
+        if (!document || document.deletedAt) throw new Error("Document no longer exists");
+
+        const questionsBefore = await tx.buckyQuestion.findMany({
+          where: {
+            sourceType: "document",
+            sourceId: document.id,
+            questionType: "archive",
+            status: "open",
+          },
+          select: {
+            id: true,
+            status: true,
+            answer: true,
+            answeredBy: true,
+            answeredAt: true,
+          },
+        });
+
+        await tx.document.update({
+          where: { id: document.id },
+          data: { categoryId: resolvedTarget.id },
+        });
+
+        // Close any open filing question tied to this document. The snapshots
+        // let Ledger undo restore the question as well as the category.
+        const answeredAt = new Date();
+        await tx.buckyQuestion.updateMany({
+          where: { id: { in: questionsBefore.map((question) => question.id) }, status: "open" },
+          data: {
+            status: "answered",
+            answeredBy: username || "Bucky",
+            answeredAt,
+            answer: `Filed under ${resolvedTarget.name}`,
+          },
+        });
+        const questionsAfter = questionsBefore.length
+          ? await tx.buckyQuestion.findMany({
+              where: { id: { in: questionsBefore.map((question) => question.id) } },
+              select: {
+                id: true,
+                status: true,
+                answer: true,
+                answeredBy: true,
+                answeredAt: true,
+              },
+            })
+          : [];
+
+        return { document, questionsBefore, questionsAfter };
       });
 
-      // Close any open filing question tied to this document (belt-and-suspenders
-      // — the questions PATCH flow already marks it answered before Bucky runs).
-      await prisma.buckyQuestion.updateMany({
-        where: { sourceType: "document", sourceId: doc.id, questionType: "archive", status: "open" },
-        data: {
-          status: "answered",
-          answeredBy: username || "Bucky",
-          answeredAt: new Date(),
-          answer: `Filed under ${target.name}`,
-        },
-      });
-
-      // Refresh the embedding so the new category is reflected in search
-      embedAndStore(
-        "document",
-        doc.id,
-        [doc.title, target.name, doc.aiSummary || "", doc.aiExtractedText || ""]
-          .filter(Boolean)
-          .join(" | ")
-      ).catch(() => {});
+      void indexDocument(filingChange.document.id);
 
       return {
         success: true,
-        document: { id: doc.id, title: doc.title },
-        category: target.name,
+        document: { id: filingChange.document.id, title: filingChange.document.title },
+        category: resolvedTarget.name,
         categoryCreated,
+        _audit: {
+          entityType: "document",
+          entityId: filingChange.document.id,
+          beforeState: {
+            documentId: filingChange.document.id,
+            categoryId: filingChange.document.categoryId,
+            categoryName: filingChange.document.category?.name ?? null,
+            questions: filingChange.questionsBefore,
+          },
+          afterState: {
+            documentId: filingChange.document.id,
+            categoryId: resolvedTarget.id,
+            categoryName: resolvedTarget.name,
+            questions: filingChange.questionsAfter,
+          },
+          reversible:
+            filingChange.document.categoryId !== resolvedTarget.id ||
+            filingChange.questionsBefore.length > 0,
+        },
       };
     }
     case "add_bulletin_message": {
@@ -1073,35 +1162,115 @@ async function executeToolFunction(
       };
     }
     case "save_memory": {
-      // Check if a memory with this topic already exists — update if so
-      const existing = await prisma.jarvisMemory.findFirst({
-        where: { topic: args.topic as string },
+      const topic = String(args.topic || "").trim();
+      const content = String(args.content || "").trim();
+      if (!topic || !content) return { success: false, error: "topic and content are required" };
+      const requestedType = ["semantic", "episodic", "procedural"].includes(String(args.type))
+        ? String(args.type)
+        : undefined;
+      const requestedScope = ["property", "family", "user", "entity"].includes(String(args.scope))
+        ? String(args.scope)
+        : undefined;
+      const memoryScope = requestedScope || "property";
+      const subject = typeof args.subject === "string" && args.subject.trim()
+        ? args.subject.trim()
+        : undefined;
+      const validFrom = optionalDate(args.validFrom);
+      const validUntil = optionalDate(args.validUntil);
+      if (validFrom && validUntil && validUntil < validFrom) {
+        return { success: false, error: "validUntil must be on or after validFrom" };
+      }
+      // Same-topic changes create a new active version and preserve history.
+      const topicMatches = await prisma.jarvisMemory.findMany({
+        where: {
+          topic: { equals: topic, mode: "insensitive" },
+          scope: memoryScope,
+          status: "active",
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 10,
       });
+      const existing = subject
+        ? topicMatches.find((memory) => memory.subject?.toLowerCase() === subject.toLowerCase())
+        : topicMatches.find((memory) => !memory.subject) ||
+          (topicMatches.length === 1 ? topicMatches[0] : undefined);
       if (existing) {
-        await prisma.jarvisMemory.update({
-          where: { id: existing.id },
-          data: {
-            type: (args.type as string) || existing.type,
-            content: args.content as string,
-            source: (args.source as string) || existing.source,
-            relevance: 1.0, // Refresh relevance on update
-          },
+        if (existing.content.trim().toLowerCase() === content.toLowerCase()) {
+          void indexMemory(existing.id);
+          return {
+            success: true,
+            action: "unchanged",
+            topic,
+            memory: { id: existing.id, topic: existing.topic },
+            _audit: { entityType: "memory", entityId: existing.id, afterState: existing },
+          };
+        }
+
+        const replacement = await prisma.$transaction(async (tx) => {
+          const created = await tx.jarvisMemory.create({
+            data: {
+              type: requestedType || existing.type,
+              topic,
+              content,
+              source: (args.source as string) || existing.source,
+              sourceType: (args.sourceType as string) || existing.sourceType,
+              sourceId: (args.sourceId as string) || existing.sourceId,
+              scope: memoryScope,
+              subject: subject || existing.subject,
+              confidence: boundedNumber(args.confidence, existing.confidence),
+              importance: boundedNumber(args.importance, existing.importance),
+              validFrom: validFrom || existing.validFrom,
+              validUntil: validUntil || existing.validUntil,
+              accessScope: "family",
+            },
+          });
+          await tx.jarvisMemory.update({
+            where: { id: existing.id },
+            data: { status: "superseded", supersededById: created.id },
+          });
+          return created;
         });
-        // Also update the embedding
-        embedAndStore("memory", existing.id, `${args.topic}: ${args.content}`).catch(() => {});
-        return { success: true, action: "updated", topic: args.topic };
+        void indexMemory(existing.id);
+        void indexMemory(replacement.id);
+        return {
+          success: true,
+          action: "updated",
+          topic,
+          memory: { id: replacement.id, topic: replacement.topic },
+          _audit: {
+            entityType: "memory",
+            entityId: replacement.id,
+            beforeState: existing,
+            afterState: replacement,
+          },
+        };
       }
       const memory = await prisma.jarvisMemory.create({
         data: {
-          type: (args.type as string) || "semantic",
-          topic: args.topic as string,
-          content: args.content as string,
+          type: requestedType || "semantic",
+          topic,
+          content,
           source: (args.source as string) || undefined,
+          sourceType: (args.sourceType as string) || undefined,
+          sourceId: (args.sourceId as string) || undefined,
+          scope: memoryScope,
+          subject,
+          confidence: boundedNumber(args.confidence, 1),
+          importance: boundedNumber(args.importance, 0.5),
+          validFrom,
+          validUntil,
+          accessScope: "family",
         },
       });
       // Embed the memory for semantic retrieval
-      embedAndStore("memory", memory.id, `${args.topic}: ${args.content}`).catch(() => {});
-      return { success: true, action: "saved", topic: args.topic };
+      void indexMemory(memory.id);
+      return {
+        success: true,
+        action: "saved",
+        topic,
+        memory: { id: memory.id, topic: memory.topic },
+        _audit: { entityType: "memory", entityId: memory.id, afterState: memory },
+      };
     }
     case "add_expense": {
       const expenseDate = new Date(args.date as string);
@@ -1117,6 +1286,7 @@ async function executeToolFunction(
           fiscalYear: expenseDate.getFullYear(),
         },
       });
+      void indexExpense(expense.id);
       return {
         success: true,
         expense: {
@@ -1176,9 +1346,26 @@ async function executeToolFunction(
           where: { position: { equals: position, mode: "insensitive" }, endedAt: null },
           orderBy: { effectiveAt: "desc" },
         });
+        const affectedMemberIds = Array.from(
+          new Set([member?.id, previous?.memberId].filter((id): id is string => Boolean(id)))
+        );
+        const membersBefore = affectedMemberIds.length
+          ? await tx.familyMember.findMany({
+              where: { id: { in: affectedMemberIds } },
+              select: { id: true, boardRole: true, isBoardMember: true },
+            })
+          : [];
 
         if (previous?.personName.toLowerCase() === personName.toLowerCase()) {
-          return { previous, current: previous, unchanged: true, member };
+          return {
+            previous,
+            previousAfter: previous,
+            current: previous,
+            unchanged: true,
+            member,
+            membersBefore,
+            membersAfter: membersBefore,
+          };
         }
 
         if (previous) {
@@ -1225,26 +1412,18 @@ async function executeToolFunction(
           });
         }
 
-        return { previous, current, unchanged: false, member };
-      });
+        const [previousAfter, membersAfter] = await Promise.all([
+          previous ? tx.positionAssignment.findUnique({ where: { id: previous.id } }) : null,
+          affectedMemberIds.length
+            ? tx.familyMember.findMany({
+                where: { id: { in: affectedMemberIds } },
+                select: { id: true, boardRole: true, isBoardMember: true },
+              })
+            : [],
+        ]);
 
-      if (!change.unchanged) {
-        await recordBuckyLedgerEntry({
-          actionType: "update_position",
-          summary: `${change.current.personName} became ${position}${change.previous ? `, replacing ${change.previous.personName}` : ""}`,
-          initiatedBy: username,
-          entityType: "position",
-          entityId: change.current.id,
-          sourceType: String(args.sourceType),
-          sourceId: typeof args.sourceId === "string" ? args.sourceId : undefined,
-          sourceLabel: String(args.source),
-          beforeState: change.previous
-            ? JSON.parse(JSON.stringify(change.previous))
-            : undefined,
-          afterState: JSON.parse(JSON.stringify(change.current)),
-          reversible: true,
-        });
-      }
+        return { previous, previousAfter, current, unchanged: false, member, membersBefore, membersAfter };
+      });
 
       return {
         success: true,
@@ -1254,35 +1433,25 @@ async function executeToolFunction(
         position,
         effectiveDate: String(args.effectiveDate),
         directoryMatch: Boolean(change.member),
+        _audit: {
+          entityType: "position",
+          entityId: change.current.id,
+          beforeState: {
+            previousAssignment: change.previous,
+            members: change.membersBefore,
+          },
+          afterState: {
+            currentAssignment: change.current,
+            previousAssignment: change.previousAfter,
+            members: change.membersAfter,
+          },
+          reversible: !change.unchanged,
+        },
       };
     }
     default:
       return { error: `Unknown function: ${name}` };
   }
-}
-
-// Classify query intent to pick the right model
-type QueryIntent = "action" | "lookup" | "analysis";
-function classifyIntent(message: string): QueryIntent {
-  const lower = message.toLowerCase();
-  // Action patterns — quick tool calls
-  const actionPatterns = [
-    /^add\s/i, /^log\s/i, /^post\s/i, /^sign\s?me/i, /^put\s/i,
-    /to the (grocery|shopping|pantry|bulletin|board)/i,
-    /^record\s/i, /^note\s/i, /^mark\s/i,
-  ];
-  if (actionPatterns.some((p) => p.test(lower))) return "action";
-
-  // Analysis patterns — need Pro model
-  const analysisPatterns = [
-    /how much.*spend/i, /summar/i, /analyz/i, /compar/i, /what.*should/i,
-    /recommend/i, /explain/i, /break\s?down/i, /trend/i, /budget/i,
-    /what did we decide/i, /help me understand/i, /what are our options/i,
-    /plan\s/i, /strategy/i, /advise/i, /review/i,
-  ];
-  if (analysisPatterns.some((p) => p.test(lower))) return "analysis";
-
-  return "lookup";
 }
 
 export async function chatWithAssistant(
@@ -1293,259 +1462,10 @@ export async function chatWithAssistant(
   attachmentContext?: string
 ): Promise<string> {
   const lastUserMessage = messages.filter((m) => m.role === "user").pop();
-  let documentContext = "";
+  if (!lastUserMessage) return "What would you like help with?";
+  const context = await buildBuckyContext(lastUserMessage.content);
 
-  // Use semantic search if embeddings exist, fall back to keyword search
-  if (lastUserMessage) {
-    try {
-      const semanticResults = await semanticSearch(lastUserMessage.content, 8);
-      if (semanticResults.length > 0) {
-        // Fetch full document details for semantic matches
-        const docIds = semanticResults
-          .filter((r) => r.sourceType === "document")
-          .map((r) => r.sourceId);
-        const docs = docIds.length > 0
-          ? await prisma.document.findMany({
-              where: { id: { in: docIds } },
-              include: { category: true },
-            })
-          : [];
-
-        const docMap = new Map(docs.map((d) => [d.id, d]));
-        const parts: string[] = [];
-
-        for (const result of semanticResults) {
-          if (result.sourceType === "document" && docMap.has(result.sourceId)) {
-            const d = docMap.get(result.sourceId)!;
-            parts.push(
-              `[${d.category?.name || "Uncategorized"}] "${d.title}" (${new Date(d.createdAt).toLocaleDateString()}): ${d.aiSummary || d.description || "No summary"}${d.aiExtractedText ? `\nDetails: ${d.aiExtractedText.slice(0, 1500)}` : ""}`
-            );
-          } else {
-            // Non-document matches (expenses, maintenance, etc.)
-            parts.push(`[${result.sourceType}] ${result.content}`);
-          }
-        }
-        documentContext = parts.join("\n\n");
-      }
-    } catch {
-      // Semantic search failed — fall back to keyword search
-    }
-
-    // Fallback: keyword search if semantic search returned nothing
-    if (!documentContext) {
-      const searchTerms = lastUserMessage.content
-        .split(/\s+/)
-        .filter((w) => w.length > 3);
-      const docs = await prisma.document.findMany({
-        where: searchTerms.length > 0 ? {
-          OR: searchTerms.flatMap((term) => [
-            { title: { contains: term } },
-            { aiSummary: { contains: term } },
-            { aiExtractedText: { contains: term } },
-            { tags: { contains: term } },
-          ]),
-        } : undefined,
-        include: { category: true },
-        orderBy: { createdAt: "desc" },
-        take: 15,
-      });
-
-      if (docs.length > 0) {
-        documentContext = docs
-          .map(
-            (d) =>
-              `[${d.category?.name || "Uncategorized"}] "${d.title}" (${new Date(d.createdAt).toLocaleDateString()}): ${d.aiSummary || d.description || "No summary"}${d.aiExtractedText ? `\nDetails: ${d.aiExtractedText.slice(0, 1500)}` : ""}`
-          )
-          .join("\n");
-      }
-    }
-  }
-
-  // Get upcoming stays and room info
-  const currentYear = new Date().getFullYear();
-  const [upcomingStays, rooms, groceryItems, pantryItems, upcomingDinners, recentMaintenance, recentExpenses, expenseSummary, allMemories, assets, currentPositions, openQuestions] =
-    await Promise.all([
-      prisma.stay.findMany({
-        where: { checkOut: { gte: new Date() } },
-        include: { room: true },
-        orderBy: { checkIn: "asc" },
-        take: 30,
-      }),
-      prisma.room.findMany({ orderBy: { sortOrder: "asc" } }),
-      prisma.groceryItem.findMany({
-        where: { checked: false },
-        orderBy: { createdAt: "desc" },
-        take: 30,
-      }),
-      prisma.pantryItem.findMany({
-        orderBy: [{ category: "asc" }, { name: "asc" }],
-        take: 50,
-      }),
-      prisma.dinnerSignup.findMany({
-        where: { date: { gte: new Date() } },
-        orderBy: { date: "asc" },
-        take: 14,
-      }),
-      prisma.maintenanceRecord.findMany({
-        orderBy: { performedAt: "desc" },
-        take: 10,
-      }),
-      prisma.expense.findMany({
-        where: { fiscalYear: currentYear },
-        orderBy: { date: "desc" },
-        take: 15,
-      }),
-      prisma.expense.aggregate({
-        where: { fiscalYear: currentYear },
-        _sum: { amount: true },
-        _count: true,
-      }),
-      prisma.jarvisMemory.findMany({
-        orderBy: [{ relevance: "desc" }, { updatedAt: "desc" }],
-        take: 50,
-      }),
-      prisma.asset.findMany({
-        where: { status: "active" },
-        orderBy: [{ category: "asc" }, { name: "asc" }],
-        include: {
-          records: { orderBy: { performedAt: "desc" }, take: 3 },
-        },
-      }),
-      prisma.positionAssignment.findMany({
-        where: { endedAt: null },
-        orderBy: { position: "asc" },
-      }),
-      prisma.buckyQuestion.findMany({
-        where: { status: "open" },
-        orderBy: { createdAt: "asc" },
-        take: 20,
-      }),
-    ]);
-
-  const stayContext =
-    upcomingStays.length > 0
-      ? upcomingStays
-          .map(
-            (s) =>
-              `${s.guestName} — ${new Date(s.checkIn).toLocaleDateString()} to ${new Date(s.checkOut).toLocaleDateString()} | Room: ${s.room?.name || "Not assigned"} | Status: ${s.status}${s.notes ? ` | Notes: ${s.notes}` : ""}`
-          )
-          .join("\n")
-      : "No upcoming visits scheduled.";
-
-  const roomList = rooms
-    .map(
-      (r) =>
-        `${r.name} (${r.type}) — sleeps ${r.minCapacity}-${r.maxCapacity}${r.hasCrib ? ", crib available" : ""} | ${r.description || ""}`
-    )
-    .join("\n");
-
-  const groceryContext =
-    groceryItems.length > 0
-      ? groceryItems
-          .map(
-            (i) =>
-              `- ${i.name}${i.category ? ` (${i.category})` : ""}${i.addedBy ? ` — added by ${i.addedBy}` : ""}`
-          )
-          .join("\n")
-      : "Shopping list is empty.";
-
-  const pantryContext =
-    pantryItems.length > 0
-      ? pantryItems
-          .map(
-            (i) =>
-              `- ${i.name}${i.quantity ? ` (${i.quantity}${i.unit ? " " + i.unit : ""})` : ""}${i.category ? ` [${i.category}]` : ""}`
-          )
-          .join("\n")
-      : "Pantry inventory is empty.";
-
-  const dinnerContext =
-    upcomingDinners.length > 0
-      ? upcomingDinners
-          .map(
-            (d) =>
-              `- ${new Date(d.date).toLocaleDateString()}: ${d.chef} cooking${d.meal ? ` ${d.meal}` : ""}${d.headCount ? ` for ${d.headCount}` : ""}`
-          )
-          .join("\n")
-      : "No upcoming dinners signed up.";
-
-  const assetContext =
-    assets.length > 0
-      ? assets
-          .map((a) => {
-            const specs = [a.make, a.model, a.serial ? `s/n ${a.serial}` : "", a.installedYear ? `installed ${a.installedYear}` : ""]
-              .filter(Boolean)
-              .join(" ");
-            const recent = a.records.length
-              ? ` | Recent work: ${a.records.map((r) => `${r.title} (${new Date(r.performedAt).toLocaleDateString()})`).join("; ")}`
-              : "";
-            return `- ${a.name} [${a.category}]${a.location ? ` — ${a.location}` : ""}${specs ? ` | ${specs}` : ""}${a.notes ? ` | Notes: ${a.notes.slice(0, 400)}` : ""}${recent}`;
-          })
-          .join("\n")
-      : "No property systems recorded yet — start creating them with save_asset as you learn about them.";
-
-  const maintenanceContext =
-    recentMaintenance.length > 0
-      ? recentMaintenance
-          .map(
-            (m) =>
-              `- ${m.title}${m.category ? ` [${m.category}]` : ""} — ${new Date(m.performedAt).toLocaleDateString()}${m.cost ? ` ($${m.cost})` : ""}`
-          )
-          .join("\n")
-      : "No maintenance records yet.";
-
-  const expenseContext =
-    recentExpenses.length > 0
-      ? `${currentYear} total: $${expenseSummary._sum.amount?.toFixed(2) || "0.00"} (${expenseSummary._count} expenses)\nRecent:\n` +
-        recentExpenses
-          .map(
-            (e) =>
-              `- ${new Date(e.date).toLocaleDateString()}: $${e.amount.toFixed(2)} — ${e.description} [${e.category}] paid by ${e.paidBy}`
-          )
-          .join("\n")
-      : `No expenses recorded for ${currentYear}.`;
-
-  // Build memory context — categorized by type, most relevant first
-  const semanticMemories = allMemories.filter((m) => m.type === "semantic");
-  const episodicMemories = allMemories.filter((m) => m.type === "episodic");
-  const proceduralMemories = allMemories.filter((m) => m.type === "procedural");
-
-  let memoryContext = "";
-  if (allMemories.length > 0) {
-    const parts: string[] = [];
-    if (semanticMemories.length > 0) {
-      parts.push("Facts & Preferences:\n" + semanticMemories.map((m) => `- [${m.topic}] ${m.content}`).join("\n"));
-    }
-    if (episodicMemories.length > 0) {
-      parts.push("Past Events & Decisions:\n" + episodicMemories.map((m) => `- [${m.topic}] ${m.content} (${new Date(m.updatedAt).toLocaleDateString()})`).join("\n"));
-    }
-    if (proceduralMemories.length > 0) {
-      parts.push("How-To Knowledge:\n" + proceduralMemories.map((m) => `- [${m.topic}] ${m.content}`).join("\n"));
-    }
-    memoryContext = parts.join("\n\n");
-  }
-
-  const positionContext = currentPositions.length
-    ? currentPositions
-        .map((assignment) => `- ${assignment.position}: ${assignment.personName} (effective ${assignment.effectiveAt.toISOString().slice(0, 10)}${assignment.sourceLabel ? `; source: ${assignment.sourceLabel}` : ""})`)
-        .join("\n")
-    : "No dated position assignments have been recorded yet.";
-
-  const questionContext = openQuestions.length
-    ? openQuestions
-        .map((question) => `- [${question.id}] ${question.question}${question.targetPerson ? ` (for ${question.targetPerson})` : ""}${question.context ? ` — ${question.context}` : ""}`)
-        .join("\n")
-    : "No open family questions.";
-
-  // Route to the right model based on query intent. Attachment turns need
-  // real document comprehension, so never drop those to the lite model.
-  const intent = lastUserMessage ? classifyIntent(lastUserMessage.content) : "lookup";
-  const selectedModel =
-    intent === "action" && !attachmentContext
-      ? MODELS.lite
-      : intent === "analysis"
-        ? MODELS.pro
-        : MODELS.flash;
+  const selectedModel = MODELS[selectAssistantModelTier(lastUserMessage.content)];
 
   const startChatWith = (modelId: string) =>
     genAI.getGenerativeModel({
@@ -1559,39 +1479,21 @@ Your job is to make sure anyone in the family can get the information they need 
 Today's date is ${new Date().toLocaleDateString()}.
 ${username ? `The current user is: ${username}` : ""}
 
-UPCOMING VISITS:
-${stayContext}
+OPERATIONAL CONTEXT (the bounded front desk, always current):
+${context.operational}
 
-ROOMS & ACCOMMODATIONS:
-${roomList}
+KNOWLEDGE DIRECTORY (what exists beyond the front desk):
+${context.knowledgeDirectory}
 
-GROCERY LIST:
-${groceryContext}
+RELEVANT LONG-TERM KNOWLEDGE (loaded specifically for this request):
+${context.relevantKnowledge}
 
-PANTRY INVENTORY:
-${pantryContext}
-
-UPCOMING DINNERS:
-${dinnerContext}
-
-PROPERTY SYSTEMS (the equipment "notebook" — permanently installed systems and major equipment):
-${assetContext}
-
-RECENT MAINTENANCE:
-${maintenanceContext}
-
-EXPENSES (${currentYear}):
-${expenseContext}
-
-${documentContext ? `DOCUMENTS IN ARCHIVE:\n${documentContext}` : "The document archive is currently empty."}
-
-${memoryContext ? `YOUR MEMORIES (things you've learned from past conversations):\n${memoryContext}` : ""}
-
-CURRENT POSITIONS:
-${positionContext}
-
-OPEN QUESTIONS YOU HAVE ASKED:
-${questionContext}
+MEMORY STORAGE RULES:
+- Use native operational records for stays, groceries, pantry, dinners, maintenance, and expenses; do not duplicate those records into memory.
+- Use save_asset for facts, quirks, warnings, and procedures tied to a physical property system.
+- Use save_memory for durable preferences, decisions, relationships, and reusable procedures that do not belong to one physical system.
+- A file remains an archive document. Save a separate memory only for a durable conclusion or decision worth recalling without reopening the file, and preserve its source.
+- Treat retrieved summaries as navigation. For consequential answers, name the underlying document, record, or source supplied in the context.
 
 PROPERTY OWNERSHIP:
 The property is owned by an S-Corp with four equal shareholders: Tom Craig, Jim Craig, Sandy Craig, and Greg Craig. All expenses are split equally (25% each).
@@ -1620,7 +1522,7 @@ WHAT YOU CAN DO:
 3. FILE DOCUMENTS sent in chat:
    - Family members can attach files (photos of receipts, PDFs, Word/Excel docs, audio, video) directly in this chat using the paperclip button
    - Attachments are automatically categorized and filed into the document archive BEFORE you see them — you'll get a system note describing what was filed and where
-   - When that happens: confirm where each document landed, summarize what's in it, and if it contains important facts (costs, decisions, dates, vendor info, how-to steps), save a memory so you can recall it later
+   - When that happens: confirm where each document landed and summarize it. Save a memory only for a durable decision, preference, or reusable procedure that should be recalled independently; expenses and maintenance belong in their native records
    - If something lands in the Needs Review bucket, tell them they can fix the category on the Documents page
    - If someone ASKS how to add a document, tell them: attach it right here in chat, email it to breadloafhillsite@gmail.com, or use the upload page at /upload
 
@@ -1634,11 +1536,11 @@ WHAT YOU CAN DO:
    - When logging maintenance that maps to a system, pass assetName so the work lands in that system's history
 
 5. REMEMBER important information using save_memory:
-   - SEMANTIC memories for facts & preferences: "Greg prefers the loft", "insurance renews March 2027", "the well pump is a Grundfos SQ 5-70"
+   - SEMANTIC memories for durable facts & preferences that do not already have a native record: "Greg prefers the loft", "insurance renews March 2027"
    - EPISODIC memories for events & decisions: "July 2026 board meeting approved $15K roof repair", "Tom replaced the water heater in June"
-   - PROCEDURAL memories for how-to knowledge: "Winterization steps: drain pipes, close main shutoff, set thermostat to 55"
+   - PROCEDURAL memories for reusable how-to knowledge spanning the property; put equipment-specific procedures and warnings on that asset instead
    - Save memories PROACTIVELY when you learn something important — don't wait to be asked
-   - If a memory on the same topic exists, update it rather than creating a duplicate
+   - Use scope, subject, dates, confidence, and source fields when known; the system preserves superseded versions instead of erasing history
    - You should reference your memories when they're relevant to the conversation
 
 6. HELP WITH S-CORP matters:
@@ -1683,8 +1585,8 @@ Guidelines:
     ? lastMessage.content + attachmentContext
     : lastMessage.content;
 
-  // "analysis" routes to the preview Pro model — the only Pro tier available,
-  // but the one endpoint still prone to 503 "overloaded". If the FIRST send
+  // Explicit heavy analysis routes to preview Pro, the endpoint most prone to
+  // 503 "overloaded". If the FIRST send
   // overloads (before any tool has executed, so there are no side effects to
   // duplicate), fall back to stable flash so the user gets an answer instead
   // of an error. Later tool-loop sends stay on whichever chat succeeded.
@@ -1715,14 +1617,20 @@ Guidelines:
           fc.args as Record<string, unknown>,
           username
         );
-        await recordBuckyToolResult(
-          fc.name,
-          fc.args as Record<string, unknown>,
-          response,
-          username
-        );
+        try {
+          await recordBuckyToolResult(
+            fc.name,
+            fc.args as Record<string, unknown>,
+            response,
+            username
+          );
+        } catch (auditError) {
+          // The tool action has already happened. Never report it as failed or
+          // invite a retry that could duplicate the mutation.
+          console.error(`[Bucky Ledger] Failed to audit ${fc.name}:`, auditError);
+        }
         functionResponses.push({
-          functionResponse: { name: fc.name, response },
+          functionResponse: { name: fc.name, response: stripToolAuditMetadata(response) },
         });
       } catch (error) {
         functionResponses.push({

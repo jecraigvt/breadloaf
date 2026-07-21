@@ -9,6 +9,7 @@ import {
   History,
   Loader2,
   Send,
+  Undo2,
   X,
 } from "lucide-react";
 
@@ -40,6 +41,7 @@ interface LedgerEntry {
   sourceLabel: string | null;
   reversible: boolean;
   revertedAt: string | null;
+  revertedBy: string | null;
   createdAt: string;
 }
 
@@ -242,16 +244,35 @@ export function BuckyQuestionsPanel({ onCountChange }: { onCountChange: (count: 
 export function BuckyLedgerPanel() {
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [undoingId, setUndoingId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const loadEntries = async () => {
+    const response = await fetch("/api/bucky/ledger?limit=100");
+    if (!response.ok) throw new Error("Unable to load ledger");
+    setEntries(await response.json() as LedgerEntry[]);
+  };
 
   useEffect(() => {
-    fetch("/api/bucky/ledger?limit=100")
-      .then((response) => {
-        if (!response.ok) throw new Error("Unable to load ledger");
-        return response.json() as Promise<LedgerEntry[]>;
-      })
-      .then(setEntries)
-      .finally(() => setLoading(false));
+    void loadEntries().catch(() => setNotice("The Ledger is unavailable right now.")).finally(() => setLoading(false));
   }, []);
+
+  const undoEntry = async (entry: LedgerEntry) => {
+    if (undoingId || !window.confirm(`Undo "${entry.summary}"? Bucky will first verify that nobody changed the record afterward.`)) return;
+    setUndoingId(entry.id);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/bucky/ledger/${entry.id}/undo`, { method: "POST" });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Unable to undo this action");
+      setNotice("The action was undone and the correction was added to the Ledger.");
+      await loadEntries();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "The action could not be undone.");
+    } finally {
+      setUndoingId(null);
+    }
+  };
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4">
@@ -260,6 +281,7 @@ export function BuckyLedgerPanel() {
           <h2 className="text-base font-semibold text-stone-800">Bucky&apos;s Ledger</h2>
           <p className="text-xs text-stone-500 mt-1">A permanent account of what Bucky changed and why.</p>
         </div>
+        {notice && <p className="mb-3 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs text-stone-600">{notice}</p>}
         {loading ? (
           <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin text-green-700" /></div>
         ) : entries.length === 0 ? (
@@ -274,7 +296,21 @@ export function BuckyLedgerPanel() {
               return (
                 <article key={entry.id} className="relative">
                   <span className="absolute -left-[25px] top-1.5 h-2 w-2 rounded-full bg-green-700 ring-4 ring-stone-50" />
-                  <h3 className="text-sm font-medium text-stone-800">{entry.summary}</h3>
+                  <div className="flex items-start justify-between gap-3">
+                    <h3 className="min-w-0 text-sm font-medium text-stone-800">{entry.summary}</h3>
+                    {entry.reversible && !entry.revertedAt && (
+                      <button
+                        type="button"
+                        onClick={() => void undoEntry(entry)}
+                        disabled={Boolean(undoingId)}
+                        title="Undo this change"
+                        className="inline-flex h-8 flex-shrink-0 items-center gap-1.5 rounded-md border border-stone-200 bg-white px-2.5 text-xs font-medium text-stone-600 hover:border-stone-300 hover:bg-stone-50 disabled:opacity-50"
+                      >
+                        {undoingId === entry.id ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={13} />}
+                        Undo
+                      </button>
+                    )}
+                  </div>
                   {entry.details && <p className="mt-1 text-xs leading-5 text-stone-600">{entry.details}</p>}
                   <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-stone-400">
                     <span>{new Date(entry.createdAt).toLocaleString()}</span>
@@ -282,7 +318,7 @@ export function BuckyLedgerPanel() {
                     {entry.sourceLabel && (link ? (
                       <Link href={link} className="text-green-700 hover:underline">Source: {entry.sourceLabel}</Link>
                     ) : <span>Source: {entry.sourceLabel}</span>)}
-                    {entry.revertedAt && <span>Corrected later</span>}
+                    {entry.revertedAt && <span>Undone{entry.revertedBy ? ` by ${entry.revertedBy}` : ""}</span>}
                   </div>
                 </article>
               );

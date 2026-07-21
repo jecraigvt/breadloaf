@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { indexExpense } from "@/lib/embeddings";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest) {
         fiscalYear,
       },
     });
+    void indexExpense(expense.id);
 
     return NextResponse.json(expense);
   } catch (error) {

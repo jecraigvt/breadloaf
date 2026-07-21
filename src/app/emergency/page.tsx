@@ -1,15 +1,12 @@
 import { Header } from "@/components/layout/header";
 import {
   Phone,
-  AlertTriangle,
   Stethoscope,
-  Flame,
   Wrench,
   Zap,
   PawPrint,
   Plus,
   Shield,
-  Hospital,
   Trash2,
 } from "lucide-react";
 

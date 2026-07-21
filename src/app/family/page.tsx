@@ -7,7 +7,6 @@ import {
   Phone,
   Mail,
   Cake,
-  Plus,
   Pencil,
   Trash2,
   X,
@@ -75,7 +74,6 @@ const emptyForm = {
 };
 
 export default function FamilyPage() {
-  const [members, setMembers] = useState<FamilyMember[]>([]);
   const [grouped, setGrouped] = useState<Record<string, FamilyMember[]>>({});
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -92,7 +90,6 @@ export default function FamilyPage() {
     const res = await fetch("/api/family");
     if (res.ok) {
       const data = await res.json();
-      setMembers(data.members);
       setGrouped(data.grouped);
     }
     setLoading(false);

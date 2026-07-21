@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthCookieName, getFamilyFromAuthToken } from "@/lib/auth";
+import { indexDocument, removeFromIndex } from "@/lib/embeddings";
 
 export async function GET(
   _request: NextRequest,
@@ -32,6 +33,7 @@ export async function PATCH(
       data: { deletedAt: null, deletedBy: null },
       include: { category: true },
     });
+    void indexDocument(document.id);
     return NextResponse.json(document);
   }
 
@@ -48,6 +50,7 @@ export async function PATCH(
     data,
     include: { category: true },
   });
+  void indexDocument(document.id);
 
   return NextResponse.json(document);
 }
@@ -70,6 +73,9 @@ export async function DELETE(
     where: { id },
     data: { deletedAt: new Date(), deletedBy: deletedBy || undefined },
   });
+  void removeFromIndex("document", id).catch((error) =>
+    console.error("Document index cleanup failed:", error)
+  );
 
   return NextResponse.json({ success: true, recoverable: true });
 }

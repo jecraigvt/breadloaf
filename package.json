@@ -5,12 +5,15 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "test": "tsx --test src/lib/*.test.ts",
     "start": "prisma migrate deploy && prisma db seed && next start",
     "lint": "next lint",
     "db:migrate": "npx prisma migrate dev",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:reset": "npx prisma migrate reset",
     "archive:verify": "npx tsx scripts/verify-archive.ts",
+    "archive:retitle": "npx tsx scripts/retitle-documents.ts",
+    "memory:reindex": "npx tsx scripts/re-embed.ts",
     "postinstall": "npx prisma generate"
   },
   "dependencies": {

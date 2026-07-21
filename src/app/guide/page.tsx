@@ -8,7 +8,6 @@ import {
   UtensilsCrossed,
   Ticket,
   MapPin,
-  Clock,
   Car,
   Sparkles,
   Phone,

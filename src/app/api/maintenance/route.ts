@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { indexMaintenance } from "@/lib/embeddings";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest) {
         cost: cost ? parseFloat(cost) : null,
       },
     });
+    void indexMaintenance(record.id);
 
     return NextResponse.json(record);
   } catch (error) {

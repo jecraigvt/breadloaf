@@ -51,10 +51,13 @@ Helpful commands:
 
 ```bash
 npm run build
+npm test
 npx tsc --noEmit --incremental false
 npm run db:migrate
 npm run db:seed
 npm run archive:verify
+npm run archive:retitle
+npm run memory:reindex
 ```
 
 ## Deployment
@@ -137,6 +140,15 @@ prisma migrate deploy && prisma db seed && next start
 - Outbound notifications use the existing `breadloafhillsite@gmail.com` app password, so no additional email-service account is required.
 - Notifications are skipped without failing Bucky's work when Gmail is not configured or temporarily unavailable.
 
+## Bucky Memory and Oversight
+
+- Bucky uses bounded operational context plus request-specific long-term retrieval instead of loading the whole archive into every conversation.
+- Documents, assets, maintenance, expenses, and durable memories are indexed in rebuildable overlapping chunks for hybrid semantic and lexical search.
+- Memories carry scope, subject, provenance, confidence, validity dates, and lifecycle status; updates preserve superseded versions.
+- Successful assistant actions are written to the Ledger. Only document filing and position changes currently expose conflict-aware undo.
+- Archive processing generates descriptive content-based titles while retaining the original filename as provenance.
+- Architecture, failure behavior, maintenance commands, and the production rollout are documented in [`docs/bucky-memory-and-operations.md`](docs/bucky-memory-and-operations.md).
+
 ## Project Structure
 
 ```text
@@ -156,6 +168,10 @@ src/
   lib/
     ai.ts                 Gemini integrations
     auth.ts               Shared auth and calendar feed token helpers
+    bucky-context.ts      Tiered operational and long-term retrieval context
+    bucky-undo.ts         Conflict-aware Ledger undo handlers
+    document-title.ts     Archive title validation and fallback rules
+    embeddings.ts         Chunked indexing and hybrid retrieval
     google-calendar.ts    Google Calendar sync logic
     prisma.ts             Prisma singleton
   middleware.ts           Route protection and calendar feed gating

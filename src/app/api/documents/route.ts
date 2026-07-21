@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { embedAndStore } from "@/lib/ai";
+import { indexDocument, indexMaintenance } from "@/lib/embeddings";
 import { slugifyCategory } from "@/lib/document-categories";
+import { resolveDocumentTitle } from "@/lib/document-title";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -74,6 +75,15 @@ export async function POST(request: NextRequest) {
       accessScope,
     } = body;
 
+    const resolvedTitle = resolveDocumentTitle({
+      suggestedTitle: title,
+      fileName,
+      summary: aiSummary || description,
+      extractedText: aiExtractedText,
+      fileType,
+      createdAt: new Date(),
+    });
+
     // Strict category lookup: exact slug or exact (case-insensitive) name.
     // No partial matching — a wrong guess should land in Needs Review
     // (categoryId null), not in a random category.
@@ -93,7 +103,7 @@ export async function POST(request: NextRequest) {
 
     const document = await prisma.document.create({
       data: {
-        title,
+        title: resolvedTitle,
         description,
         fileName,
         filePath,
@@ -118,9 +128,9 @@ export async function POST(request: NextRequest) {
 
     if (isMaintenance && (maintenanceCost || maintenanceVendor)) {
       try {
-        await prisma.maintenanceRecord.create({
+        const maintenance = await prisma.maintenanceRecord.create({
           data: {
-            title: title || "Maintenance Receipt",
+            title: resolvedTitle || "Maintenance Receipt",
             description: aiSummary || description || undefined,
             category: categoryName === "receipts" ? "other" : undefined,
             performedBy: maintenanceVendor || undefined,
@@ -132,6 +142,7 @@ export async function POST(request: NextRequest) {
               : undefined,
           },
         });
+        void indexMaintenance(maintenance.id);
       } catch (e) {
         // Don't fail the document save if cross-linking fails
         console.error("Cross-link maintenance record failed:", e);
@@ -139,14 +150,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Embed document for semantic search (async, don't block response)
-    const embeddingContent = [
-      document.title,
-      document.category?.name || "",
-      document.aiSummary || document.description || "",
-      document.aiExtractedText || "",
-    ].filter(Boolean).join(" | ");
-
-    embedAndStore("document", document.id, embeddingContent).catch((e) =>
+    indexDocument(document.id).catch((e) =>
       console.error("Document embedding failed:", e)
     );
 

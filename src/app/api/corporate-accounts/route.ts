@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
     initiatedBy: changedBy,
     entityType: "corporate_account",
     entityId: account.id,
-    reversible: true,
+    reversible: false,
   });
 
   return NextResponse.json(account, { status: 201 });

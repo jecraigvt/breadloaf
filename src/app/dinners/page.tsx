@@ -414,13 +414,13 @@ export default function DinnersPage() {
                       <div className="space-y-3">
                         <div>
                           <label className="text-xs font-medium text-stone-500 mb-1 block">
-                            Who's cooking? *
+                            Who&apos;s cooking? *
                           </label>
                           <input
                             type="text"
                             value={formChef}
                             onChange={(e) => setFormChef(e.target.value)}
-                            placeholder="e.g. Tom & Lisa, Greg's crew"
+                            placeholder="e.g. Tom & Lisa, Greg&apos;s crew"
                             className="w-full px-3 py-2 rounded-lg border border-stone-200 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-stone-50"
                             autoFocus
                           />
@@ -428,7 +428,7 @@ export default function DinnersPage() {
 
                         <div>
                           <label className="text-xs font-medium text-stone-500 mb-1 block">
-                            What's for dinner?
+                            What&apos;s for dinner?
                           </label>
                           <input
                             type="text"

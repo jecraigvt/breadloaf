@@ -44,5 +44,10 @@ next-env.d.ts
 /hero-*.png
 service-account-key.json
 
+# local coding-agent state and session handoff notes
+/.claude/
+/AGENTS.md
+/SESSION_CLOSEOUT_*.md
+
 # Claude Design handoff bundles (local reference only)
 /.design-handoff

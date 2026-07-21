@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Header } from "@/components/layout/header";
 import {
   Plus,
   Loader2,
-  ChevronDown,
   X,
   Trash2,
   DollarSign,
@@ -89,11 +88,6 @@ export default function ExpensesPage() {
   const [formPaidBy, setFormPaidBy] = useState("Shared");
   const [formVendor, setFormVendor] = useState("");
   const [formNotes, setFormNotes] = useState("");
-
-  const [userName, setUserName] = useState("");
-  useEffect(() => {
-    setUserName(localStorage.getItem("breadloaf-username") || "");
-  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);

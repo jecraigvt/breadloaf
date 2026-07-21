@@ -5,10 +5,11 @@ import { resolveDocumentCategory } from "@/lib/document-categories";
 import { prisma } from "@/lib/prisma";
 import { readFile } from "fs/promises";
 import path from "path";
+import { resolveDocumentTitle } from "@/lib/document-title";
 
 export async function POST(request: NextRequest) {
   try {
-    const { filePath, fileType } = await request.json();
+    const { filePath, fileType, fileName } = await request.json();
 
     if (!filePath || !fileType) {
       return NextResponse.json(
@@ -27,6 +28,10 @@ export async function POST(request: NextRequest) {
     const fullPath = path.join(process.cwd(), "public", filePath);
     const buffer = await readFile(fullPath);
     const base64 = buffer.toString("base64");
+    const originalFileName =
+      typeof fileName === "string" && fileName.trim()
+        ? path.basename(fileName.trim())
+        : path.basename(filePath);
 
     // Gemini's inline-data request limit is ~20MB — send oversized files to review
     const AI_SIZE_LIMIT = 15 * 1024 * 1024;
@@ -36,7 +41,11 @@ export async function POST(request: NextRequest) {
     if (buffer.length > AI_SIZE_LIMIT) {
       return NextResponse.json({
         suggestedCategory: "",
-        title: path.basename(filePath),
+        title: resolveDocumentTitle({
+          fileName: originalFileName,
+          fileType,
+          createdAt: new Date(),
+        }),
         summary: "File too large for AI analysis — categorize manually",
         extractedText: "",
         tags: [],
@@ -48,15 +57,15 @@ export async function POST(request: NextRequest) {
       });
     }
     if (fileType.startsWith("audio/") || fileType.startsWith("video/")) {
-      result = await processMediaFile(base64, fileType, categories);
+      result = await processMediaFile(base64, fileType, categories, originalFileName);
     } else if (fileType.startsWith("image/") || fileType === "application/pdf") {
       // Gemini reads images and PDFs natively
-      result = await categorizeDocument(base64, fileType, categories);
+      result = await categorizeDocument(base64, fileType, categories, originalFileName);
     } else if (isExtractableType(fileType)) {
       // Word/Excel/CSV/TXT — extract text server-side, then categorize
       const extracted = await extractTextFromFile(buffer, fileType);
       if (extracted?.trim()) {
-        result = await categorizeText(extracted, path.basename(filePath), categories);
+        result = await categorizeText(extracted, originalFileName, categories);
       }
     }
 
@@ -64,7 +73,11 @@ export async function POST(request: NextRequest) {
       // Unsupported format or empty extraction — manual categorization
       return NextResponse.json({
         suggestedCategory: "",
-        title: path.basename(filePath),
+        title: resolveDocumentTitle({
+          fileName: originalFileName,
+          fileType,
+          createdAt: new Date(),
+        }),
         summary: "Document uploaded — categorize manually or ask Bucky about it",
         extractedText: "",
         tags: [],

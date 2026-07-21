@@ -130,16 +130,6 @@ function getDayName(dateStr: string, index: number): string {
   });
 }
 
-function getFullDayName(dateStr: string, index: number): string {
-  if (index === 0) return "Today";
-  if (index === 1) return "Tomorrow";
-  return new Date(dateStr + "T12:00:00").toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-  });
-}
-
 export default function WeatherPage() {
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -282,7 +272,7 @@ export default function WeatherPage() {
                   <CloudRain size={16} className="text-blue-400" />
                   <span className="text-stone-500">Precip</span>
                   <span className="font-bold text-stone-800 text-lg">
-                    {weather.daily.precipitation_sum[0]}"
+                    {weather.daily.precipitation_sum[0]}&quot;
                   </span>
                 </div>
               </div>
@@ -325,7 +315,7 @@ export default function WeatherPage() {
                       {weather.daily.precipitation_sum[i] > 0 && (
                         <div className="text-xs text-blue-500 flex items-center gap-0.5">
                           <CloudRain size={10} />
-                          {weather.daily.precipitation_sum[i]}"
+                          {weather.daily.precipitation_sum[i]}&quot;
                         </div>
                       )}
                     </div>
@@ -371,7 +361,7 @@ export default function WeatherPage() {
                       {weather.daily.precipitation_sum[i] > 0 && (
                         <p className="text-xs text-blue-500 mt-1 flex items-center justify-center gap-0.5">
                           <CloudRain size={10} />
-                          {weather.daily.precipitation_sum[i]}"
+                          {weather.daily.precipitation_sum[i]}&quot;
                         </p>
                       )}
                     </div>
