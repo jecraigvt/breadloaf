@@ -114,6 +114,7 @@ prisma migrate deploy && prisma db seed && next start
 - If `FAMILY_PINS` is unset, auth is skipped only in local development. Production returns 503 rather than exposing the site.
 - After login, the app stores a signed 30-day session cookie without the PIN and the current family name in local storage under `breadloaf-username`.
 - Login attempts are throttled in memory per app instance.
+- The agreed replacement is a lightweight family-tree claim flow with unique memorable phrases, long-lived device sessions, optional recovery email, and server-verified member attribution for Bucky and uploads. Product decisions, UI direction, current-system findings, and implementation steps are recorded in [`docs/family-tree-identity-handoff.md`](docs/family-tree-identity-handoff.md).
 
 ## Archive Safety
 
