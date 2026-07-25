@@ -232,6 +232,30 @@ test("a divorced forebear couple is not listed twice", () => {
   assert.deepEqual(forebearUnit!.childIds.sort(), ["greg", "sandy"]);
 });
 
+test("a remarried forebear pairs with the second spouse, not the first", () => {
+  // Bill divorced Lois and remarried. His unit must be Bill + the second wife, with
+  // Lois surfaced as a former partner — and Lois's own redundant unit still dropped
+  // even though Bill's unit is now a couple rather than a single person.
+  const base = graphWithForebears();
+  const remarried: FamilyGraph = {
+    members: [...base.members, member("lorenza", { surname: null, sortOrder: 3 })],
+    relationships: [...base.relationships, spouse("bill", "lorenza", "current")],
+  };
+
+  const tree = buildFamilyTree(remarried, { includePrivateDetail: true });
+  assert.equal(tree.ancestorUnitIds.length, 1);
+
+  const forebearUnit = tree.units.find((unit) => unit.id === tree.ancestorUnitIds[0]);
+  assert.deepEqual(forebearUnit!.memberIds, ["bill", "lorenza"]);
+  assert.deepEqual(forebearUnit!.formerPartnerIds, ["lois"]);
+  // The second wife must not inherit the sons from the first marriage.
+  assert.deepEqual(tree.people.lorenza.childIds, []);
+  assert.deepEqual(forebearUnit!.childIds.sort(), ["greg", "sandy"]);
+  // She married into a generation above the branch split, so she has no branch.
+  assert.equal(tree.people.lorenza.branch, null);
+  assert.equal(tree.people.lorenza.generation, 0);
+});
+
 test("the deceased cannot claim a profile", () => {
   const tree = buildFamilyTree(graphWithForebears(), { includePrivateDetail: true });
   assert.equal(tree.people.bill.canClaim, false);

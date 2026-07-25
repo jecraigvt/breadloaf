@@ -54,8 +54,6 @@ const ROSTER: RosterPerson[] = [
     sortOrder: 1,
     deceased: true,
     canClaim: false,
-    needsReview:
-      "Remarried after divorcing Lois — his second wife is not recorded yet.",
   },
   {
     key: "lois",
@@ -66,6 +64,15 @@ const ROSTER: RosterPerson[] = [
     sortOrder: 2,
     deceased: true,
     canClaim: false,
+  },
+  {
+    // Bill's second wife, after the divorce from Lois. Recorded as a current marriage
+    // rather than former — it ended with his death, not a separation.
+    key: "lorenza",
+    name: "Lorenza",
+    displayName: "Lorenza",
+    sortOrder: 3,
+    needsReview: "Surname unconfirmed; confirm whether she is living.",
   },
 
   // ---- Generation I: the four brothers, in birth order ----
@@ -265,6 +272,7 @@ const ROSTER: RosterPerson[] = [
 // listed first purely so the canonical direction is stable across re-runs.
 const MARRIAGES: Array<[string, string, "current" | "former"]> = [
   ["bill", "lois", "former"],
+  ["bill", "lorenza", "current"],
   ["jim", "mira", "current"],
   ["greg", "derry", "current"],
   ["tom", "judy", "current"],
