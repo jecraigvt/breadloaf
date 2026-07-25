@@ -110,7 +110,7 @@ const ROSTER: RosterPerson[] = [
 
   // ---- Generation I spouses ----
   // Surnames are left null where they were never stated rather than assumed.
-  { key: "mira", name: "Mira Craig", displayName: "Mira", surname: "Craig", sortOrder: 1 },
+  { key: "mira", name: "Almira Craig", displayName: "Mira", surname: "Craig", sortOrder: 1 },
   { key: "derry", name: "Derry Craig", displayName: "Derry", surname: "Craig", sortOrder: 1 },
   {
     key: "judy",
@@ -147,14 +147,15 @@ const ROSTER: RosterPerson[] = [
     maidenName: "Craig",
     sortOrder: 1,
   },
-  { key: "rob", name: "Rob Keller", displayName: "Rob", surname: "Keller", sortOrder: 1 },
+  { key: "rob", name: "Robert Keller", displayName: "Rob", surname: "Keller", sortOrder: 1 },
   { key: "ethan", name: "Ethan Craig", displayName: "Ethan", surname: "Craig", sortOrder: 2 },
   {
     key: "annie",
-    name: "Annie",
+    name: "Annie Craig",
     displayName: "Annie",
+    surname: "Craig",
     sortOrder: 1,
-    needsReview: "Maiden name unknown; married surname unconfirmed.",
+    needsReview: "Maiden name unknown.",
   },
 
   // ---- Generation II: Greg's ----
@@ -213,13 +214,16 @@ const ROSTER: RosterPerson[] = [
     canClaim: false,
   },
   {
+    // Spelled "Eleanor" in the existing directory row; "Elenor" in the roster Jeremy
+    // dictated. Using the directory spelling so the row matches instead of duplicating.
     key: "ellie",
-    name: "Elenor Craig",
+    name: "Eleanor Craig",
     displayName: "Ellie",
     surname: "Craig",
     sortOrder: 1,
     isMinor: true,
     canClaim: false,
+    needsReview: "Confirm spelling — Eleanor or Elenor?",
   },
   {
     key: "jacob",
@@ -302,10 +306,28 @@ function normalize(value: string): string {
   return value
     .normalize("NFKC")
     .toLowerCase()
-    .replace(/[""'']/g, "")
+    .replace(/[“”‘’"']/g, "")
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * Directory rows often carry an inline nickname — `Katherine "K.C." Keller`. Drop the
+ * quoted or parenthesised part so the row still matches on the plain legal name.
+ */
+function stripInlineNickname(value: string): string {
+  return value
+    .replace(/[“‘"']\s*[^”’"']*\s*[”’"']/g, " ")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Every spelling of an existing row we are willing to match against the roster. */
+function rowMatchKeys(name: string): string[] {
+  const keys = new Set<string>([normalize(name), normalize(stripInlineNickname(name))]);
+  return Array.from(keys).filter(Boolean);
 }
 
 /** Every spelling of a roster person an existing directory row might plausibly use. */
@@ -360,10 +382,9 @@ async function main() {
   for (const row of existing) {
     if (claimedRowIds.has(row.id)) continue;
 
-    const rowKey = normalize(row.name);
-    const candidates = Array.from(new Set(claimants.get(rowKey) ?? [])).filter(
-      (key) => !matchedId.has(key)
-    );
+    const candidates = Array.from(
+      new Set(rowMatchKeys(row.name).flatMap((key) => claimants.get(key) ?? []))
+    ).filter((key) => !matchedId.has(key));
 
     if (candidates.length === 0) {
       unmatchedRows.push(`${row.name} (${row.id})`);
