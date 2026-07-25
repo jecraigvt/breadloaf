@@ -4,7 +4,30 @@ Last updated: 2026-07-24
 
 ## Status
 
-This document records product decisions and implementation guidance from the family identity discussion. No family-tree or replacement-login code has been implemented yet.
+**Superseded in part — 2026-07-24.** The family tree, graph schema, roster, and tap-to-claim
+identity are now implemented. Read `CLAUDE.md` ("Identity: the door and the tap" and "Family
+tree data model") for what actually shipped; that is authoritative where it conflicts with
+this document. The sections below are kept for the reasoning and for the parts not yet built.
+
+Three deliberate departures from the plan below:
+
+1. **Phrase-only login was rejected.** The plan made a unique memorable phrase both username
+   and password, so a collision is not a failed login — it silently signs you in as someone
+   else, corrupting the very attribution the rest of the plan exists to protect. Instead the
+   shared `FAMILY_PINS` door was kept as the only security boundary, and identity became a
+   single tap on your own face in the tree. That is strictly more frictionless than typing a
+   phrase, and it defers every hard credential problem (uniqueness, HMAC fingerprints, reset,
+   recovery) rather than solving them up front. Per-person PINs are additive and opt-in later.
+2. **Children attach to individual parents, not to couples.** See the Sandy/Kirsten/Andrea
+   case in `CLAUDE.md`. The "pair spouses visually as one family unit, with children branching
+   beneath them" guidance below is a *rendering* rule only; it must not reach the schema.
+3. **No `@xyflow/react` or ELK.** Everything renders inside the 440px shell, so the tree is a
+   vertical scroll through branch sections, not a pannable graph. A graph library would have
+   fought the editorial design system for no benefit at that width.
+
+Still not done, on purpose: converting write routes to derive attribution from `ActorContext`
+(step 9 below), passing the actor into Bucky (step 8), and a curator UI for adding people and
+editing relationships. Roster edits currently go through `scripts/seed-family-tree.ts`.
 
 The current production baseline already includes Bucky's tiered memory, resilient archive processing, descriptive archive titles, the oversight ledger, and the related documentation. The family-tree identity work should build on that system without reopening it.
 

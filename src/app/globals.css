@@ -749,3 +749,186 @@ h3.chapter {
 
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 .scrollbar-hide::-webkit-scrollbar { display: none; }
+
+/* ==== Family tree ("the family plate") ====
+   Everything renders inside the 440px shell, so the tree reads as a vertical
+   scroll down through each brother's branch rather than a pannable graph. */
+
+.tree-status {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 20px;
+  background: var(--paper-2);
+  border-bottom: 1px solid var(--rule);
+}
+.tree-status .who {
+  font-family: var(--serif); font-size: 16px; letter-spacing: -0.01em;
+}
+.tree-status .who em { font-style: italic; }
+.tree-status .act {
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--muted);
+  background: none; border: 0; border-bottom: 1px solid var(--rule);
+  padding: 2px 0; cursor: pointer;
+}
+.tree-status .act:hover { color: var(--ember-deep); border-color: var(--ember); }
+
+.tree-filters {
+  display: flex; gap: 0; overflow-x: auto;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+}
+.tree-chip {
+  flex: 0 0 auto;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--muted);
+  padding: 12px 14px;
+  background: none; border: 0; border-right: 1px solid var(--rule);
+  cursor: pointer; white-space: nowrap;
+}
+.tree-chip[aria-pressed="true"] {
+  color: var(--ink);
+  box-shadow: inset 0 2px 0 var(--ember);
+}
+
+.branch-body { padding: 6px 20px 22px; background: var(--paper); }
+
+/* Each descent level indents behind a hairline, which is the only connector the
+   narrow column has room for. */
+.kin-descend {
+  margin-left: 17px;
+  padding-left: 20px;
+  border-left: 1px solid var(--rule);
+}
+
+.kin-unit { padding: 10px 0 2px; }
+
+.kin {
+  display: flex; align-items: center; gap: 11px;
+  width: 100%; text-align: left;
+  background: none; border: 0; padding: 5px 0;
+  cursor: pointer; color: var(--ink);
+}
+.kin:hover .nm { color: var(--ember-deep); }
+
+.kin .face {
+  flex: 0 0 auto;
+  width: 34px; height: 34px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em;
+  background: var(--paper-2); color: var(--muted);
+  border: 1px solid var(--rule);
+  overflow: hidden;
+}
+.kin .face img { width: 100%; height: 100%; object-fit: cover; }
+.kin.is-claimed .face { border-color: var(--ember); color: var(--ember-deep); }
+.kin.is-you .face { background: var(--ember); border-color: var(--ember); color: var(--paper); }
+.kin.is-minor .face { border-style: dashed; }
+
+.kin .nm {
+  display: block;
+  font-family: var(--serif); font-size: 19px; line-height: 1.15;
+  letter-spacing: -0.015em;
+}
+.kin .nm em { font-style: italic; }
+.kin .sub {
+  display: block;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--muted); margin-top: 4px;
+}
+
+/* The partner line sits under the anchor so a couple reads as one unit without
+   the two names competing for the same baseline. */
+.kin-partner { margin-left: 45px; }
+.kin-partner .nm { font-size: 16px; }
+.kin-former { opacity: 0.62; }
+.kin-former .nm { font-size: 15px; }
+
+.tree-empty {
+  padding: 40px 20px; text-align: center;
+  font-family: var(--serif); font-size: 18px; color: var(--muted);
+}
+
+/* ==== Person sheet ==== */
+.sheet-scrim {
+  position: absolute; inset: 0; z-index: 40;
+  background: rgba(28, 26, 23, 0.42);
+  display: flex; align-items: flex-end;
+}
+.sheet {
+  width: 100%; max-height: 86%; overflow-y: auto;
+  background: var(--paper);
+  border-top: 1px solid var(--rule);
+  animation: sheetUp 220ms ease-out both;
+}
+@keyframes sheetUp { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.sheet-head {
+  padding: 22px 20px 16px;
+  border-bottom: 1px solid var(--rule);
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+}
+.sheet-head .nm {
+  font-family: var(--serif); font-size: 30px; line-height: 1.08;
+  letter-spacing: -0.025em;
+}
+.sheet-head .nm em { font-style: italic; }
+.sheet-head .sub {
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--muted); margin-top: 8px;
+}
+
+.sheet-row {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--rule);
+  display: grid; grid-template-columns: 92px 1fr; gap: 12px; align-items: baseline;
+}
+.sheet-row .k {
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--muted);
+}
+.sheet-row .v { font-family: var(--sans); font-size: 14px; line-height: 1.5; }
+.sheet-row .v a { color: var(--pine-deep); text-decoration: underline; }
+.sheet-row .v .lnk {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; color: var(--pine-deep); text-decoration: underline;
+}
+
+.sheet-claim { padding: 20px; background: var(--paper-2); }
+.sheet-claim .pitch {
+  font-family: var(--serif); font-size: 20px; line-height: 1.25;
+  letter-spacing: -0.015em; margin-bottom: 14px;
+}
+.sheet-claim .pitch em { font-style: italic; color: var(--pine-deep); }
+
+.btn-ember {
+  width: 100%;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 14px 16px;
+  background: var(--ember); color: var(--paper);
+  border: 0; border-radius: 0; cursor: pointer;
+}
+.btn-ember:hover { background: var(--ember-deep); }
+.btn-ember:disabled { opacity: 0.55; cursor: default; }
+
+.btn-quiet {
+  width: 100%;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 13px 16px; margin-top: 8px;
+  background: transparent; color: var(--ink);
+  border: 1px solid var(--rule); border-radius: 0; cursor: pointer;
+}
+.btn-quiet:hover { background: var(--paper-2); }
+
+.sheet-note {
+  padding: 14px 20px;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--muted);
+  border-bottom: 1px solid var(--rule);
+}
+.sheet-error {
+  padding: 12px 20px;
+  font-family: var(--sans); font-size: 13px; color: var(--ember-deep);
+  background: var(--paper-2);
+}

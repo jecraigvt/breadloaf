@@ -41,9 +41,16 @@ export async function middleware(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Public routes — no auth required
+  // Public routes — no auth required.
+  //
+  // The family tree is deliberately open so a first-time relative can find
+  // themselves and claim a profile before they have been given a PIN. The tree API
+  // withholds contact details, notes, and minors' surnames from unauthenticated
+  // callers; the rest of /api/family (create, edit, delete) stays gated below.
   if (
     pathname === "/login" ||
+    pathname === "/family" ||
+    pathname === "/api/family/tree" ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/photos") ||

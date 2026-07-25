@@ -185,17 +185,90 @@ model Asset {
 model FamilyMember {
   id            String               @id @default(cuid())
   name          String
+  displayName   String? // what the tree shows ("Sandy", "KC"); falls back to first token of name
+  surname       String? // current surname — the tree has Craigs, Kellers, and Devlins
+  maidenName    String? // rendered as "née X" when it differs from surname
   email         String?
   phone         String?
   birthday      String?
-  branch        String? // which Craig brother's family
-  relation      String? // e.g. "spouse", "child", "grandchild"
+  branch        String? // DERIVED cache — the relationship graph is the source of truth. See src/lib/family-tree.ts
+  relation      String? // legacy free text, kept so historical display strings survive
   boardRole     String? // officer role: President, VP, Treasurer, Secretary
   isBoardMember Boolean              @default(false)
   notes         String?
-  positions     PositionAssignment[]
+
+  // Tree + identity
+  photoUrl     String?
+  isBranchRoot Boolean   @default(false) // the four brothers — where branch derivation starts
+  sortOrder    Int       @default(0) // birth order within a sibling set
+  isMinor     Boolean   @default(false) // redacted to first name pre-login; cannot claim
+  canClaim    Boolean   @default(true) // false for minors, deceased, and former spouses
+  deceased    Boolean   @default(false)
+  needsReview String? // curator note describing what is still unconfirmed
+  isCurator   Boolean   @default(false)
+  claimedAt   DateTime?
+  lastSeenAt  DateTime?
+
+  positions  PositionAssignment[]
+  relFrom    FamilyRelationship[] @relation("RelationshipFrom")
+  relTo      FamilyRelationship[] @relation("RelationshipTo")
+  sessions   FamilySession[]
+  credential FamilyCredential?
 
   @@index([branch])
+  @@index([claimedAt])
+}
+
+// Graph edges. Parent edges are directional (from = parent, to = child) and
+// attach to INDIVIDUAL parents, never to a couple — Riley is Sandy + Kirsten's
+// child while Sandy's current marriage is to Andrea, so a couple-as-container
+// model would misplace her. Couples are grouped at render time instead.
+// Spouse edges are stored in one canonical direction and treated as symmetric.
+model FamilyRelationship {
+  id           String    @id @default(cuid())
+  fromMemberId String
+  toMemberId   String
+  type         String // parent | spouse
+  status       String    @default("current") // current | former
+  startedAt    DateTime?
+  endedAt      DateTime?
+  createdAt    DateTime  @default(now())
+
+  from FamilyMember @relation("RelationshipFrom", fields: [fromMemberId], references: [id], onDelete: Cascade)
+  to   FamilyMember @relation("RelationshipTo", fields: [toMemberId], references: [id], onDelete: Cascade)
+
+  @@unique([fromMemberId, toMemberId, type])
+  @@index([fromMemberId, type])
+  @@index([toMemberId, type])
+}
+
+// Optional per-person PIN. Empty until someone opts into locking their profile —
+// the shared FAMILY_PINS door is what keeps strangers out in the meantime.
+model FamilyCredential {
+  id        String       @id @default(cuid())
+  memberId  String       @unique
+  member    FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  pinHash   String // keyed HMAC-SHA-256, never the PIN itself
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+// Long-lived per-device identity. Rows are revoked, never deleted, so they double
+// as the audit trail for who claimed which profile and when.
+model FamilySession {
+  id         String       @id @default(cuid())
+  memberId   String
+  member     FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  tokenHash  String       @unique
+  userAgent  String?
+  claimedVia String? // tap | pin
+  createdAt  DateTime     @default(now())
+  lastUsedAt DateTime     @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+
+  @@index([memberId])
+  @@index([expiresAt])
 }
 
 model PositionAssignment {

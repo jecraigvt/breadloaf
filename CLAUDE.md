@@ -42,6 +42,54 @@ The app uses a "family magazine" editorial style — warm paper tones, italic se
 - Deploys: GitHub auto-deploy is enabled (push to `main` deploys); `railway up` also works for deploying without pushing. `.railwayignore` excludes Photos/ dir
 - ESLint ignored during builds (`next.config.mjs`) to prevent agent-generated lint issues from blocking deploys
 
+## Identity: the door and the tap (July 2026)
+Two independent layers. Do not merge them.
+
+- **The door** = the existing shared `FAMILY_PINS` cookie. This is the only security
+  boundary and it is unchanged. It is what keeps strangers out.
+- **Identity** = which family member a device belongs to, claimed by tapping a face in
+  the tree. Inside the family this is a convenience claim, **not a secret** — v1 has no
+  per-person credential at all, which is what makes claiming a single tap.
+
+Because the door already stops outsiders, identity could be frictionless now and hardened
+later per person: writing a `FamilyCredential` locks that one profile so re-tapping it
+needs a PIN, while everyone else keeps tapping. No flag day, no migration.
+
+Re-claiming an already-claimed profile is allowed **on purpose** — without a credential,
+blocking it would strand anyone who gets a new phone. "Claimed" means in use, not locked.
+`FamilySession` rows are revoked, never deleted, so they double as the claim audit trail.
+
+Attribution must come from `getCurrentActor(request)` in `src/lib/actor.ts` — never from a
+name in a request body and never from `localStorage["breadloaf-username"]`. Existing write
+routes still trust client-supplied names; converting them is deliberately **not** done yet.
+
+## Family tree data model
+The relationship graph is the source of truth; `FamilyMember.branch` is a derived cache.
+
+- **Parent edges attach to individual parents, never to a couple.** Sandy's daughter Riley
+  is his and Kirsten's, while Sandy's current marriage is to Andrea — a couple-as-container
+  model reparents her onto Andrea. Couples are grouped at render time instead.
+- **Spouse edges** are stored one-directional with `status` (`current` | `former`) and read
+  symmetrically via `partnersOf()`.
+- **Branch derivation** seeds from `isBranchRoot` (the four brothers) — NOT from "has a
+  branch and no parents", because the derived branch is cached back onto every row and an
+  inferred rule promotes married-in spouses to roots on the second run. Blood descent
+  propagates down parent edges first, then marriage fills in the rest.
+- **Minors** (`isMinor`) are reduced to a first name and cannot claim, since `/family` is a
+  public route. Adults keep their surname. `deceased` also blocks claiming.
+- **Generations above the branch split** (Bill and Lois, the brothers' parents) derive to
+  `branch: null` and render in the "Forebears" section without descending — their children
+  each head a branch below. The brothers keep `isBranchRoot` even though they now have
+  parents. Adding further generations upward needs no schema or layout change.
+- A **divorced couple** produces two units, one anchored on each partner. `ancestorUnitIds`
+  drops the redundant one, and the rule is asymmetric on purpose — only an earlier unit may
+  absorb a later one, or both halves eliminate each other.
+
+Roster changes go through `npx tsx scripts/seed-family-tree.ts` (dry run by default,
+`--apply` to commit). It is idempotent: it matches existing rows by `displayName` first,
+then by full name, and refuses to guess on ambiguity rather than merging two people —
+"William Craig" is both Sandy's legal name and Greg's son Will.
+
 ## Environment Variables (Railway)
 - `DATABASE_URL` — PostgreSQL connection (references Postgres service)
 - `GOOGLE_AI_API_KEY` — Gemini API key
@@ -100,7 +148,9 @@ src/app/
   maintenance/          # Maintenance log (timeline) + Property Systems "notebook" (Asset registry — Bucky creates/updates assets via save_asset as he learns about equipment from chat/docs/voice-memo walkthroughs; records and documents link to assets via assetId)
   emergency/            # Emergency contacts (tap-to-call)
   guide/                # Local guide (swimming, hikes, restaurants)
-  family/               # Family directory by Craig branch
+  family/               # Living family tree (PUBLIC route — replaced the old directory July 2026).
+                        # Branch-per-brother vertical tree in the editorial style, tap-to-claim
+                        # identity, person sheet. Contact details appear only after the PIN door.
   api/                  # API routes for all features
 
 src/components/
@@ -114,6 +164,9 @@ src/components/
 
 src/lib/
   prisma.ts             # Prisma client singleton
+  family-tree.ts        # Family graph: branch derivation, generation depth, couple grouping,
+                        # public/private redaction. Pure functions + tests in family-tree.test.ts
+  actor.ts              # ActorContext — who is acting, resolved server-side (see Identity below)
   ai.ts                 # Gemini AI (categorization incl. PDFs + extracted text, assistant with function-calling, pantry scanning)
   document-categories.ts # Category resolution guardrails (fuzzy dedupe, AI-proposed categories, Needs Review)
   extract-text.ts       # Text extraction: docx (mammoth), xlsx (exceljs), csv/txt
