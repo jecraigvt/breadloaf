@@ -214,8 +214,7 @@ const ROSTER: RosterPerson[] = [
     canClaim: false,
   },
   {
-    // Spelled "Eleanor" in the existing directory row; "Elenor" in the roster Jeremy
-    // dictated. Using the directory spelling so the row matches instead of duplicating.
+    // "Eleanor", confirmed 2026-07-24 — the dictated roster's "Elenor" was a slip.
     key: "ellie",
     name: "Eleanor Craig",
     displayName: "Ellie",
@@ -223,7 +222,6 @@ const ROSTER: RosterPerson[] = [
     sortOrder: 1,
     isMinor: true,
     canClaim: false,
-    needsReview: "Confirm spelling — Eleanor or Elenor?",
   },
   {
     key: "jacob",
