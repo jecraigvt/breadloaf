@@ -200,6 +200,8 @@ model FamilyMember {
   // Tree + identity
   photoUrl     String?
   isBranchRoot Boolean   @default(false) // the four brothers — where branch derivation starts
+  isFounder    Boolean   @default(false) // Bill and Lois — an honour, NOT a layout anchor
+
   sortOrder    Int       @default(0) // birth order within a sibling set
   isMinor     Boolean   @default(false) // redacted to first name pre-login; cannot claim
   canClaim    Boolean   @default(true) // false for minors, deceased, and former spouses

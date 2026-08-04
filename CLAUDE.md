@@ -85,6 +85,26 @@ The relationship graph is the source of truth; `FamilyMember.branch` is a derive
   drops the redundant one, and the rule is asymmetric on purpose — only an earlier unit may
   absorb a later one, or both halves eliminate each other.
 
+## The plate (`/family` → "The plate")
+A circular descent chart: generations as growth rings, children nested inside their own
+parent's slice of arc. Layout lives in `src/lib/family-plate.ts`, drawing in
+`src/components/family/family-plate.tsx`. Three rules carry the meaning:
+
+- **The viewer picks the centre.** `isFounder` is an honour flagged on Bill and Lois, never
+  a consequence of being centred — otherwise adding a generation above them would silently
+  crown a new couple every time the ancestry grows.
+- **The partner shown beside someone is whoever CO-PARENTED the people on the plate**, not
+  their current spouse. That puts Lois beside Bill and Kirsten beside Sandy; later marriages
+  (Lorenza, Andrea) are stated at the rim instead. One rule, no special cases.
+- **Bloodline is position, not colour.** Surnames can't carry descent (Vanessa is blood but
+  reads "Devlin"; Colleen married in but reads "Craig"), so the blood relative sits on the
+  inner radius with the only spoke to the centre. Branch tints mark territory at the top
+  level and are deliberately NOT shaded down the generations — the steps stop being
+  distinguishable by the third ring and it would mis-colour everyone married in.
+
+Depth is limited to 2 rings inside the 440px shell (3 when wider); re-centring reaches what
+gets trimmed, and a small ember dot marks a node whose children are hidden.
+
 Roster changes go through `npx tsx scripts/seed-family-tree.ts` (dry run by default,
 `--apply` to commit). It is idempotent: it matches existing rows by `displayName` first,
 then by full name, and refuses to guess on ambiguity rather than merging two people —
@@ -166,6 +186,9 @@ src/lib/
   prisma.ts             # Prisma client singleton
   family-tree.ts        # Family graph: branch derivation, generation depth, couple grouping,
                         # public/private redaction. Pure functions + tests in family-tree.test.ts
+  family-plate.ts       # Descent-plate layout (nested polar tree, co-parent resolution,
+                        # branch spans, depth limiting). NO prisma import — it ships to the
+                        # client bundle. Tests in family-plate.test.ts
   actor.ts              # ActorContext — who is acting, resolved server-side (see Identity below)
   ai.ts                 # Gemini AI (categorization incl. PDFs + extracted text, assistant with function-calling, pantry scanning)
   document-categories.ts # Category resolution guardrails (fuzzy dedupe, AI-proposed categories, Needs Review)

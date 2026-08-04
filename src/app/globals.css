@@ -848,6 +848,73 @@ h3.chapter {
   font-family: var(--serif); font-size: 18px; color: var(--muted);
 }
 
+/* ==== The plate: family as a cross-section ==== */
+
+.plate-host { padding: 4px 12px 18px; background: var(--paper); }
+.plate-empty {
+  padding: 40px 20px; text-align: center;
+  font-family: var(--serif); font-size: 17px; font-style: italic; color: var(--muted);
+}
+
+.plate-ground { fill: var(--paper); }
+.plate-edge { fill: none; stroke: var(--ink); stroke-opacity: 0.42; stroke-width: 1.2; }
+.plate-grain { fill: none; stroke: var(--ink); stroke-opacity: 0.03; stroke-width: 0.6; }
+.plate-grain--strong { stroke-opacity: 0.055; }
+
+.plate-name { font-family: var(--serif); letter-spacing: 0.01em; }
+.plate-spoke { stroke: var(--ink); stroke-opacity: 0.34; stroke-width: 1; }
+.plate-rung { stroke: var(--ink); stroke-opacity: 0.32; stroke-width: 0.9; stroke-dasharray: 2 2.5; }
+.plate-bracket { stroke: var(--ink); stroke-opacity: 0.3; stroke-width: 0.9; }
+.plate-more { fill: var(--ember); fill-opacity: 0.65; }
+
+.plate-slot { transition: opacity 180ms ease; }
+@media (prefers-reduced-motion: reduce) { .plate-slot { transition: none; } }
+
+.plate-core { fill: var(--paper-2); stroke: var(--pine); stroke-opacity: 0.5; stroke-width: 1; }
+.plate-core--founders { fill: #e2d8bd; stroke-opacity: 0.75; stroke-width: 1.5; }
+.plate-core-inner { fill: none; stroke: var(--pine); stroke-opacity: 0.3; stroke-width: 0.7; }
+.plate-core-name { font-family: var(--serif); fill: var(--ink); letter-spacing: -0.01em; }
+
+.plate-founders {
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.3em; fill: var(--pine-deep);
+}
+.plate-eyebrow {
+  font-family: var(--mono); font-size: 7px; letter-spacing: 0.2em; fill: var(--muted);
+}
+.plate-seal {
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.28em; fill: var(--muted);
+}
+.plate-rimnote {
+  font-family: var(--mono); font-size: 7.5px; letter-spacing: 0.22em; fill: var(--muted);
+}
+
+.plate-controls {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 20px; border-bottom: 1px solid var(--rule); background: var(--paper);
+}
+.plate-controls label {
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--muted);
+}
+.plate-controls select {
+  font-family: var(--serif); font-size: 16px; color: var(--ink);
+  background: transparent; border: 0; border-bottom: 1px solid var(--rule);
+  padding: 4px 18px 4px 2px; cursor: pointer;
+}
+
+.view-toggle { display: flex; border-bottom: 1px solid var(--rule); background: var(--paper); }
+.view-toggle button {
+  flex: 1;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--muted);
+  padding: 13px 10px; background: none; border: 0;
+  border-right: 1px solid var(--rule); cursor: pointer;
+}
+.view-toggle button:last-child { border-right: 0; }
+.view-toggle button[aria-pressed="true"] {
+  color: var(--ink); box-shadow: inset 0 2px 0 var(--ember);
+}
+
 /* ==== Person sheet ==== */
 .sheet-scrim {
   position: absolute; inset: 0; z-index: 40;

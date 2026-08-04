@@ -34,6 +34,7 @@ interface RosterPerson {
   isMinor?: boolean;
   canClaim?: boolean;
   deceased?: boolean;
+  isFounder?: boolean;
   isCurator?: boolean;
   needsReview?: string;
 }
@@ -54,6 +55,7 @@ const ROSTER: RosterPerson[] = [
     sortOrder: 1,
     deceased: true,
     canClaim: false,
+    isFounder: true,
   },
   {
     key: "lois",
@@ -64,6 +66,7 @@ const ROSTER: RosterPerson[] = [
     sortOrder: 2,
     deceased: true,
     canClaim: false,
+    isFounder: true,
   },
   {
     // Bill's second wife, after the divorce from Lois. Recorded as a current marriage
@@ -446,6 +449,7 @@ async function main() {
       isMinor: Boolean(person.isMinor),
       canClaim: person.canClaim ?? true,
       deceased: Boolean(person.deceased),
+      isFounder: Boolean(person.isFounder),
       isCurator: Boolean(person.isCurator),
       needsReview: person.needsReview ?? null,
     };

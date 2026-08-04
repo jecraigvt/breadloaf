@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { FamilyTree, TreePerson, TreeUnit } from "@/lib/family-tree";
+import { defaultPlateRoot, plateCandidates } from "@/lib/family-plate";
+import { FamilyPlate } from "@/components/family/family-plate";
 
 interface ActorSummary {
   memberId: string;
@@ -23,6 +25,9 @@ export default function FamilyPage() {
   const [loading, setLoading] = useState(true);
   const [activeBranch, setActiveBranch] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [view, setView] = useState<"list" | "plate">("list");
+  // Null until the tree loads; the default centre is a founder when one exists.
+  const [plateRoot, setPlateRoot] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/family/tree");
@@ -59,6 +64,12 @@ export default function FamilyPage() {
   }, [tree, activeBranch]);
 
   const peopleCount = tree ? Object.keys(tree.people).length : 0;
+
+  const centreOptions = useMemo(() => (tree ? plateCandidates(tree) : []), [tree]);
+
+  useEffect(() => {
+    if (tree && !plateRoot) setPlateRoot(defaultPlateRoot(tree));
+  }, [tree, plateRoot]);
 
   const signOutIdentity = async () => {
     await fetch("/api/family/claim", { method: "DELETE" });
@@ -142,7 +153,39 @@ export default function FamilyPage() {
         </div>
       </div>
 
-      {tree && tree.branches.length > 1 && (
+      {tree && (
+        <div className="view-toggle">
+          <button aria-pressed={view === "list"} onClick={() => setView("list")}>
+            The roster
+          </button>
+          <button aria-pressed={view === "plate"} onClick={() => setView("plate")}>
+            The plate
+          </button>
+        </div>
+      )}
+
+      {tree && view === "plate" && centreOptions.length > 0 && (
+        <div className="plate-controls">
+          <label htmlFor="plate-centre">Centred on</label>
+          <select
+            id="plate-centre"
+            value={plateRoot ?? ""}
+            onChange={(event) => setPlateRoot(event.target.value)}
+          >
+            {centreOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {tree && view === "plate" && plateRoot && (
+        <FamilyPlate tree={tree} rootId={plateRoot} onSelect={setSelectedId} />
+      )}
+
+      {tree && view === "list" && tree.branches.length > 1 && (
         <div className="tree-filters">
           <button
             className="tree-chip"
@@ -166,7 +209,7 @@ export default function FamilyPage() {
 
       {loading ? (
         <div className="tree-empty">Drawing the family plate…</div>
-      ) : !tree || tree.branches.length === 0 ? (
+      ) : view === "plate" ? null : !tree || tree.branches.length === 0 ? (
         <div className="tree-empty">
           No family recorded yet. Run the roster script to plant the tree.
         </div>

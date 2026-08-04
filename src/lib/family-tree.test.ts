@@ -25,6 +25,7 @@ function member(id: string, overrides: Partial<GraphMember> = {}): GraphMember {
     notes: null,
     photoUrl: null,
     isBranchRoot: false,
+    isFounder: false,
     sortOrder: 0,
     isMinor: false,
     canClaim: true,

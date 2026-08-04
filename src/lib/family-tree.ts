@@ -32,6 +32,7 @@ export interface GraphMember {
   notes: string | null;
   photoUrl: string | null;
   isBranchRoot: boolean;
+  isFounder: boolean;
   sortOrder: number;
   isMinor: boolean;
   canClaim: boolean;
@@ -68,6 +69,7 @@ export interface TreePerson {
   canClaim: boolean;
   isClaimed: boolean;
   deceased: boolean;
+  isFounder: boolean;
   isCurator: boolean;
   isBoardMember: boolean;
   boardRole: string | null;
@@ -335,6 +337,7 @@ export function buildFamilyTree(
       canClaim: member.canClaim && !member.isMinor && !member.deceased,
       isClaimed: Boolean(member.claimedAt),
       deceased: member.deceased,
+      isFounder: member.isFounder,
       isCurator: member.isCurator,
       isBoardMember: member.isBoardMember,
       boardRole: member.boardRole,
