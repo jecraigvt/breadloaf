@@ -426,6 +426,14 @@ h3.chapter {
   color: inherit;
 }
 .tile-text:nth-child(2n) { border-right: 0; }
+
+/* Bucky leads the hub: warmer ground and an ember rule so the first tile reads as
+   the way in rather than one of fourteen equals. */
+.tile-lead {
+  background: var(--paper);
+  box-shadow: inset 0 2px 0 var(--ember);
+}
+.tile-lead .big em { color: var(--ember-deep); }
 .tile-text .lbl {
   font-family: var(--mono); font-size: 9px;
   text-transform: uppercase; letter-spacing: 0.18em; color: var(--muted);
@@ -888,19 +896,25 @@ h3.chapter {
   font-family: var(--mono); font-size: 7.5px; letter-spacing: 0.22em; fill: var(--muted);
 }
 
-.plate-controls {
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+/* The trail is how you widen out: tap any ancestor to re-centre on them. */
+.plate-trail {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px;
   padding: 12px 20px; border-bottom: 1px solid var(--rule); background: var(--paper);
 }
-.plate-controls label {
-  font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em;
-  text-transform: uppercase; color: var(--muted);
+.plate-trail-step { display: inline-flex; align-items: center; gap: 4px; }
+.plate-trail .sep { color: var(--muted); opacity: 0.5; font-size: 13px; }
+.plate-trail button {
+  font-family: var(--serif); font-size: 16px; letter-spacing: -0.01em;
+  color: var(--muted); background: none; border: 0;
+  padding: 3px 4px; cursor: pointer;
 }
-.plate-controls select {
-  font-family: var(--serif); font-size: 16px; color: var(--ink);
-  background: transparent; border: 0; border-bottom: 1px solid var(--rule);
-  padding: 4px 18px 4px 2px; cursor: pointer;
+.plate-trail button:hover { color: var(--ink); }
+.plate-trail button.here {
+  color: var(--ember-deep); border-bottom: 1px solid var(--ember);
+  cursor: default;
 }
+
+.sheet-centre { margin: 14px 20px; width: calc(100% - 40px); }
 
 .view-toggle { display: flex; border-bottom: 1px solid var(--rule); background: var(--paper); }
 .view-toggle button {

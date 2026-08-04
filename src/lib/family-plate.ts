@@ -245,6 +245,45 @@ export function plateCandidates(tree: FamilyTree): PlateCandidate[] {
     }));
 }
 
+/**
+ * Which of a person's parents continues the line upward.
+ *
+ * NOT simply parentIds[0] — those are sorted by birth order within a sibling set,
+ * so Judy (sortOrder 1) outranks Tom (sortOrder 3) and the trail would follow the
+ * married-in parent and dead-end immediately. Prefer a parent who has parents of
+ * their own, then a founder, and only then fall back to the first.
+ */
+function bloodParent(tree: FamilyTree, id: string): string | undefined {
+  const parentIds = tree.people[id]?.parentIds ?? [];
+  if (!parentIds.length) return undefined;
+
+  const withAncestors = parentIds.find((pid) => (tree.people[pid]?.parentIds.length ?? 0) > 0);
+  if (withAncestors) return withAncestors;
+
+  const founder = parentIds.find((pid) => tree.people[pid]?.isFounder);
+  return founder ?? parentIds[0];
+}
+
+/**
+ * The blood line from the top of the tree down to `id`, oldest first.
+ *
+ * This is the plate's navigation: walking back up it widens the view out, and it
+ * doubles as a statement of where you are standing.
+ */
+export function ancestorPath(tree: FamilyTree, id: string): string[] {
+  const path: string[] = [];
+  const seen = new Set<string>();
+  let current: string | undefined = id;
+
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    path.push(current);
+    current = bloodParent(tree, current);
+  }
+
+  return path.reverse();
+}
+
 /** The default centre: a founder if one exists, else the shallowest person with children. */
 export function defaultPlateRoot(tree: FamilyTree): string | null {
   const candidates = plateCandidates(tree);

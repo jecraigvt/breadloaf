@@ -51,24 +51,32 @@ type TextTile = {
   href: string;
 };
 
+// Bucky leads the index — he is the way most things get done now (asking, filing,
+// logging), so he takes section I and the top-left tile.
+const HUB_LEAD: TextTile = {
+  lbl: "AI · I",
+  big: <><em>Bucky</em><br/>Dragon</>,
+  sub: "Ask · act · file documents",
+  href: "/assistant",
+};
+
 const HUB_PHOTO: PhotoTile[] = [
-  { no: "I",    fig: "FIG. 01", name: <>The <em>Calendar</em></>, sub: "Visits, arrivals, departures",  photo: "/photos/sunset-deck.jpg",         href: "/calendar" },
-  { no: "II",   fig: "FIG. 02", name: <>The <em>Rooms</em></>,    sub: "Who sleeps where",              photo: "/photos/house-interior.jpg",      href: "/stays" },
-  { no: "III",  fig: "FIG. 03", name: <>Supplies</>,              sub: "Pantry & shopping list",        photo: "/photos/barn-exterior.jpg",       href: "/grocery" },
-  { no: "IV",   fig: "FIG. 04", name: <>The <em>Dinners</em></>,  sub: "Who's cooking tonight",         photo: "/photos/family-dinner.jpg",       href: "/dinners" },
-  { no: "V",    fig: "FIG. 05", name: <>Local Guide</>,           sub: "Swims, hikes, restaurants",     photo: "/photos/swimming-hole.jpg",       href: "/guide" },
-  { no: "VI",   fig: "FIG. 06", name: <>The <em>Weather</em></>,  sub: "Forecast on the hill",          photo: "/photos/winter-mountains.jpg",    href: "/weather" },
-  { no: "VII",  fig: "FIG. 07", name: <>Finances</>,              sub: "S-Corp, expenses, splits",      photo: "/photos/hero-drone-landscape.jpg", href: "/expenses" },
-  { no: "VIII", fig: "FIG. 08", name: <>The <em>Album</em></>,    sub: "847 photos · iCloud",           photo: "/photos/lawn-games.jpg",          href: ICLOUD_ALBUM, external: true },
-  { no: "IX",   fig: "FIG. 09", name: <>Checklists</>,            sub: "Opening & closing",             photo: "/photos/summer-meadow.jpg",       href: "/checklists" },
+  { no: "II",   fig: "FIG. 01", name: <>The <em>Calendar</em></>, sub: "Visits, arrivals, departures",  photo: "/photos/sunset-deck.jpg",         href: "/calendar" },
+  { no: "III",  fig: "FIG. 02", name: <>The <em>Rooms</em></>,    sub: "Who sleeps where",              photo: "/photos/house-interior.jpg",      href: "/stays" },
+  { no: "IV",   fig: "FIG. 03", name: <>Supplies</>,              sub: "Pantry & shopping list",        photo: "/photos/barn-exterior.jpg",       href: "/grocery" },
+  { no: "V",    fig: "FIG. 04", name: <>The <em>Dinners</em></>,  sub: "Who's cooking tonight",         photo: "/photos/family-dinner.jpg",       href: "/dinners" },
+  { no: "VI",   fig: "FIG. 05", name: <>Local Guide</>,           sub: "Swims, hikes, restaurants",     photo: "/photos/swimming-hole.jpg",       href: "/guide" },
+  { no: "VII",  fig: "FIG. 06", name: <>The <em>Weather</em></>,  sub: "Forecast on the hill",          photo: "/photos/winter-mountains.jpg",    href: "/weather" },
+  { no: "VIII", fig: "FIG. 07", name: <>Finances</>,              sub: "S-Corp, expenses, splits",      photo: "/photos/hero-drone-landscape.jpg", href: "/expenses" },
+  { no: "IX",   fig: "FIG. 08", name: <>The <em>Album</em></>,    sub: "847 photos · iCloud",           photo: "/photos/lawn-games.jpg",          href: ICLOUD_ALBUM, external: true },
+  { no: "X",    fig: "FIG. 09", name: <>Checklists</>,            sub: "Opening & closing",             photo: "/photos/summer-meadow.jpg",       href: "/checklists" },
 ];
 
 const HUB_TEXT: TextTile[] = [
-  { lbl: "AI · X", big: <><em>Bucky</em><br/>Dragon</>,           sub: "Ask · act · file documents", href: "/assistant" },
-  { lbl: "XI",     big: <>The <em>Family</em></>,                 sub: "Directory, by branch",   href: "/family" },
-  { lbl: "XII",    big: <>Emergency</>,                           sub: "Contacts · tap to call", href: "/emergency" },
-  { lbl: "XIII",   big: <>The <em>Archive</em></>,                sub: "Documents · auto-filed", href: "/documents" },
-  { lbl: "XIV", big: <>Corporation<br/><em>Accounts</em></>, sub: "Utilities and access", href: "/accounts" },
+  { lbl: "XI",   big: <>The <em>Family</em></>,              sub: "The plate · tap to claim", href: "/family" },
+  { lbl: "XII",  big: <>Emergency</>,                        sub: "Contacts · tap to call",   href: "/emergency" },
+  { lbl: "XIII", big: <>The <em>Archive</em></>,             sub: "Documents · auto-filed",   href: "/documents" },
+  { lbl: "XIV",  big: <>Corporation<br/><em>Accounts</em></>, sub: "Utilities and access",    href: "/accounts" },
 ];
 
 const PHOTO_STRIP = [
@@ -202,10 +210,28 @@ export default async function HomePage() {
       {/* Index / hub */}
       <div className="section-head">
         <div className="lt">The <em>Hub</em></div>
-        <div className="rt">Index · Sections I – XIII</div>
+        <div className="rt">Index · Sections I – XIV</div>
       </div>
 
       <div className="tiles">
+        <Link href={HUB_LEAD.href} className="tile-text tile-lead">
+          <div className="lbl">Sec. {HUB_LEAD.lbl}</div>
+          <div>
+            <div className="big">{HUB_LEAD.big}</div>
+            <div
+              style={{
+                marginTop: 6,
+                fontFamily: "var(--mono)",
+                fontSize: 10,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: "var(--muted)",
+              }}
+            >
+              {HUB_LEAD.sub}
+            </div>
+          </div>
+        </Link>
         {HUB_PHOTO.map((t) => (
           <TileLink key={t.no} tile={t} />
         ))}

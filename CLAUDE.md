@@ -85,10 +85,20 @@ The relationship graph is the source of truth; `FamilyMember.branch` is a derive
   drops the redundant one, and the rule is asymmetric on purpose — only an earlier unit may
   absorb a later one, or both halves eliminate each other.
 
-## The plate (`/family` → "The plate")
+## The plate — the only `/family` view
 A circular descent chart: generations as growth rings, children nested inside their own
 parent's slice of arc. Layout lives in `src/lib/family-plate.ts`, drawing in
-`src/components/family/family-plate.tsx`. Three rules carry the meaning:
+`src/components/family/family-plate.tsx`. The scrolling roster it replaced was removed
+July 2026 — everyone stays reachable because the person sheet lists parents and children
+as links, and the trail re-centres.
+
+**Navigation is spatial, not a form control.** The `.plate-trail` above the plate is the
+blood line down to whoever is centred; tapping back up it widens the view. Tapping a name
+on the plate opens the person sheet, which offers "Centre the plate on X" for going down.
+`ancestorPath()` picks the blood parent at each step — NOT `parentIds[0]`, which is sorted
+by birth order and would follow the married-in parent (Judy outranks Tom) and dead-end.
+
+Three rules carry the meaning:
 
 - **The viewer picks the centre.** `isFounder` is an honour flagged on Bill and Lois, never
   a consequence of being centred — otherwise adding a generation above them would silently
@@ -223,7 +233,7 @@ src/lib/
 - API routes follow REST pattern: `route.ts` for GET/POST, `[id]/route.ts` for PATCH/DELETE
 - Store user's name in localStorage under key `breadloaf-username`
 - Icons from lucide-react, green-700 primary color, stone neutrals
-- Hub cards on homepage ordered by assumed frequency of use. Slimmed July 2026: Board, Maintenance, and Add Docs tiles removed (Board lives in bottom nav + homepage preview; maintenance logging and doc intake go through Bucky). Sections now I–XIII — renumber Roman numerals + FIG numbers if tiles change again.
+- Hub cards on homepage ordered by assumed frequency of use. Slimmed July 2026: Board, Maintenance, and Add Docs tiles removed (Board lives in bottom nav + homepage preview; maintenance logging and doc intake go through Bucky). **Bucky is section I and the top-left tile** (`HUB_LEAD` in `src/app/page.tsx`, styled `.tile-lead`) since he is the main way things get done. Sections now I–XIV — renumber Roman numerals if tiles change again; `FIG. NN` is a separate sequence over the photo tiles only.
 - Prisma models use cuid() for IDs, DateTime for timestamps
 - Google Calendar sync uses GoogleAuth (not JWT) — see `src/lib/google-calendar.ts`
 - Calendar sync runs on homepage, calendar page, stays page, and assistant message

@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import type { FamilyTree, TreePerson, TreeUnit } from "@/lib/family-tree";
-import { defaultPlateRoot, plateCandidates } from "@/lib/family-plate";
+import type { FamilyTree, TreePerson } from "@/lib/family-tree";
+import { ancestorPath, defaultPlateRoot } from "@/lib/family-plate";
 import { FamilyPlate } from "@/components/family/family-plate";
 
 interface ActorSummary {
@@ -23,9 +23,7 @@ interface TreeResponse {
 export default function FamilyPage() {
   const [data, setData] = useState<TreeResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeBranch, setActiveBranch] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [view, setView] = useState<"list" | "plate">("list");
   // Null until the tree loads; the default centre is a founder when one exists.
   const [plateRoot, setPlateRoot] = useState<string | null>(null);
 
@@ -42,30 +40,7 @@ export default function FamilyPage() {
   const tree = data?.tree;
   const actor = data?.actor ?? null;
 
-  const unitById = useMemo(() => {
-    const map = new Map<string, TreeUnit>();
-    for (const unit of tree?.units ?? []) map.set(unit.id, unit);
-    return map;
-  }, [tree]);
-
-  const unitOfMember = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const unit of tree?.units ?? []) {
-      for (const memberId of unit.memberIds) map.set(memberId, unit.id);
-    }
-    return map;
-  }, [tree]);
-
-  const visibleBranches = useMemo(() => {
-    if (!tree) return [];
-    return activeBranch
-      ? tree.branches.filter((branch) => branch.key === activeBranch)
-      : tree.branches;
-  }, [tree, activeBranch]);
-
   const peopleCount = tree ? Object.keys(tree.people).length : 0;
-
-  const centreOptions = useMemo(() => (tree ? plateCandidates(tree) : []), [tree]);
 
   useEffect(() => {
     if (tree && !plateRoot) setPlateRoot(defaultPlateRoot(tree));
@@ -76,9 +51,11 @@ export default function FamilyPage() {
     load();
   };
 
+  // "Find me" re-centres the plate on the signed-in member and opens their sheet.
   const jumpToMe = () => {
-    if (!actor) return;
-    setActiveBranch(null);
+    if (!actor || !tree) return;
+    const me = tree.people[actor.memberId];
+    if (me?.childIds.length) setPlateRoot(actor.memberId);
     setSelectedId(actor.memberId);
   };
 
@@ -153,125 +130,42 @@ export default function FamilyPage() {
         </div>
       </div>
 
-      {tree && (
-        <div className="view-toggle">
-          <button aria-pressed={view === "list"} onClick={() => setView("list")}>
-            The roster
-          </button>
-          <button aria-pressed={view === "plate"} onClick={() => setView("plate")}>
-            The plate
-          </button>
+      {/* Navigation, not a form control. The trail is the blood line down to
+          whoever is centred — tap back up it to widen out, tap a name on the plate
+          to go down. */}
+      {tree && plateRoot && (
+        <div className="plate-trail">
+          {ancestorPath(tree, plateRoot).map((id, index, all) => {
+            const person = tree.people[id];
+            if (!person) return null;
+            const isHere = index === all.length - 1;
+            return (
+              <span key={id} className="plate-trail-step">
+                {index > 0 && <span className="sep">›</span>}
+                <button
+                  className={isHere ? "here" : ""}
+                  aria-current={isHere ? "true" : undefined}
+                  onClick={() => setPlateRoot(id)}
+                >
+                  {person.displayName}
+                  {person.isFounder ? " ✦" : ""}
+                </button>
+              </span>
+            );
+          })}
         </div>
       )}
 
-      {tree && view === "plate" && centreOptions.length > 0 && (
-        <div className="plate-controls">
-          <label htmlFor="plate-centre">Centred on</label>
-          <select
-            id="plate-centre"
-            value={plateRoot ?? ""}
-            onChange={(event) => setPlateRoot(event.target.value)}
-          >
-            {centreOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {tree && view === "plate" && plateRoot && (
+      {tree && plateRoot && (
         <FamilyPlate tree={tree} rootId={plateRoot} onSelect={setSelectedId} />
       )}
 
-      {tree && view === "list" && tree.branches.length > 1 && (
-        <div className="tree-filters">
-          <button
-            className="tree-chip"
-            aria-pressed={activeBranch === null}
-            onClick={() => setActiveBranch(null)}
-          >
-            All
-          </button>
-          {tree.branches.map((branch) => (
-            <button
-              key={branch.key}
-              className="tree-chip"
-              aria-pressed={activeBranch === branch.key}
-              onClick={() => setActiveBranch(branch.key)}
-            >
-              {branch.label.replace(/'s family$/, "")}
-            </button>
-          ))}
-        </div>
-      )}
+      {loading && <div className="tree-empty">Drawing the family plate…</div>}
 
-      {loading ? (
-        <div className="tree-empty">Drawing the family plate…</div>
-      ) : view === "plate" ? null : !tree || tree.branches.length === 0 ? (
+      {!loading && tree && tree.branches.length === 0 && (
         <div className="tree-empty">
           No family recorded yet. Run the roster script to plant the tree.
         </div>
-      ) : (
-        <>
-          {/* Generations above the branch split. Shown without descending, since
-              their children each head a branch section below. */}
-          {activeBranch === null && tree.ancestorUnitIds.length > 0 && (
-            <section>
-              <div className="section-head">
-                <div className="lt">
-                  <em>Forebears</em>
-                </div>
-                <div className="rt">Where it starts</div>
-              </div>
-              <div className="branch-body">
-                {tree.ancestorUnitIds.map((unitId) => (
-                  <UnitNode
-                    key={unitId}
-                    unitId={unitId}
-                    unitById={unitById}
-                    unitOfMember={unitOfMember}
-                    people={tree.people}
-                    actorId={actor?.memberId ?? null}
-                    onSelect={setSelectedId}
-                    seen={new Set()}
-                    descend={false}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {visibleBranches.map((branch, index) => (
-          <section key={branch.key}>
-            <div className="section-head">
-              <div className="lt">
-                <em>{branch.label.replace(/'s family$/, "'s")}</em>
-              </div>
-              <div className="rt">
-                {
-                  Object.values(tree.people).filter(
-                    (person) => person.branch === branch.key
-                  ).length
-                }{" "}
-                people
-              </div>
-            </div>
-            <div className="branch-body">
-              <UnitNode
-                unitId={branch.rootUnitId}
-                unitById={unitById}
-                unitOfMember={unitOfMember}
-                people={tree.people}
-                actorId={actor?.memberId ?? null}
-                onSelect={setSelectedId}
-                seen={new Set()}
-              />
-            </div>
-          </section>
-          ))}
-        </>
       )}
 
       {selectedId && tree && (
@@ -286,150 +180,17 @@ export default function FamilyPage() {
             setSelectedId(null);
             load();
           }}
+          onCentre={
+            tree.people[selectedId]?.childIds.length
+              ? () => {
+                  setPlateRoot(selectedId);
+                  setSelectedId(null);
+                }
+              : undefined
+          }
         />
       )}
     </div>
-  );
-}
-
-/** One couple (or single person) plus everyone descended from them. */
-function UnitNode({
-  unitId,
-  unitById,
-  unitOfMember,
-  people,
-  actorId,
-  onSelect,
-  seen,
-  descend = true,
-}: {
-  unitId: string;
-  unitById: Map<string, TreeUnit>;
-  unitOfMember: Map<string, string>;
-  people: Record<string, TreePerson>;
-  actorId: string | null;
-  onSelect: (id: string) => void;
-  seen: Set<string>;
-  /** Forebears render without descending — their children head their own branches. */
-  descend?: boolean;
-}) {
-  const unit = unitById.get(unitId);
-  // Cycles would be malformed data, but a family tree must never hang the page.
-  if (!unit || seen.has(unitId)) return null;
-  const nextSeen = new Set(seen).add(unitId);
-
-  const [anchorId, ...partnerIds] = unit.memberIds;
-  const anchor = people[anchorId];
-  if (!anchor) return null;
-
-  const childUnitIds: string[] = [];
-  for (const childId of unit.childIds) {
-    const childUnitId = unitOfMember.get(childId);
-    if (childUnitId && !childUnitIds.includes(childUnitId)) childUnitIds.push(childUnitId);
-  }
-
-  return (
-    <div className="kin-unit">
-      <KinRow person={anchor} actorId={actorId} onSelect={onSelect} />
-
-      {partnerIds.map((partnerId) => {
-        const partner = people[partnerId];
-        if (!partner) return null;
-        return (
-          <div className="kin-partner" key={partnerId}>
-            <KinRow person={partner} actorId={actorId} onSelect={onSelect} prefix="married" />
-          </div>
-        );
-      })}
-
-      {/* Former partners are shown but never absorbed into the couple, so the
-          children of an earlier marriage stay attached to the right parent. */}
-      {unit.formerPartnerIds.map((formerId) => {
-        const former = people[formerId];
-        if (!former) return null;
-        return (
-          <div className="kin-partner kin-former" key={formerId}>
-            <KinRow
-              person={former}
-              actorId={actorId}
-              onSelect={onSelect}
-              prefix="previously"
-            />
-          </div>
-        );
-      })}
-
-      {descend && childUnitIds.length > 0 && (
-        <div className="kin-descend">
-          {childUnitIds.map((childUnitId) => (
-            <UnitNode
-              key={childUnitId}
-              unitId={childUnitId}
-              unitById={unitById}
-              unitOfMember={unitOfMember}
-              people={people}
-              actorId={actorId}
-              onSelect={onSelect}
-              seen={nextSeen}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function KinRow({
-  person,
-  actorId,
-  onSelect,
-  prefix,
-}: {
-  person: TreePerson;
-  actorId: string | null;
-  onSelect: (id: string) => void;
-  prefix?: string;
-}) {
-  const isYou = actorId === person.id;
-  const classes = [
-    "kin",
-    person.isClaimed ? "is-claimed" : "",
-    isYou ? "is-you" : "",
-    person.isMinor ? "is-minor" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  const sub = [
-    prefix,
-    person.maidenName && person.maidenName !== person.surname
-      ? `née ${person.maidenName}`
-      : null,
-    person.deceased ? "in memory" : null,
-    isYou ? "you" : null,
-    person.boardRole,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  return (
-    <button className={classes} onClick={() => onSelect(person.id)}>
-      <span className="face">
-        {person.photoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={person.photoUrl} alt="" />
-        ) : (
-          person.initials
-        )}
-      </span>
-      <span>
-        <span className="nm">
-          {person.displayName}
-          {person.surname ? ` ${person.surname}` : ""}
-        </span>
-        {sub && <span className="sub">{sub}</span>}
-      </span>
-    </button>
   );
 }
 
@@ -441,6 +202,7 @@ function PersonSheet({
   onClose,
   onSelect,
   onClaimed,
+  onCentre,
 }: {
   person: TreePerson | undefined;
   people: Record<string, TreePerson>;
@@ -449,6 +211,8 @@ function PersonSheet({
   onClose: () => void;
   onSelect: (id: string) => void;
   onClaimed: () => void;
+  /** Only supplied on the plate, and only for someone who has descendants. */
+  onCentre?: () => void;
 }) {
   const [claiming, setClaiming] = useState(false);
   const [pinRequired, setPinRequired] = useState(false);
@@ -501,6 +265,7 @@ function PersonSheet({
             </div>
             <div className="sub">
               {[
+                person.isFounder ? "founder" : null,
                 person.branch?.replace(/'s family$/, "'s side") ?? "Forebear",
                 person.deceased ? "in memory" : null,
                 person.isMinor ? "next generation" : null,
@@ -602,6 +367,12 @@ function PersonSheet({
         )}
         {signedIn && person.needsReview && (
           <div className="sheet-note">Needs confirming — {person.needsReview}</div>
+        )}
+
+        {onCentre && (
+          <button className="btn-quiet sheet-centre" onClick={onCentre}>
+            Centre the plate on {person.displayName}
+          </button>
         )}
 
         {error && <div className="sheet-error">{error}</div>}

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   MIN_BRANCH_DEGREES,
+  ancestorPath,
   branchSpans,
   buildDescentPlate,
   defaultPlateRoot,
@@ -195,6 +196,44 @@ test("depth limiting trims the outer rings and flags what was hidden", () => {
   // Re-centring reaches what depth limiting hid.
   const deeper = layoutPlate(t, "jeremy", { maxDepth: 2 });
   assert.ok(deeper.slots.map((s) => s.node.id).includes("jack"));
+});
+
+test("the ancestor path reads oldest first and is the plate's way back up", () => {
+  const t = tree();
+  assert.deepEqual(ancestorPath(t, "jack"), ["bill", "tom", "jeremy", "jack"]);
+  assert.deepEqual(ancestorPath(t, "riley"), ["bill", "sandy", "riley"]);
+  // A founder sits at the top of their own path with nothing above them.
+  assert.deepEqual(ancestorPath(t, "bill"), ["bill"]);
+});
+
+test("the ancestor path follows blood, not whichever parent sorts first", () => {
+  // Birth order puts the married-in parent first — Judy's sortOrder beats Tom's —
+  // so a naive parentIds[0] walk dead-ends on her instead of reaching the founders.
+  const t = tree();
+  t.people.jeremy = { ...t.people.jeremy, parentIds: ["judy", "tom"] };
+  t.people.riley = { ...t.people.riley, parentIds: ["kirsten", "sandy"] };
+
+  assert.deepEqual(ancestorPath(t, "jeremy"), ["bill", "tom", "jeremy"]);
+  assert.deepEqual(ancestorPath(t, "riley"), ["bill", "sandy", "riley"]);
+});
+
+test("with no blood signal the path prefers a founder", () => {
+  const t = tree();
+  // Neither of Tom's parents has parents; Bill and Lois are both founders, so the
+  // first founder wins rather than an arbitrary pick.
+  t.people.tom = { ...t.people.tom, parentIds: ["lois", "bill"] };
+  assert.equal(ancestorPath(t, "tom")[0], "lois");
+});
+
+test("the ancestor path survives a parent cycle", () => {
+  const people: Record<string, TreePerson> = {
+    a: person("a", { parentIds: ["b"] }),
+    b: person("b", { parentIds: ["a"] }),
+  };
+  const cyclic: FamilyTree = {
+    people, units: [], branches: [], ancestorUnitIds: [], generationCount: 1,
+  };
+  assert.deepEqual(ancestorPath(cyclic, "a"), ["b", "a"]);
 });
 
 test("a cycle in the data does not hang the layout", () => {
