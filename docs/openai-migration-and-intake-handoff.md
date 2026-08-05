@@ -350,6 +350,74 @@ remain.
 
 ---
 
+## Task 14 — Reprocess the documents the quota failure skipped
+
+**Depends on tasks 2, 3, and 4.** Do this immediately after the migration lands,
+before tasks 7–13.
+
+Eighteen documents are in the archive with a file on disk but no AI analysis —
+they were uploaded while the free-tier quota was rejecting calls. The files are
+safe (the "disk first, AI second" ordering did its job); only the enrichment is
+missing. Once the OpenAI path works, they can be run through it.
+
+### Finding them — the trap
+
+```
+total documents: 48
+aiSummary IS NULL:     13
+aiSummary = '':         5   ← a NULL check silently misses these
+falsy (either):        18   ← the real number
+```
+
+The five empty-string rows are `Breadloaf Cabin _ Important Phone Numbers.docx`,
+`Contact Information.xlsx`, `IMG_4951.jpeg`, `IMG_4952.jpeg`, and
+`Annex Improvements Proposal.pdf`. They have `aiExtractedText = ''` too. **Select
+on falsy, not null**, or a fifth of the backlog is skipped with no error.
+
+### Constraints
+
+**Do not overwrite human filing.** 11 of the 18 already have a category a family
+member assigned by hand after Bucky failed. Backfill `aiSummary`,
+`aiExtractedText`, and `tags`; set `categoryId` **only if it is currently null**.
+Overwriting Jim's manual filing with a fresh AI guess is a regression, not a fix.
+
+**One file exceeds the AI size limit.** `Bestor_Photos_170.pdf` is 52.4MB against
+`AI_SIZE_LIMIT` of 15MB (`file-document.ts:22`). It was correctly skipped, not
+failed. Either route it through a page-subset pass or leave it and report it —
+do not raise the limit, the ceiling exists for a reason.
+
+**The files are on the Railway volume, not your laptop.** Uploads live on
+`breadloaf-app-volume` mounted at `/app/public/uploads`. `railway run` executes
+**locally** with production env vars injected — it can reach the database but
+**cannot see the volume**. Working out how to run this inside the container is
+the main engineering question in this task. Options worth weighing: a one-shot
+admin-gated API route, `railway ssh`, or a guarded startup script. Pick one and
+say why.
+
+**Check each file exists before processing it.** The volume was added in July
+2026; anything uploaded before that may have been wiped by a deploy while its
+database row survived. Report unrecoverable rows rather than crashing on the
+first missing file.
+
+### Behaviour
+
+- **Update in place. Never create a new `Document` row.** Do not route through
+  the create path in `fileDocumentFromBuffer`; reuse the analysis functions only.
+- Re-index each updated document (`indexDocument`) so the new summary and text
+  become searchable.
+- Close any open `archive` `BuckyQuestion` whose document now has both a summary
+  and a category, reusing the logic from `ai.ts:1041–1090`.
+- Make it **idempotent and resumable** — it will be interrupted. Skip anything
+  already enriched so a re-run is safe.
+- Log one line per document: enriched, skipped-oversize, file-missing, or failed.
+
+**Done when:** the falsy-`aiSummary` count is 0 (or every remainder is explained
+by a missing file or the size limit), no category a human set has changed, and
+asking Bucky about the contents of one of the Jul 22 photos returns something
+real.
+
+---
+
 # Workstream B — intake intelligence (tasks 7–12)
 
 ## Task 7 — Close archive questions filed from the Documents page
