@@ -4,6 +4,7 @@ import {
   filterSemanticCandidates,
   filterKeywordCandidates,
   fuseSearchResults,
+  rankHybridSearchCandidates,
   splitContentIntoChunks,
   tokenizeSearchQuery,
   type SearchResult,
@@ -77,6 +78,33 @@ test("uncorroborated semantic noise must stand out from its runner-up", () => {
       result("fifth", 0.22),
     ], false).map((entry) => entry.sourceId),
     ["clear-semantic-match"]
+  );
+});
+
+test("retrieval guards can be evaluated against the same raw candidates", () => {
+  const candidates = {
+    semantic: [
+      result("target", 0.3),
+      result("runner-up", 0.27),
+      result("third", 0.26),
+      result("fourth", 0.25),
+      result("fifth", 0.24),
+    ],
+    keyword: [],
+  };
+  assert.deepEqual(
+    rankHybridSearchCandidates(candidates, 3, {
+      relativeSemanticFloor: 0.72,
+      uncorroboratedTopSpread: 1.2,
+    }).map((entry) => entry.sourceId),
+    ["target", "runner-up", "third"]
+  );
+  assert.deepEqual(
+    rankHybridSearchCandidates(candidates, 3, {
+      relativeSemanticFloor: 0.72,
+      uncorroboratedTopSpread: 1.3,
+    }),
+    []
   );
 });
 

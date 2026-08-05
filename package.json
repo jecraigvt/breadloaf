@@ -15,6 +15,7 @@
     "archive:verify:checksums": "npx tsx scripts/verify-archive.ts",
     "archive:verify:roundtrip": "npx tsx scripts/verify-archive-retrieval.ts",
     "archive:verify:golden": "npx tsx scripts/verify-archive-golden.ts",
+    "archive:tune:guards": "npx tsx scripts/tune-archive-retrieval-guards.ts",
     "archive:retitle": "npx tsx scripts/retitle-documents.ts",
     "memory:reindex": "npx tsx scripts/re-embed.ts",
     "postinstall": "npx prisma generate"

@@ -158,15 +158,27 @@ export function fuseSearchResults(
 
 const SEMANTIC_CANDIDATES = 40;
 const KEYWORD_CANDIDATES = 60;
-// Dimensionless, query-relative gates measured against the live 65-chunk index
-// on 2026-08-05. A 0.72 top-relative floor kept the five known-good rankings.
-// With no lexical corroboration, the weakest known-good query had a 1.26x
-// top-to-fifth spread while "purple monkey dishwasher" had 1.17x, hence 1.25.
+// Dimensionless, query-relative gates measured as a 35-pair grid against the
+// live archive on 2026-08-05. Floor 0.70 / spread 1.20 tied for the best pair
+// (78% round-trip, 92% golden) while all four counted controls returned nothing.
+// Spreads of 1.15 and 1.18 admitted false-positive context for every control.
 // Keyword evidence must explain at least half of the query's IDF weight so one
 // stray real word in a nonsense query cannot admit the other semantic noise.
-const RELATIVE_SEMANTIC_FLOOR = 0.72;
-const UNCORROBORATED_TOP_SPREAD = 1.25;
+export interface RetrievalGuards {
+  relativeSemanticFloor: number;
+  uncorroboratedTopSpread: number;
+}
+
+export const DEFAULT_RETRIEVAL_GUARDS: RetrievalGuards = {
+  relativeSemanticFloor: 0.7,
+  uncorroboratedTopSpread: 1.2,
+};
 const KEYWORD_QUERY_COVERAGE = 0.5;
+
+export interface HybridSearchCandidates {
+  semantic: SearchResult[];
+  keyword: SearchResult[];
+}
 
 interface DatabaseSearchResult extends Omit<SearchResult, "score"> {
   score: number | string;
@@ -183,7 +195,8 @@ function normalizeDatabaseResults(results: DatabaseSearchResult[]): SearchResult
 // context while preserving strong semantic-only matches.
 export function filterSemanticCandidates(
   candidates: SearchResult[],
-  hasKeywordEvidence: boolean
+  hasKeywordEvidence: boolean,
+  guards: RetrievalGuards = DEFAULT_RETRIEVAL_GUARDS
 ): SearchResult[] {
   if (candidates.length === 0) return [];
   const topScore = candidates[0].score;
@@ -192,11 +205,13 @@ export function filterSemanticCandidates(
   if (
     !hasKeywordEvidence &&
     comparisonScore > 0 &&
-    topScore / comparisonScore < UNCORROBORATED_TOP_SPREAD
+    topScore / comparisonScore < guards.uncorroboratedTopSpread
   ) {
     return [];
   }
-  return candidates.filter((candidate) => candidate.score >= topScore * RELATIVE_SEMANTIC_FLOOR);
+  return candidates.filter(
+    (candidate) => candidate.score >= topScore * guards.relativeSemanticFloor
+  );
 }
 
 export function filterKeywordCandidates(candidates: SearchResult[]): SearchResult[] {
@@ -286,11 +301,10 @@ async function semanticSearchCandidates(
   return normalizeDatabaseResults(rows);
 }
 
-export async function hybridSearch(
+export async function getHybridSearchCandidates(
   query: string,
-  limit = 12,
   sourceTypes?: string[]
-): Promise<SearchResult[]> {
+): Promise<HybridSearchCandidates> {
   const terms = tokenizeSearchQuery(query);
   const [queryVector, keywordCandidates] = await Promise.all([
     process.env.OPENAI_API_KEY
@@ -301,19 +315,41 @@ export async function hybridSearch(
       : Promise.resolve(null),
     keywordSearch(terms, sourceTypes),
   ]);
-  const keyword = filterKeywordCandidates(keywordCandidates);
 
   let semantic: SearchResult[] = [];
   if (queryVector) {
     try {
-      const candidates = await semanticSearchCandidates(queryVector, sourceTypes);
-      semantic = filterSemanticCandidates(candidates, keyword.length > 0);
+      semantic = await semanticSearchCandidates(queryVector, sourceTypes);
     } catch (error) {
       console.error("[Embedding] Semantic query failed; using keyword retrieval:", error);
     }
   }
 
+  return { semantic, keyword: keywordCandidates };
+}
+
+export function rankHybridSearchCandidates(
+  candidates: HybridSearchCandidates,
+  limit: number,
+  guards: RetrievalGuards = DEFAULT_RETRIEVAL_GUARDS
+): SearchResult[] {
+  const keyword = filterKeywordCandidates(candidates.keyword);
+  const semantic = filterSemanticCandidates(
+    candidates.semantic,
+    keyword.length > 0,
+    guards
+  );
   return fuseSearchResults(semantic, keyword).slice(0, limit);
+}
+
+export async function hybridSearch(
+  query: string,
+  limit = 12,
+  sourceTypes?: string[]
+): Promise<SearchResult[]> {
+  const candidates = await getHybridSearchCandidates(query, sourceTypes);
+
+  return rankHybridSearchCandidates(candidates, limit);
 }
 
 export async function semanticSearch(
