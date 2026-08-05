@@ -1,6 +1,6 @@
 import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
-import { MODELS } from "@/lib/ai";
+import { MODELS } from "@/lib/ai-models";
 import { getOpenAIClient, withRetry } from "@/lib/openai-client";
 import { distinctiveTitleWords, leakedTitleWords } from "@/lib/archive-verification";
 

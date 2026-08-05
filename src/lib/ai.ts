@@ -20,16 +20,12 @@ import {
 import { resolveDocumentTitle } from "@/lib/document-title";
 import { parseToolArguments } from "@/lib/openai-json";
 import { getOpenAIClient, withRetry } from "@/lib/openai-client";
+import { MODELS } from "@/lib/ai-models";
+import { distillRetrievalQueries } from "@/lib/bucky-retrieval-query";
+
+export { MODELS } from "@/lib/ai-models";
 
 // ─── Model Routing ─────────────────────────────────────────────
-// Keep provider model IDs centralized so routing, analysis, transcription,
-// and embeddings cannot drift onto different model generations.
-export const MODELS = {
-  flash: "gpt-5.6-luna",
-  pro: "gpt-5.6-terra",
-  embedding: "text-embedding-3-small",
-  transcription: "gpt-4o-mini-transcribe",
-} as const;
 
 // ─── Embedding Functions ───────────────────────────────────────
 export interface CategoryOption {
@@ -1423,7 +1419,8 @@ export async function chatWithAssistant(
 ): Promise<string> {
   const lastUserMessage = messages.filter((m) => m.role === "user").pop();
   if (!lastUserMessage) return "What would you like help with?";
-  const context = await buildBuckyContext(lastUserMessage.content);
+  const retrievalQueries = await distillRetrievalQueries(lastUserMessage.content);
+  const context = await buildBuckyContext(lastUserMessage.content, retrievalQueries);
 
   const selectedModel = MODELS[selectAssistantModelTier(lastUserMessage.content)];
 

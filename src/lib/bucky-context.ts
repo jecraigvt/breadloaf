@@ -50,7 +50,35 @@ function matchedChunks(results: SearchResult[], sourceType: string, sourceId: st
     .map((result) => result.content.slice(0, 2200));
 }
 
-export async function buildBuckyContext(query: string): Promise<BuckyContext> {
+function resultKey(result: SearchResult): string {
+  return `${result.sourceType}:${result.sourceId}:${result.chunkIndex}`;
+}
+
+export function mergeRetrievedKnowledge(
+  resultSets: SearchResult[][],
+  limit = 18
+): SearchResult[] {
+  const merged = new Map<string, { result: SearchResult; reciprocalRank: number }>();
+  for (const results of resultSets) {
+    results.forEach((result, rank) => {
+      const key = resultKey(result);
+      const existing = merged.get(key);
+      merged.set(key, {
+        result: existing?.result || result,
+        reciprocalRank: (existing?.reciprocalRank || 0) + 1 / (60 + rank + 1),
+      });
+    });
+  }
+  return Array.from(merged.values())
+    .map(({ result, reciprocalRank }) => ({ ...result, score: reciprocalRank }))
+    .sort((left, right) => right.score - left.score)
+    .slice(0, limit);
+}
+
+export async function buildBuckyContext(
+  query: string,
+  retrievalQueries: string[] = [query]
+): Promise<BuckyContext> {
   const now = new Date();
   const stayWindowEnd = new Date(now);
   stayWindowEnd.setDate(stayWindowEnd.getDate() + 120);
@@ -128,7 +156,11 @@ export async function buildBuckyContext(query: string): Promise<BuckyContext> {
       prisma.maintenanceRecord.count(),
       prisma.expense.count(),
     ]),
-    hybridSearch(query, 18, KNOWLEDGE_SOURCE_TYPES),
+    Promise.all(
+      (retrievalQueries.length ? retrievalQueries : [query]).map((retrievalQuery) =>
+        hybridSearch(retrievalQuery, 18, KNOWLEDGE_SOURCE_TYPES)
+      )
+    ).then((resultSets) => mergeRetrievedKnowledge(resultSets, 18)),
     wantsPantry
       ? prisma.pantryItem.findMany({ orderBy: [{ category: "asc" }, { name: "asc" }], take: 41 })
       : Promise.resolve([]),
