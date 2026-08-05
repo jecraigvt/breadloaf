@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { chatWithAssistant } from "@/lib/ai";
 import { recordBuckyLedgerEntry } from "@/lib/bucky-ledger";
 import { getAuthCookieName, getFamilyFromAuthToken } from "@/lib/auth";
+import { indexMemory } from "@/lib/embeddings";
+import { promoteQuestionAnswerToMemory } from "@/lib/question-memory";
 
 export async function PATCH(
   request: NextRequest,
@@ -35,10 +37,25 @@ export async function PATCH(
   const answer = String(body.answer || "").trim();
   if (!answer) return NextResponse.json({ error: "Answer required" }, { status: 400 });
 
-  const question = await prisma.buckyQuestion.update({
-    where: { id },
-    data: { status: "answered", answer, answeredBy, answeredAt: new Date() },
+  const { question, promoted } = await prisma.$transaction(async (tx) => {
+    const question = await tx.buckyQuestion.update({
+      where: { id },
+      data: { status: "answered", answer, answeredBy, answeredAt: new Date() },
+    });
+    const promoted = await promoteQuestionAnswerToMemory(tx, { question, answer, answeredBy });
+    return { question, promoted };
   });
+
+  let memoryIndexed = true;
+  try {
+    await indexMemory(promoted.memory.id, { throwOnError: true });
+    if (promoted.previousMemoryId) {
+      await indexMemory(promoted.previousMemoryId, { throwOnError: true });
+    }
+  } catch (error) {
+    memoryIndexed = false;
+    console.error("Question answer memory indexing failed:", error);
+  }
 
   await recordBuckyLedgerEntry({
     actionType: "answer_question",
@@ -50,17 +67,17 @@ export async function PATCH(
     sourceType: question.sourceType || undefined,
     sourceId: question.sourceId || undefined,
     sourceLabel: question.sourceLabel || undefined,
-    afterState: { answer, answeredBy },
+    afterState: { answer, answeredBy, memoryId: promoted.memory.id },
   });
 
   let buckyResponse: string | null = null;
-  let processingError = false;
+  let processingError = !memoryIndexed;
   try {
     buckyResponse = await chatWithAssistant(
       [
         {
           role: "user",
-          content: `[ANSWER TO YOUR ASYNCHRONOUS FOLLOW-UP]\nQuestion: ${question.question}\nContext: ${question.context || "None"}\nAnswer from ${answeredBy}: ${answer}\nSource: ${question.sourceLabel || question.sourceType || "Bucky follow-up"}${question.sourceType && question.sourceId ? `\nRelated ${question.sourceType} id: ${question.sourceId}` : ""}\n\nProcess this answer now. Apply any clear, low-risk update using your tools — for a document filing question, call set_document_category with the related document id and the category the answer indicates. If it remains ambiguous or would merge/delete records, create a new focused question instead.`,
+          content: `[ANSWER TO YOUR ASYNCHRONOUS FOLLOW-UP]\nQuestion: ${question.question}\nContext: ${question.context || "None"}\nAnswer from ${answeredBy}: ${answer}\nSource: ${question.sourceLabel || question.sourceType || "Bucky follow-up"}${question.sourceType && question.sourceId ? `\nRelated ${question.sourceType} id: ${question.sourceId}` : ""}\n\nThe raw human answer is already preserved as a provenance-linked memory; do not call save_memory merely to duplicate it. Process this answer now. Apply any clear, low-risk structured update using your tools — for a document filing question, call set_document_category with the related document id and the category the answer indicates. If it remains ambiguous or would merge/delete records, create a new focused question instead.`,
         },
       ],
       answeredBy
@@ -73,6 +90,8 @@ export async function PATCH(
   return NextResponse.json({
     question,
     buckyResponse,
+    memoryId: promoted.memory.id,
+    memoryIndexed,
     processed: !processingError,
   });
 }

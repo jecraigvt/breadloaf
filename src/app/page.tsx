@@ -63,20 +63,11 @@ const HUB_LEAD: TextTile = {
 const HUB_PHOTO: PhotoTile[] = [
   { no: "II",   fig: "FIG. 01", name: <>The <em>Calendar</em></>, sub: "Visits, arrivals, departures",  photo: "/photos/sunset-deck.jpg",         href: "/calendar" },
   { no: "III",  fig: "FIG. 02", name: <>The <em>Rooms</em></>,    sub: "Who sleeps where",              photo: "/photos/house-interior.jpg",      href: "/stays" },
-  { no: "IV",   fig: "FIG. 03", name: <>Supplies</>,              sub: "Pantry & shopping list",        photo: "/photos/barn-exterior.jpg",       href: "/grocery" },
-  { no: "V",    fig: "FIG. 04", name: <>The <em>Dinners</em></>,  sub: "Who's cooking tonight",         photo: "/photos/family-dinner.jpg",       href: "/dinners" },
-  { no: "VI",   fig: "FIG. 05", name: <>Local Guide</>,           sub: "Swims, hikes, restaurants",     photo: "/photos/swimming-hole.jpg",       href: "/guide" },
-  { no: "VII",  fig: "FIG. 06", name: <>The <em>Weather</em></>,  sub: "Forecast on the hill",          photo: "/photos/winter-mountains.jpg",    href: "/weather" },
-  { no: "VIII", fig: "FIG. 07", name: <>Finances</>,              sub: "S-Corp, expenses, splits",      photo: "/photos/hero-drone-landscape.jpg", href: "/expenses" },
-  { no: "IX",   fig: "FIG. 08", name: <>The <em>Album</em></>,    sub: "847 photos · iCloud",           photo: "/photos/lawn-games.jpg",          href: ICLOUD_ALBUM, external: true },
-  { no: "X",    fig: "FIG. 09", name: <>Checklists</>,            sub: "Opening & closing",             photo: "/photos/summer-meadow.jpg",       href: "/checklists" },
 ];
 
 const HUB_TEXT: TextTile[] = [
-  { lbl: "XI",   big: <>The <em>Family</em></>,              sub: "The plate · tap to claim", href: "/family" },
-  { lbl: "XII",  big: <>Emergency</>,                        sub: "Contacts · tap to call",   href: "/emergency" },
-  { lbl: "XIII", big: <>The <em>Archive</em></>,             sub: "Documents · auto-filed",   href: "/documents" },
-  { lbl: "XIV",  big: <>Corporation<br/><em>Accounts</em></>, sub: "Utilities and access",    href: "/accounts" },
+  { lbl: "IV", big: <>The <em>Family</em></>, sub: "The plate · tap to claim", href: "/family" },
+  { lbl: "V", big: <>All <em>Tools</em></>, sub: "Everything else on the hill", href: "/more" },
 ];
 
 const PHOTO_STRIP = [
@@ -210,10 +201,10 @@ export default async function HomePage() {
       {/* Index / hub */}
       <div className="section-head">
         <div className="lt">The <em>Hub</em></div>
-        <div className="rt">Index · Sections I – XIV</div>
+        <div className="rt">Index · Sections I – V</div>
       </div>
 
-      <div className="tiles">
+      <div className="tiles tiles-hub">
         <Link href={HUB_LEAD.href} className="tile-text tile-lead">
           <div className="lbl">Sec. {HUB_LEAD.lbl}</div>
           <div>
@@ -236,7 +227,7 @@ export default async function HomePage() {
           <TileLink key={t.no} tile={t} />
         ))}
         {HUB_TEXT.map((t) => (
-          <Link key={t.lbl} href={t.href} className="tile-text">
+          <Link key={t.lbl} href={t.href} className={`tile-text ${t.href === "/more" ? "tile-wide" : ""}`}>
             <div className="lbl">Sec. {t.lbl}</div>
             <div>
               <div className="big">{t.big}</div>

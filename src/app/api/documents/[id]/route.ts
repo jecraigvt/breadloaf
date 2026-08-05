@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthCookieName, getFamilyFromAuthToken } from "@/lib/auth";
+import { closeOpenArchiveQuestions } from "@/lib/archive-questions";
+import { getCurrentActor } from "@/lib/actor";
 import { indexDocument, removeFromIndex } from "@/lib/embeddings";
 
 export async function GET(
@@ -45,10 +47,34 @@ export async function PATCH(
     data.accessScope = body.accessScope;
   }
 
-  const document = await prisma.document.update({
-    where: { id },
-    data,
-    include: { category: true },
+  const actor = typeof data.categoryId === "string" && data.categoryId
+    ? await getCurrentActor(request)
+    : null;
+  const document = await prisma.$transaction(async (tx) => {
+    const existing = await tx.document.findUnique({
+      where: { id },
+      select: { categoryId: true },
+    });
+    if (!existing) throw new Error("Document not found");
+
+    const updated = await tx.document.update({
+      where: { id },
+      data,
+      include: { category: true },
+    });
+    if (
+      typeof data.categoryId === "string" &&
+      data.categoryId &&
+      data.categoryId !== existing.categoryId &&
+      updated.category
+    ) {
+      await closeOpenArchiveQuestions(tx, {
+        documentId: updated.id,
+        categoryName: updated.category.name,
+        answeredBy: actor?.displayName || "Family member",
+      });
+    }
+    return updated;
   });
   void indexDocument(document.id);
 
