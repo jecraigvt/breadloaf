@@ -782,6 +782,92 @@ client-supplied name.
 
 ---
 
+## Task 16 — Bucky could not find the ancestral photos
+
+A real failure, observed 2026-08-05. A family member asked:
+
+> "bucky, there are some amazing pictures that we've uploaded of people in our
+> ancestry, can you point me to any of these?"
+
+Bucky answered that it had no archive results loaded, then suggested looking
+under **Family History**, **Ancestry**, **Photographs**, or **Genealogy**.
+
+**The photos were in the archive.** `Bestor_Photos_170.pdf` — 52.4MB, 170
+images, filed under Photos. **None of those four categories exist.** The family
+member was sent hunting through folders that are not there, which teaches them
+the archive does not work.
+
+Three independent failures stacked. Fix all three.
+
+### 16a. The document has no content to match against
+
+Its entire indexed representation is one chunk:
+
+```
+"Document: Bestor Photos 170 Category: Photos"
+```
+
+Six words. At 52.4MB it exceeds `AI_SIZE_LIMIT` (15MB, `file-document.ts:22`),
+so it was never analyzed — no `aiSummary`, no `aiExtractedText` — and
+`indexDocument` had only a title to embed. Task 9 lists oversized-PDF handling
+as optional. This proves it is not.
+
+Do **not** raise the limit; a 52MB payload still cannot go inline. Instead
+sample the PDF — extract a spread of pages as images, analyze those, and build
+the summary and extracted text from the sample. For a 170-photo collection even
+ten sampled pages should yield era, subjects, and any legible names, which is
+the difference between six words and something retrievable.
+
+Then re-run the backfill so this document, and anything else stranded by the
+size gate, actually gets indexed.
+
+### 16b. Long conversational queries retrieve the wrong things
+
+`buildBuckyContext(lastUserMessage.content)` (`ai.ts:1417`) embeds the raw user
+message. Measured against the live index:
+
+| Query | Result |
+|---|---|
+| `"ancestry photos"` | ✅ Bestor Photos 170, top hit at 1.000 |
+| the full sentence above | ❌ *History of the Inheritance Section*, *Vision*, *Succession Clause* |
+| `"old family photographs"` | ❌ nothing |
+
+Retrieval works; the query does not. A hundred characters of conversational
+framing — "amazing", "we've uploaded", "point me to any of these" — drags the
+embedding toward inheritance and corporate documents. The right answer was
+reachable the whole time with two words.
+
+Distill the message into a search query before embedding it. A cheap
+`gpt-5.6-luna` call rewriting the turn into search terms is enough, and it can
+emit several queries for a multi-part question. Keep the raw message for the
+chat turn itself — only the retrieval query changes.
+
+### 16c. Bucky cannot name what is actually in the archive
+
+`knowledgeDirectory` (`bucky-context.ts:320`) is counts only:
+
+```
+- 48 family-access archive documents
+- N active long-term memories
+...
+```
+
+Bucky knows 48 documents exist but not one category name, so on a retrieval miss
+it invents plausible ones. That is the direct cause of the fictional
+**Genealogy** suggestion.
+
+Include the real category list with per-category counts — it is a handful of
+tokens and turns "try Genealogy" into "the archive has Photos (6), Corporate
+Filings (9), Meeting Minutes (…)". Also instruct Bucky explicitly: when
+retrieval returns nothing, say so and name the categories that exist. Never
+invent a category name.
+
+**Done when:** the original question returns `Bestor Photos 170`; that document
+has a real summary and extracted text; and asking Bucky for something genuinely
+absent produces a list of real categories rather than invented ones.
+
+---
+
 ## How this will be reviewed
 
 In rough priority order:
