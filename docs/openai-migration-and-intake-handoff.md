@@ -925,8 +925,68 @@ The answers are provably in those documents. The other three lose to
 near-duplicates — the 2025 board minutes lose to the 2024 minutes, the
 activities guide loses to the contact directory. See 17g.
 
-**Phase 3 — repair and prove.** 17e (re-analyze and re-embed everything), re-run
-both harnesses, report before-and-after. Then 17f (surface the numbers).
+**Phase 3 — repair and prove.** 17e (re-analyze and re-embed everything), 17h
+(stop the golden harness passing on empty documents), re-run both harnesses,
+report before-and-after. Then 17f (surface the numbers).
+
+### Phase 2 result — measured 2026-08-05
+
+```
+            baseline    after phase 2
+round-trip    74.0%   ->    78.0%
+golden        84.0%   ->    92.0%
+negative controls: all passing (gains were not bought by loosening)
+```
+
+Guards landed at `relativeSemanticFloor 0.70` / `uncorroboratedTopSpread 1.20`
+from a 35-pair grid. Two caveats phase 3 inherits:
+
+**The tuning shifted failures as well as removing them.** Two receipt questions
+that returned nothing now pass, while *Woods Cabin Committee Records* and the
+*2025 Annual Board Meeting Minutes* now return nothing where they previously
+ranked. Net positive, not a clean win — re-check after re-analysis rather than
+treating the guard values as settled.
+
+**Phase 2 repaired no data, by design.** All eight damaged documents are exactly
+as damaged as at baseline. `analysisState` is still `ok 40 / unsupported_type 5
+/ provider_error 2 / too_large 1`.
+
+### Phase 3 prediction — state it before running, so the result is falsifiable
+
+Eight of the eleven remaining round-trip failures and **both** remaining golden
+failures are the damaged documents. So:
+
+```
+round-trip   78.0%  ->  ~92-94%   (11 failures -> ~3)
+golden       92.0%  ->  100%      (2 failures -> 0)
+```
+
+If re-analysis completes and round-trip sits at 84%, it did not work properly —
+do not accept it because the script exited zero.
+
+Three round-trip failures will **survive** phase 3 because they are not content
+problems: *2025 Annex Goals* (a window-cost question returns furniture
+receipts), *Woods Cabin Committee Records*, and the *2025 board minutes*. Those
+are near-duplicate confusion and guard shape. Whether to chase them or accept
+~94% as the honest ceiling is a judgement call to make with the numbers in hand.
+
+## Task 17h — stop the golden harness passing on empty documents
+
+Found during the phase 2 review. `"what do the bylaws say about succession"`
+now **passes** — against a document whose entire indexed content is:
+
+```
+"Document: Breadloaf Hill Corporation Bylaws Category: Corporate Filings"
+```
+
+It matches the word *bylaws* in its own title. The harness counts it found;
+Bucky would surface it and have nothing to say. That is a hollow pass, and it
+means golden 92% currently reads better than the experience does.
+
+A golden check must assert the matched document **has real content** —
+`analysisState = "ok"` and meaningful analysis text — not merely that it ranked.
+Expect this to *lower* the golden number when first applied. That is the point:
+it is correcting a measurement error, not a regression.
 
 Re-analysis is deliberately last. Running it before the extraction gaps close
 would burn the whole archive through a pipeline that still cannot read `.doc`,
