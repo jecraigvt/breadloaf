@@ -868,6 +868,136 @@ absent produces a list of real categories rather than invented ones.
 
 ---
 
+# Workstream E — trust
+
+## Task 17 — Make the archive provably findable
+
+**Priority: highest.** Everything else is a feature; this is whether the system
+is worth using at all. A search that misses teaches people the site is a waste
+of time, and they do not come back to check whether it improved.
+
+### The audit that triggered this (2026-08-05)
+
+**8 of 48 documents — 17% — hold too little indexed text to be findable.** They
+are disproportionately the documents that matter most:
+
+```
+   0 chars  Bestor Photos 170                            (52.4MB PDF, the ancestral photos)
+  61 chars  BLH CORPORATION BY LAWS.doc
+  61 chars  HISTORY OF THE INHERITANCE SECTION 2013.doc
+  61 chars  proposed amendment to the succession clause.doc
+  61 chars  VISION.doc
+  61 chars  Instruction Letter to Brothers.doc
+  61 chars  Breadloaf Maintenance Log.docx
+  61 chars  Breadloaf Maintenance Schedule.docx
+```
+
+The bylaws. The succession clause. The vision document. The founding governance
+records of the family corporation, invisible.
+
+### Why nobody noticed for a month
+
+`src/app/api/categorize/route.ts` writes placeholder summaries on failure:
+
+```ts
+summary: "Document uploaded — categorize manually or ask Bucky about it"   // 61 chars
+summary: "File too large for AI analysis — categorize manually"
+```
+
+Those strings are **truthy**. Every "did analysis run?" check — including the
+audits run during this session — reported success. `document-title.ts:80` even
+carries a regex to recognise these placeholders after the fact, so the codebase
+already knows they are junk and works around them rather than preventing them.
+
+**Failure that looks identical to success is the actual defect.** Fix that first
+or every later fix is unverifiable.
+
+### 17a. Stop writing lies
+
+Never write a synthesized summary on failure. Leave `aiSummary` and
+`aiExtractedText` **null**, and record why in dedicated columns —
+`analysisState` (`ok` | `unsupported_type` | `too_large` | `provider_error`) and
+`analysisError`. Null is honest and queryable; a friendly sentence is neither.
+
+Delete both placeholder writes in `api/categorize/route.ts`. Once no placeholder
+can be written, the detection regex in `document-title.ts` becomes dead code for
+new rows — keep it only for historical ones, with a comment saying so.
+
+Note there are **two intake paths** — `lib/file-document.ts` (Bucky attachments,
+Mail Room) and `api/categorize/route.ts` (the `/upload` page). They behave
+differently. Converge them on one pipeline, or at minimum one failure contract.
+
+### 17b. Close the extraction gaps
+
+`isExtractableType()` accepts docx, xlsx, ODF, csv, txt. It rejects legacy
+`application/msword` and `application/vnd.ms-excel`, but the uploader **accepts
+those files anyway** — so they are stored and silently never read.
+
+Rule: **for every mime type the uploader accepts there must be either an
+extraction path or an explicit refusal at upload time.** Never accept a file you
+cannot read. Add legacy `.doc`/`.xls` support, and diagnose the two `.docx`
+files that should already have worked.
+
+Oversized PDFs are covered by task 16a.
+
+### 17c. Round-trip retrieval tests — the scalable check
+
+For every indexed document, derive a question from its own content, run
+`hybridSearch`, and assert the document appears in the top N. **A document that
+cannot be found by asking about its own subject is broken by definition.**
+
+This needs no hand-written fixtures, grows automatically with the archive, and
+turns "is retrieval healthy?" into a number. Run it as a script against
+production data — not in unit tests, which have no index.
+
+Report a pass rate and list every failure. Wire it into `npm run archive:verify`
+alongside the existing checksum check.
+
+### 17d. Golden questions — the "would Dad's question work?" check
+
+A hand-written set of ~25 real questions with expected documents, committed to
+the repo and run on demand. Seed it from questions that have actually failed:
+
+| Question | Must return |
+|---|---|
+| pictures of people in our ancestry | Bestor Photos 170 |
+| what do the bylaws say about succession | BLH Corporation By Laws |
+| what is our vision for the property | Breadloaf Hill Vision |
+| how does inheritance work here | History of the Inheritance Section |
+| when is the board meeting | 2025 Annual Board Meeting Minutes |
+| who mowed the meadow | Voice Memo Jul 31 |
+| the heater will not ignite | a heating/equipment document |
+| purple monkey dishwasher | **nothing** (control) |
+
+Include negative controls. A retrieval system that returns something for every
+query is not working — it is guessing, and confident guessing is what produced
+the fictional "Genealogy" category.
+
+Every future miss reported by a family member gets added here. The set only
+grows.
+
+### 17e. Re-analyze everything, then verify
+
+Once 17a and 17b land, re-run analysis across the whole archive — not just the
+rows that look broken, since the placeholder bug means "looks broken" was never
+reliable. Then re-embed, then run 17c and 17d.
+
+Success is **not** "the script completed." Success is the pass rates from 17c
+and 17d, reported as numbers, before and after.
+
+### 17f. Keep it monitored
+
+Surface the 17c pass rate and the count of `analysisState != "ok"` documents
+somewhere a human sees — the Documents page header or a Bucky answer. This was
+invisible for a month because nothing ever reported it.
+
+**Done when:** every document either has real indexed content or an explicit
+recorded reason it does not; the round-trip pass rate is reported and above a
+threshold you have chosen deliberately; all golden questions pass including the
+negative controls; and the ancestral-photos question works.
+
+---
+
 ## How this will be reviewed
 
 In rough priority order:
