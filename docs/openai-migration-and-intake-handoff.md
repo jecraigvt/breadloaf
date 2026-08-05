@@ -683,6 +683,105 @@ previously reachable has become unreachable.
 
 ---
 
+# Workstream D — identity
+
+## Task 15 — Ask who you are at the door
+
+Today, identity is claimed by finding `/family` and tapping your own face. That
+requires discovery, so almost nobody does it: **1 member has ever claimed, and
+there are 2 `FamilySession` rows** against 25 claimable adults. Attribution is
+effectively unpopulated.
+
+Instead: when a device is through the door but has no identity, ask once with a
+dropdown. Not a tile, not a face grid — a dropdown.
+
+### Do this first: set `AUTH_SECRET`
+
+`AUTH_SECRET` is unset, so `FAMILY_PINS` is silently acting as the HMAC key for
+three separate token systems:
+
+| Function | Secret chain | Signs |
+|---|---|---|
+| `getAuthSecret()` (auth.ts) | `AUTH_SECRET \|\| FAMILY_PINS` | door cookies |
+| `hashIdentityToken()` (actor.ts) | `AUTH_SECRET \|\| FAMILY_PINS \|\| "breadloaf"` | **identity sessions** |
+| `getCalendarFeedSecret()` (auth.ts) | `CALENDAR_FEED_SECRET \|\| FAMILY_PINS` | calendar feed URLs |
+
+So rotating the PINs would log everyone out (fine), **permanently orphan every
+`FamilySession`** — stored `tokenHash` values can never be re-derived, so the
+rows survive looking live but no token will ever match one — and break any
+subscribed calendar feeds. `FamilySession` is the claim audit trail, kept
+revoked-not-deleted on purpose, so that loss is not recoverable.
+
+Setting `AUTH_SECRET` to a random value achieves the goal a PIN reset was meant
+to achieve — everyone re-enters the door once, so everyone meets the new prompt
+— at far lower cost: they use **the PIN they already know**, no new numbers to
+distribute, and calendar feeds are untouched because they key off a different
+chain. Costs 2 sessions today; costs all 25 if deferred.
+
+```bash
+railway variables --set "AUTH_SECRET=$(openssl rand -base64 32)" --service breadloaf-app
+```
+
+**Do not rotate `FAMILY_PINS`.**
+
+### Trigger on state, not on the PIN-entry event
+
+Ask when **the door cookie is valid and there is no identity cookie**. Not "just
+submitted a PIN."
+
+This is the difference between the feature working and half-working. Door
+cookies last 30 days; if the prompt only fires on PIN submission, every already-
+logged-in device skips it until its cookie lapses. Triggering on state also means
+the feature does not depend on the `AUTH_SECRET` reset — that reset just makes it
+happen today rather than gradually.
+
+### The picker
+
+`getDoorFamily(request)` already returns the branch label from the door cookie,
+so the list can be pre-filtered before it is rendered:
+
+| Branch | Claimable adults |
+|---|---|
+| Sandy's | 4 |
+| Tom's | 6 |
+| Jim's | 6 |
+| Greg's | 8 |
+| **All** | **25** |
+
+Show the branch (4–8 names), with a "someone else" option that expands to all
+25 — families may not use their own PIN.
+
+Apply the same exclusions `/family` already applies: `isMinor` and `deceased`
+cannot be claimed. Reuse the helpers in `family-tree.ts` rather than
+re-implementing the filter.
+
+`createIdentitySession()` already accepts `claimedVia: "tap" | "pin"`, and
+`"pin"` is currently unused — it was added for exactly this. Use it, so the
+audit trail distinguishes claiming at the door from tapping a face in the tree.
+
+### Rules
+
+- **Skippable, and the skip must stick.** A prompt that returns every visit
+  becomes a nag, and people will pick *any* name to make it stop. That yields
+  confidently wrong attribution, which is worse than none: missing is
+  recoverable, wrong quietly corrupts a record meant to last decades.
+- **Never a gate.** `getCurrentActor()` returning `null` is a supported state —
+  its own docstring says callers decide whether that is fatal. Keep it that way.
+  The door is the only security boundary; identity is a convenience claim.
+- **Keep `/family` tap-to-claim.** It stops being the acquisition path and
+  becomes the "change who I am" path, which suits it better.
+- **Shared devices are the growing hazard.** A 365-day cookie plus real
+  attribution means everything done on the kitchen iPad is recorded as whoever
+  claimed it. Add a quiet "not you?" affordance in the chrome — not buried in a
+  settings page.
+
+**Done when:** a device with a door cookie and no identity is asked once; the
+answer sticks across sessions; skipping is remembered; attribution on a new
+bulletin post or Bucky action resolves through `getCurrentActor()` without any
+client-supplied name.
+
+---
+
 ## How this will be reviewed
 
 In rough priority order:
