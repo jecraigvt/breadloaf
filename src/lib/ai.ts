@@ -133,7 +133,8 @@ export async function processMediaFile(
   const categorization = await categorizeText(
     transcript,
     fileName || "media",
-    existingCategories
+    existingCategories,
+    { mediaKind: mimeType.startsWith("video/") ? "video" : "audio recording" }
   );
   return {
     ...categorization,
@@ -204,12 +205,45 @@ This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Gre
 
 // Categorize a document from extracted text (Word/Excel/CSV/TXT — types
 // Gemini can't read inline). Same contract as categorizeDocument.
+export interface CategorizeTextOptions {
+  // Set when the text is a transcript rather than a document. A recording's
+  // value is in the detail it captures, so the summary instruction and the
+  // extraction cues both change. Before the OpenAI migration these lived in
+  // processMediaFile's own prompt; splitting that into transcribe-then-
+  // categorize dropped them, which thinned board-meeting and walkthrough
+  // summaries down to the document prompt's "2-3 sentences".
+  mediaKind?: "audio recording" | "video";
+}
+
 export async function categorizeText(
   documentText: string,
   fileName: string,
-  existingCategories: CategoryOption[]
+  existingCategories: CategoryOption[],
+  options: CategorizeTextOptions = {}
 ): Promise<CategorizationResult> {
-  const prompt = `You are a document categorization assistant for the Breadloaf Hill family property archive in Vermont.
+  const { mediaKind } = options;
+
+  const intro = mediaKind
+    ? `You are processing a ${mediaKind} for the Craig family property archive at Breadloaf Hill, Vermont. The property is owned as an S-Corp by four Craig brothers (Tom, Jim, Sandy, Greg), with Ethan (Jim's son) now on the board.`
+    : `You are a document categorization assistant for the Breadloaf Hill family property archive in Vermont.`;
+
+  const summaryRule = mediaKind
+    ? `"summary": "comprehensive summary — capture ALL key facts, decisions, action items, dollar amounts, names mentioned, topics discussed. This is what the family assistant will reference, so be thorough",`
+    : `"summary": "2-3 sentence summary of the document content",`;
+
+  const sourceLabel = mediaKind
+    ? `Below is the transcript of an uploaded ${mediaKind} (file name: "${fileName}")`
+    : `Below is the text content extracted from an uploaded document (file name: "${fileName}")`;
+
+  const mediaGuidance = mediaKind
+    ? `
+
+For board meetings: capture all votes, motions, decisions, assignments, deadlines, and financial discussions.
+For property walkthroughs: note condition of structures, items needing attention, any damage or improvements.
+Be extremely thorough — extract every useful detail.`
+    : "";
+
+  const prompt = `${intro}
 
 Existing categories:
 ${describeCategories(existingCategories)}
@@ -218,12 +252,12 @@ ${NEW_CATEGORY_RULES}
 
 ${DOCUMENT_TITLE_RULES}
 
-Below is the text content extracted from an uploaded document (file name: "${fileName}"). Analyze it and return ONLY valid JSON (no markdown fences, no extra text) with these fields:
+${sourceLabel}. Analyze it and return ONLY valid JSON (no markdown fences, no extra text) with these fields:
 {
   "suggestedCategory": "exact name of an existing category, or \\"\\" if proposing a new one",
   "newCategoryProposal": null or {"name": "...", "description": "..."},
   "title": "descriptive title for this document",
-  "summary": "2-3 sentence summary of the document content",
+  ${summaryRule}
   "extractedText": "the key facts from the document — names, dates, dollar amounts, decisions, account numbers redacted to last 4 digits",
   "tags": ["relevant", "tags", "for", "searching"],
   "confidence": 0.0 to 1.0,
@@ -238,9 +272,9 @@ This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Gre
 - Articles of incorporation, bylaws, annual reports, state filings → "Corporate Filings"
 - P&L, balance sheets, income statements, financial reports → "Financial Statements"
 - Bank statements, account statements → "Bank Statements"
-- Capital account statements, shareholder equity → "Capital Accounts"
+- Capital account statements, shareholder equity → "Capital Accounts"${mediaGuidance}
 
-Document text:
+${mediaKind ? "Transcript" : "Document text"}:
 ${documentText}`;
 
   const response = await withRetry(() => getOpenAIClient().responses.parse({
