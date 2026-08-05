@@ -6,6 +6,11 @@ import {
   ARCHIVE_GOLDEN_QUESTIONS,
   type GoldenQuestion,
 } from "../src/lib/archive-golden-questions";
+import {
+  describeGoldenDocumentFailure,
+  isGoldenDocumentReady,
+  type GoldenDocumentHealth,
+} from "../src/lib/archive-golden-verification";
 
 const TOP_N = 3;
 const CONCURRENCY = 4;
@@ -15,6 +20,11 @@ interface GoldenResult {
   label: string;
   passed: boolean;
   reason: string;
+}
+
+interface GoldenDocument extends GoldenDocumentHealth {
+  id: string;
+  title: string;
 }
 
 async function mapConcurrent<T, R>(
@@ -38,10 +48,10 @@ async function mapConcurrent<T, R>(
 
 async function verifyQuestion(
   fixture: GoldenQuestion,
-  titles: Map<string, string>
+  documents: Map<string, GoldenDocument>
 ): Promise<GoldenResult> {
   const missingExpected = fixture.expectedDocuments.filter(
-    (expected) => !titles.has(expected.documentId)
+    (expected) => !documents.has(expected.documentId)
   );
   if (missingExpected.length > 0) {
     return {
@@ -55,7 +65,7 @@ async function verifyQuestion(
     const results = await hybridSearch(fixture.question, TOP_N, ["document"]);
     const returnedIds = new Set(results.map((result) => result.sourceId));
     const returnedTitles = results.map(
-      (result) => titles.get(result.sourceId) || result.sourceId
+      (result) => documents.get(result.sourceId)?.title || result.sourceId
     );
 
     if (fixture.expectedDocuments.length === 0) {
@@ -71,12 +81,27 @@ async function verifyQuestion(
     const missed = fixture.expectedDocuments.filter(
       (expected) => !returnedIds.has(expected.documentId)
     );
+    const hollowMatches = fixture.expectedDocuments.flatMap((expected) => {
+      if (!returnedIds.has(expected.documentId)) return [];
+      const document = documents.get(expected.documentId);
+      return document && !isGoldenDocumentReady(document)
+        ? [`${expected.title} (${describeGoldenDocumentFailure(document)})`]
+        : [];
+    });
+    const failureParts = [
+      missed.length
+        ? `missing ${missed.map((item) => item.title).join(" | ")}; returned ${returnedTitles.length ? returnedTitles.join(" | ") : "nothing"}`
+        : "",
+      hollowMatches.length
+        ? `matched document has no usable analysis: ${hollowMatches.join(" | ")}`
+        : "",
+    ].filter(Boolean);
     return {
       label: fixture.question,
-      passed: missed.length === 0,
-      reason: missed.length === 0
+      passed: failureParts.length === 0,
+      reason: failureParts.length === 0
         ? "expected document found"
-        : `missing ${missed.map((item) => item.title).join(" | ")}; returned ${returnedTitles.length ? returnedTitles.join(" | ") : "nothing"}`,
+        : failureParts.join("; "),
     };
   } catch (error) {
     return {
@@ -92,13 +117,19 @@ async function main() {
 
   const documents = await prisma.document.findMany({
     where: { deletedAt: null, accessScope: "family" },
-    select: { id: true, title: true },
+    select: {
+      id: true,
+      title: true,
+      analysisState: true,
+      aiSummary: true,
+      aiExtractedText: true,
+    },
   });
-  const titles = new Map(documents.map((document) => [document.id, document.title]));
+  const documentMap = new Map(documents.map((document) => [document.id, document]));
   const results = await mapConcurrent(
     ARCHIVE_GOLDEN_QUESTIONS,
     CONCURRENCY,
-    (fixture) => verifyQuestion(fixture, titles)
+    (fixture) => verifyQuestion(fixture, documentMap)
   );
   const failures = results.filter((result) => !result.passed);
 
