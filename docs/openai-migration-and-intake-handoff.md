@@ -870,6 +870,36 @@ absent produces a list of real categories rather than invented ones.
 
 # Workstream E — trust
 
+## Execution order (supersedes the numbering)
+
+Tasks 16 and 17 overlap and must run together. Tasks 9, 10, 11 and 15 are
+**deferred** until this workstream is done and its numbers are good — they add
+more intake paths and more AI passes on top of a pipeline that cannot currently
+prove it works, and 9 in particular would rewrite `file-document.ts` a second
+time.
+
+Three phases, and the order is the whole point:
+
+**Phase 1 — make failure visible, and measure.** 17a (stop writing placeholder
+summaries), 17c (round-trip harness), 17d (golden question set). Run both
+harnesses and record the **baseline pass rates against today's broken archive**.
+Stop here and report.
+
+Phase 1 ships no fixes on purpose. The harness is what every later claim depends
+on, so it gets reviewed before it is used to bless anything. A lenient harness
+that reports 100% is worse than no harness — it converts an unknown problem into
+a false assurance.
+
+**Phase 2 — fix the causes.** 17b (extraction gaps), 16a (oversized PDF
+sampling), 16b (query distillation), 16c (real category directory).
+
+**Phase 3 — repair and prove.** 17e (re-analyze and re-embed everything), re-run
+both harnesses, report before-and-after. Then 17f (surface the numbers).
+
+Re-analysis is deliberately last. Running it before the extraction gaps close
+would burn the whole archive through a pipeline that still cannot read `.doc`,
+and produce a second set of confident-looking failures.
+
 ## Task 17 — Make the archive provably findable
 
 **Priority: highest.** Everything else is a feature; this is whether the system
@@ -952,6 +982,28 @@ production data — not in unit tests, which have no index.
 
 Report a pass rate and list every failure. Wire it into `npm run archive:verify`
 alongside the existing checksum check.
+
+**Four ways this harness can lie. Avoid all four:**
+
+1. **A document with no content must FAIL, not be skipped.** The obvious
+   implementation generates a question from `aiSummary`, finds it null, and
+   skips the row — which silently excludes precisely the 8 documents this task
+   exists to catch, then reports 100%. No content is the most severe failure
+   there is; score it as one.
+2. **Do not derive the question from the title.** "What is in the Breadloaf Hill
+   Vision document?" matches on title text and passes trivially. Generate from
+   summary and extracted text, and instruct the generator to avoid reusing the
+   title's distinctive words. The question should read like something a family
+   member would ask without knowing the filename.
+3. **Keep N small.** Top-3, not top-20. Bucky only ever sees a handful of
+   chunks, so a document ranked 15th is not found in any sense that matters.
+4. **Negative controls count toward the pass rate.** Nonsense and
+   plausible-but-absent queries must return nothing, and a failure there counts
+   the same as a miss. A system that always returns something is guessing, and
+   confident guessing is what invented the "Genealogy" category.
+
+Print the pass rate as a single number and a list of every failing document with
+its reason. That number is the deliverable — not "the script ran."
 
 ### 17d. Golden questions — the "would Dad's question work?" check
 
