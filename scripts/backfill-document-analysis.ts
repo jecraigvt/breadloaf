@@ -17,7 +17,7 @@ import {
 } from "../src/lib/ai";
 import { resolveDocumentCategory } from "../src/lib/document-categories";
 import { extractTextFromFile, isExtractableType } from "../src/lib/extract-text";
-import { AI_SIZE_LIMIT } from "../src/lib/file-document";
+import { AI_SIZE_LIMIT } from "../src/lib/document-analysis";
 import { indexDocument } from "../src/lib/embeddings";
 
 const apply = process.argv.includes("--apply");
@@ -198,6 +198,8 @@ async function main() {
         data: {
           aiSummary: summary,
           aiExtractedText: extractedText,
+          analysisState: "ok",
+          analysisError: null,
           tags: JSON.stringify(result.tags),
           ...(before.categoryId === null && resolution?.categoryId
             ? { categoryId: resolution.categoryId }

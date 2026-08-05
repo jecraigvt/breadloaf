@@ -10,6 +10,8 @@ export interface DocumentWithCategory {
   tags: string | null;
   aiSummary: string | null;
   aiExtractedText: string | null;
+  analysisState: string;
+  analysisError: string | null;
   uploadedBy: string | null;
   checksum: string | null;
   accessScope: string;

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { categorizeDocument, categorizeText, processMediaFile } from "@/lib/ai";
-import { extractTextFromFile, isExtractableType } from "@/lib/extract-text";
+import { analyzeDocumentBuffer } from "@/lib/document-analysis";
 import { resolveDocumentCategory } from "@/lib/document-categories";
 import { prisma } from "@/lib/prisma";
 import { readFile } from "fs/promises";
@@ -18,59 +17,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Existing categories, with descriptions so the AI files consistently
     const categories = await prisma.category.findMany({
       select: { name: true, description: true },
       orderBy: { name: "asc" },
     });
 
-    // Read the file and convert to base64
     const fullPath = path.join(process.cwd(), "public", filePath);
     const buffer = await readFile(fullPath);
-    const base64 = buffer.toString("base64");
     const originalFileName =
       typeof fileName === "string" && fileName.trim()
         ? path.basename(fileName.trim())
         : path.basename(filePath);
-
-    // Gemini's inline-data request limit is ~20MB — send oversized files to review
-    const AI_SIZE_LIMIT = 15 * 1024 * 1024;
-
-    // Route to the right processor
-    let result;
-    if (buffer.length > AI_SIZE_LIMIT) {
-      return NextResponse.json({
-        suggestedCategory: "",
-        title: resolveDocumentTitle({
-          fileName: originalFileName,
-          fileType,
-          createdAt: new Date(),
-        }),
-        summary: "File too large for AI analysis — categorize manually",
-        extractedText: "",
-        tags: [],
-        confidence: 0.3,
-        resolvedCategorySlug: null,
-        resolvedCategoryName: null,
-        categoryCreated: false,
-        needsReview: true,
-      });
-    }
-    if (fileType.startsWith("audio/") || fileType.startsWith("video/")) {
-      result = await processMediaFile(base64, fileType, categories, originalFileName);
-    } else if (fileType.startsWith("image/") || fileType === "application/pdf") {
-      // Gemini reads images and PDFs natively
-      result = await categorizeDocument(base64, fileType, categories, originalFileName);
-    } else if (isExtractableType(fileType)) {
-      // Word/Excel/CSV/TXT — extract text server-side, then categorize
-      const extracted = await extractTextFromFile(buffer, fileType);
-      if (extracted?.trim()) {
-        result = await categorizeText(extracted, originalFileName, categories);
-      }
-    }
+    const analysis = await analyzeDocumentBuffer({
+      buffer,
+      fileName: originalFileName,
+      fileType,
+      categories,
+    });
+    const result = analysis.result;
 
     if (!result) {
-      // Unsupported format or empty extraction — manual categorization
       return NextResponse.json({
         suggestedCategory: "",
         title: resolveDocumentTitle({
@@ -78,10 +44,12 @@ export async function POST(request: NextRequest) {
           fileType,
           createdAt: new Date(),
         }),
-        summary: "Document uploaded — categorize manually or ask Bucky about it",
-        extractedText: "",
+        summary: null,
+        extractedText: null,
         tags: [],
         confidence: 0.3,
+        analysisState: analysis.state,
+        analysisError: analysis.error,
         resolvedCategorySlug: null,
         resolvedCategoryName: null,
         categoryCreated: false,
@@ -89,8 +57,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Apply guardrails: match to an existing category, create a genuinely
-    // new one from the AI's proposal, or flag for review.
     const resolution = await resolveDocumentCategory({
       suggestedCategory: result.suggestedCategory,
       newCategoryProposal: result.newCategoryProposal,
@@ -99,6 +65,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ...result,
+      analysisState: "ok",
+      analysisError: null,
       resolvedCategorySlug: resolution.categorySlug,
       resolvedCategoryName: resolution.categoryName,
       categoryCreated: resolution.categoryCreated,

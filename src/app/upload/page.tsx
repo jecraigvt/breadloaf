@@ -33,14 +33,16 @@ interface BatchItem {
 interface CategorizationResult {
   suggestedCategory: string;
   title: string;
-  summary: string;
-  extractedText?: string;
+  summary: string | null;
+  extractedText?: string | null;
   tags: string[];
   confidence: number;
   resolvedCategorySlug?: string | null;
   resolvedCategoryName?: string | null;
   categoryCreated?: boolean;
   needsReview?: boolean;
+  analysisState: "ok" | "unsupported_type" | "too_large" | "provider_error";
+  analysisError: string | null;
   maintenanceCost?: number | null;
   maintenanceDate?: string | null;
   maintenanceVendor?: string | null;
@@ -204,10 +206,12 @@ export default function UploadPage() {
         setResult({
           suggestedCategory: "",
           title: file.name,
-          summary: "",
+          summary: null,
           tags: [],
           confidence: 0,
           needsReview: true,
+          analysisState: "provider_error",
+          analysisError: `Categorization request failed (${catRes.status}).`,
         });
         setEditTitle(file.name);
       }
@@ -265,7 +269,16 @@ export default function UploadPage() {
         });
         const catData: CategorizationResult = catRes.ok
           ? await catRes.json()
-          : { suggestedCategory: "", title: items[i].file.name, summary: "", tags: [], confidence: 0, needsReview: true };
+          : {
+              suggestedCategory: "",
+              title: items[i].file.name,
+              summary: null,
+              tags: [],
+              confidence: 0,
+              needsReview: true,
+              analysisState: "provider_error",
+              analysisError: `Categorization request failed (${catRes.status}).`,
+            };
 
         const saveRes = await fetch("/api/documents", {
           method: "POST",
@@ -281,7 +294,9 @@ export default function UploadPage() {
             categorySlug: catData.resolvedCategorySlug ?? "",
             tags: catData.tags,
             aiSummary: catData.summary,
-            aiExtractedText: catData.extractedText || "",
+            aiExtractedText: catData.extractedText ?? null,
+            analysisState: catData.analysisState,
+            analysisError: catData.analysisError,
             uploadedBy,
             maintenanceCost: catData.maintenanceCost,
             maintenanceDate: catData.maintenanceDate,
@@ -328,7 +343,9 @@ export default function UploadPage() {
           categorySlug: result.resolvedCategorySlug ?? result.suggestedCategory,
           tags: result.tags,
           aiSummary: result.summary,
-          aiExtractedText: result.extractedText || "",
+          aiExtractedText: result.extractedText ?? null,
+          analysisState: result.analysisState,
+          analysisError: result.analysisError,
           uploadedBy,
           maintenanceCost: result.maintenanceCost,
           maintenanceDate: result.maintenanceDate,

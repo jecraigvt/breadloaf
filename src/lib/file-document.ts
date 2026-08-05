@@ -1,17 +1,15 @@
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { prisma } from "@/lib/prisma";
-import {
-  categorizeDocument,
-  categorizeText,
-  processMediaFile,
-} from "@/lib/ai";
 import { indexDocument, indexMaintenance } from "@/lib/embeddings";
-import { extractTextFromFile, isExtractableType } from "@/lib/extract-text";
 import { resolveDocumentCategory } from "@/lib/document-categories";
 import { generateId } from "@/lib/utils";
 import { sha256 } from "@/lib/archive-integrity";
 import { resolveDocumentTitle } from "@/lib/document-title";
+import {
+  analyzeDocumentBuffer,
+  type AnalysisState,
+} from "@/lib/document-analysis";
 
 // Shared server-side document filing: save to /uploads, categorize with AI,
 // apply category guardrails, create the Document row, cross-link maintenance
@@ -19,7 +17,6 @@ import { resolveDocumentTitle } from "@/lib/document-title";
 // flow; same pipeline shape as the Mail Room's fileAttachment and the /upload
 // page's batch mode.
 
-export const AI_SIZE_LIMIT = 15 * 1024 * 1024; // Provider input limit with headroom
 const SAVE_SIZE_LIMIT = 100 * 1024 * 1024; // matches lib/upload.ts MAX_SIZE
 
 export interface FiledDocument {
@@ -30,6 +27,8 @@ export interface FiledDocument {
   needsReview: boolean;
   summary: string | null;
   extractedText: string | null;
+  analysisState: AnalysisState;
+  analysisError: string | null;
   // True when an identical file was already in the archive and we returned
   // the existing document instead of creating a duplicate.
   alreadyExisted: boolean;
@@ -66,6 +65,8 @@ export async function fileDocumentFromBuffer(opts: {
       needsReview: existingCopy.categoryId === null,
       summary: existingCopy.aiSummary,
       extractedText: existingCopy.aiExtractedText,
+      analysisState: existingCopy.analysisState as AnalysisState,
+      analysisError: existingCopy.analysisError,
       alreadyExisted: true,
     };
   }
@@ -83,24 +84,19 @@ export async function fileDocumentFromBuffer(opts: {
     orderBy: { name: "asc" },
   });
 
-  let result = null;
-  if (buffer.length <= AI_SIZE_LIMIT) {
-    try {
-      if (type.startsWith("audio/") || type.startsWith("video/")) {
-        result = await processMediaFile(buffer.toString("base64"), type, categories, fileName);
-      } else if (type.startsWith("image/") || type === "application/pdf") {
-        result = await categorizeDocument(buffer.toString("base64"), type, categories, fileName);
-      } else if (isExtractableType(type)) {
-        const extracted = await extractTextFromFile(buffer, type);
-        if (extracted?.trim()) {
-          result = await categorizeText(extracted, fileName, categories);
-        }
-      }
-    } catch (error) {
-      // The file is already durable on disk. AI enrichment must never prevent
-      // the archive row from being created during a provider outage.
-      console.error(`[Archive] AI analysis failed for ${fileName}; filing for review:`, error);
-    }
+  const analysis = await analyzeDocumentBuffer({
+    buffer,
+    fileName,
+    fileType: type,
+    categories,
+  });
+  const result = analysis.result;
+  if (!result) {
+    // The file is already durable on disk. AI enrichment must never prevent
+    // the archive row from being created during a provider outage.
+    console.error(
+      `[Archive] ${analysis.state} for ${fileName}; filing for review: ${analysis.error}`
+    );
   }
 
   const resolution = result
@@ -136,6 +132,8 @@ export async function fileDocumentFromBuffer(opts: {
       tags: result?.tags?.length ? JSON.stringify(result.tags) : null,
       aiSummary: result?.summary || null,
       aiExtractedText: result?.extractedText || null,
+      analysisState: analysis.state,
+      analysisError: analysis.error,
       uploadedBy: uploadedBy || undefined,
       checksum,
     },
@@ -201,6 +199,8 @@ export async function fileDocumentFromBuffer(opts: {
     needsReview: resolution.needsReview,
     summary: doc.aiSummary,
     extractedText: doc.aiExtractedText,
+    analysisState: doc.analysisState as AnalysisState,
+    analysisError: doc.analysisError,
     alreadyExisted: false,
   };
 }

@@ -20,6 +20,8 @@ model Document {
   tags            String?
   aiSummary       String?
   aiExtractedText String?
+  analysisState   String    @default("provider_error")
+  analysisError   String?
   uploadedBy      String?
   checksum        String?
   accessScope     String    @default("family") // family, board, vault
@@ -183,7 +185,7 @@ model Asset {
 }
 
 model FamilyMember {
-  id            String               @id @default(cuid())
+  id            String  @id @default(cuid())
   name          String
   displayName   String? // what the tree shows ("Sandy", "KC"); falls back to first token of name
   surname       String? // current surname — the tree has Craigs, Kellers, and Devlins
@@ -194,15 +196,15 @@ model FamilyMember {
   branch        String? // DERIVED cache — the relationship graph is the source of truth. See src/lib/family-tree.ts
   relation      String? // legacy free text, kept so historical display strings survive
   boardRole     String? // officer role: President, VP, Treasurer, Secretary
-  isBoardMember Boolean              @default(false)
+  isBoardMember Boolean @default(false)
   notes         String?
 
   // Tree + identity
   photoUrl     String?
-  isBranchRoot Boolean   @default(false) // the four brothers — where branch derivation starts
-  isFounder    Boolean   @default(false) // Bill and Lois — an honour, NOT a layout anchor
+  isBranchRoot Boolean @default(false) // the four brothers — where branch derivation starts
+  isFounder    Boolean @default(false) // Bill and Lois — an honour, NOT a layout anchor
 
-  sortOrder    Int       @default(0) // birth order within a sibling set
+  sortOrder   Int       @default(0) // birth order within a sibling set
   isMinor     Boolean   @default(false) // redacted to first name pre-login; cannot claim
   canClaim    Boolean   @default(true) // false for minors, deceased, and former spouses
   deceased    Boolean   @default(false)
@@ -436,16 +438,16 @@ model JarvisMemory {
 }
 
 model Embedding {
-  id           String                      @id @default(cuid())
+  id           String                       @id @default(cuid())
   sourceType   String // document, memory, asset, expense, maintenance
   sourceId     String
-  chunkIndex   Int                         @default(0)
+  chunkIndex   Int                          @default(0)
   content      String // contextualized source chunk used for keyword + vector retrieval
   vector       String // JSON source retained for Prisma writes; DB trigger mirrors it into pgvector
   embedding    Unsupported("vector(1536)")?
   searchVector Unsupported("tsvector")?
-  createdAt    DateTime                    @default(now())
-  updatedAt    DateTime                    @updatedAt
+  createdAt    DateTime                     @default(now())
+  updatedAt    DateTime                     @updatedAt
 
   @@unique([sourceType, sourceId, chunkIndex])
   @@index([sourceType])
