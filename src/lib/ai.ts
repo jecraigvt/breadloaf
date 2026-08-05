@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI, SchemaType, type FunctionDeclarationsTool } from "@google/generative-ai";
-import OpenAI from "openai";
+import OpenAI, { toFile } from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -147,62 +147,31 @@ export async function processMediaFile(
   existingCategories: CategoryOption[],
   fileName?: string
 ): Promise<CategorizationResult> {
-  const model = genAI.getGenerativeModel({ model: MODELS.flash });
+  const mediaFile = await toFile(
+    Buffer.from(base64Data, "base64"),
+    fileName || "media",
+    { type: mimeType }
+  );
+  const transcription = await withGeminiRetry(() =>
+    getOpenAIClient().audio.transcriptions.create({
+      model: MODELS.transcription,
+      file: mediaFile,
+    })
+  );
+  const transcript = transcription.text.trim();
+  if (!transcript) throw new Error("OpenAI returned an empty media transcript");
 
-  const isAudio = mimeType.startsWith("audio/");
-  const mediaType = isAudio ? "audio recording" : "video";
-
-  const result = await withGeminiRetry(() => model.generateContent([
-    {
-      inlineData: {
-        mimeType: mimeType as string,
-        data: base64Data,
-      },
-    },
-    {
-      text: `You are processing a ${mediaType} for the Craig family property archive at Breadloaf Hill, Vermont. The property is owned as an S-Corp by four Craig brothers (Tom, Jim, Sandy, Greg), with Ethan (Jim's son) now on the board.
-
-Existing categories:
-${describeCategories(existingCategories)}
-
-${NEW_CATEGORY_RULES}
-
-${DOCUMENT_TITLE_RULES}
-
-Source filename (provenance only; do not use it as the title): ${fileName || "unknown"}
-
-Analyze this ${mediaType} and return ONLY valid JSON (no markdown fences):
-{
-  "suggestedCategory": "exact name of an existing category, or \\"\\" if proposing a new one",
-  "newCategoryProposal": null or {"name": "...", "description": "..."},
-  "title": "descriptive title for this ${mediaType}",
-  "summary": "comprehensive summary — capture ALL key facts, decisions, action items, dollar amounts, names mentioned, topics discussed. This is what the family assistant will reference, so be thorough.",
-  "extractedText": "full transcript or detailed description of everything said/shown. Include speaker names if identifiable, timestamps of key moments, and exact quotes for important decisions.",
-  "tags": ["relevant", "search", "tags"],
-  "confidence": 0.0 to 1.0
-}
-
-For board meetings: capture all votes, motions, decisions, assignments, deadlines, and financial discussions.
-For property walkthroughs: note condition of structures, items needing attention, any damage or improvements.
-Be extremely thorough — extract every useful detail.`,
-    },
-  ]));
-
-  const text = result.response.text();
-  try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text) as CategorizationResult;
-    return finalizeCategorizationTitle(parsed, { fileName, fileType: mimeType });
-  } catch {
-    return finalizeCategorizationTitle({
-      suggestedCategory: isAudio ? "Meeting Minutes" : "Other",
-      title: "",
-      summary: text.slice(0, 500),
-      extractedText: text,
-      tags: [],
-      confidence: 0.5,
-    }, { fileName, fileType: mimeType });
-  }
+  const categorization = await categorizeText(
+    transcript,
+    fileName || "media",
+    existingCategories
+  );
+  return {
+    ...categorization,
+    // Preserve the raw transcript rather than the categorizer's condensed
+    // extraction so the recording remains fully searchable.
+    extractedText: transcript,
+  };
 }
 
 export async function categorizeDocument(
