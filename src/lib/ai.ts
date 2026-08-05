@@ -6,6 +6,7 @@ import { GROCERY_CATEGORIES, resolveCategory } from "@/lib/grocery-categories";
 import { slugifyCategory, isTokenSubset, categorySimilarity } from "@/lib/document-categories";
 import { findOverlappingStay, createStayWithCalendarSync } from "@/lib/stays";
 import { recordBuckyToolResult, stripToolAuditMetadata } from "@/lib/bucky-ledger";
+import { closeOpenArchiveQuestions } from "@/lib/archive-questions";
 import { sendBuckyQuestionNotification } from "@/lib/outbound-email";
 import { buildBuckyContext } from "@/lib/bucky-context";
 import { selectAssistantModelTier } from "@/lib/bucky-routing";
@@ -1020,22 +1021,6 @@ async function executeToolFunction(
         });
         if (!document || document.deletedAt) throw new Error("Document no longer exists");
 
-        const questionsBefore = await tx.buckyQuestion.findMany({
-          where: {
-            sourceType: "document",
-            sourceId: document.id,
-            questionType: "archive",
-            status: "open",
-          },
-          select: {
-            id: true,
-            status: true,
-            answer: true,
-            answeredBy: true,
-            answeredAt: true,
-          },
-        });
-
         await tx.document.update({
           where: { id: document.id },
           data: { categoryId: resolvedTarget.id },
@@ -1043,28 +1028,12 @@ async function executeToolFunction(
 
         // Close any open filing question tied to this document. The snapshots
         // let Ledger undo restore the question as well as the category.
-        const answeredAt = new Date();
-        await tx.buckyQuestion.updateMany({
-          where: { id: { in: questionsBefore.map((question) => question.id) }, status: "open" },
-          data: {
-            status: "answered",
+        const { before: questionsBefore, after: questionsAfter } =
+          await closeOpenArchiveQuestions(tx, {
+            documentId: document.id,
+            categoryName: resolvedTarget.name,
             answeredBy: username || "Bucky",
-            answeredAt,
-            answer: `Filed under ${resolvedTarget.name}`,
-          },
-        });
-        const questionsAfter = questionsBefore.length
-          ? await tx.buckyQuestion.findMany({
-              where: { id: { in: questionsBefore.map((question) => question.id) } },
-              select: {
-                id: true,
-                status: true,
-                answer: true,
-                answeredBy: true,
-                answeredAt: true,
-              },
-            })
-          : [];
+          });
 
         return { document, questionsBefore, questionsAfter };
       });
