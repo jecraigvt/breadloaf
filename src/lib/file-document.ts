@@ -19,7 +19,7 @@ import { resolveDocumentTitle } from "@/lib/document-title";
 // flow; same pipeline shape as the Mail Room's fileAttachment and the /upload
 // page's batch mode.
 
-const AI_SIZE_LIMIT = 15 * 1024 * 1024; // Gemini inline-data limit (~20MB, with headroom)
+export const AI_SIZE_LIMIT = 15 * 1024 * 1024; // Provider input limit with headroom
 const SAVE_SIZE_LIMIT = 100 * 1024 * 1024; // matches lib/upload.ts MAX_SIZE
 
 export interface FiledDocument {

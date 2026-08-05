@@ -1,13 +1,11 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "@/lib/prisma";
+import { getOpenAIClient, withRetry } from "@/lib/openai-client";
 
-export const EMBEDDING_MODEL = "gemini-embedding-2";
+export const EMBEDDING_MODEL = "text-embedding-3-small";
 
 const MAX_CHUNK_CHARS = 3600;
 const CHUNK_OVERLAP_CHARS = 350;
 const CONTEXT_PREFIX_CHARS = 600;
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
-
 export interface SearchResult {
   sourceType: string;
   sourceId: string;
@@ -69,25 +67,15 @@ export function tokenizeSearchQuery(query: string): string[] {
   ).slice(0, 12);
 }
 
-async function withEmbeddingRetry<T>(operation: () => Promise<T>): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= 2; attempt++) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-      const status = (error as { status?: number }).status;
-      if ((status !== 429 && status !== 503) || attempt === 2) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
-    }
-  }
-  throw lastError;
-}
-
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
-  const result = await withEmbeddingRetry(() => model.embedContent(text));
-  return result.embedding.values;
+  const result = await withRetry(() =>
+    getOpenAIClient().embeddings.create({
+      model: EMBEDDING_MODEL,
+      input: text,
+      encoding_format: "float",
+    })
+  );
+  return result.data[0].embedding;
 }
 
 export async function embedAndStore(
@@ -96,7 +84,7 @@ export async function embedAndStore(
   content: string,
   options: IndexOptions = {}
 ): Promise<void> {
-  if (!process.env.GOOGLE_AI_API_KEY) return;
+  if (!process.env.OPENAI_API_KEY) return;
 
   try {
     const chunks = splitContentIntoChunks(content);
@@ -162,7 +150,7 @@ export async function hybridSearch(
   const terms = tokenizeSearchQuery(query);
 
   const [allEmbeddings, keywordMatches] = await Promise.all([
-    process.env.GOOGLE_AI_API_KEY
+    process.env.OPENAI_API_KEY
       ? prisma.embedding.findMany({ where })
       : Promise.resolve([]),
     terms.length

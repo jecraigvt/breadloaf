@@ -1,12 +1,12 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createHash } from "crypto";
 import { readFile } from "fs/promises";
 import path from "path";
+import { zodTextFormat } from "openai/helpers/zod";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { slugifyCategory } from "@/lib/document-categories";
 import { MODELS } from "@/lib/ai";
-
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
+import { getOpenAIClient, withRetry } from "@/lib/openai-client";
 
 // The librarian reviews the whole filing system and proposes a
 // reorganization plan. Nothing is applied without explicit approval —
@@ -24,6 +24,31 @@ export interface LibrarianPlan {
   duplicates: { keepId: string; removeIds: string[]; title: string }[];
   summary: string;
 }
+
+const LibrarianPlanSchema = z.object({
+  newCategories: z.array(z.object({
+    name: z.string(),
+    description: z.string(),
+    reason: z.string(),
+  })),
+  renames: z.array(z.object({
+    slug: z.string(),
+    newName: z.string(),
+    newDescription: z.string(),
+    reason: z.string(),
+  })),
+  merges: z.array(z.object({
+    fromSlug: z.string(),
+    intoSlug: z.string(),
+    reason: z.string(),
+  })),
+  refiles: z.array(z.object({
+    documentId: z.string(),
+    intoName: z.string(),
+    reason: z.string(),
+  })),
+  summary: z.string(),
+});
 
 const MAX_OPERATIONS = 40;
 
@@ -87,21 +112,27 @@ Return ONLY valid JSON (no markdown fences):
   "summary": "1-2 sentence plain-English summary of the plan (or say the archive is tidy)"
 }`;
 
-  // Pro gives the best reorganization judgment, but quota for it is thin —
-  // fall back to Flash rather than failing the whole review.
-  let result;
+  // Terra gives the best reorganization judgment; keep Luna as the existing
+  // availability fallback after transient retries are exhausted.
+  let raw: z.infer<typeof LibrarianPlanSchema>;
   try {
-    const pro = genAI.getGenerativeModel({ model: MODELS.pro });
-    result = await pro.generateContent(prompt);
+    const result = await withRetry(() => getOpenAIClient().responses.parse({
+      model: MODELS.pro,
+      input: prompt,
+      text: { format: zodTextFormat(LibrarianPlanSchema, "librarian_plan") },
+    }));
+    if (!result.output_parsed) throw new Error("OpenAI returned no librarian plan");
+    raw = result.output_parsed;
   } catch (err) {
     console.warn("[Librarian] Pro model unavailable, falling back to Flash:", String(err).slice(0, 200));
-    const flash = genAI.getGenerativeModel({ model: MODELS.flash });
-    result = await flash.generateContent(prompt);
+    const result = await withRetry(() => getOpenAIClient().responses.parse({
+      model: MODELS.flash,
+      input: prompt,
+      text: { format: zodTextFormat(LibrarianPlanSchema, "librarian_plan") },
+    }));
+    if (!result.output_parsed) throw new Error("OpenAI returned no librarian plan");
+    raw = result.output_parsed;
   }
-
-  const text = result.response.text();
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  const raw = JSON.parse(jsonMatch ? jsonMatch[0] : text);
 
   const plan = validatePlan(raw, categories, documents);
   plan.duplicates = await findDuplicateDocuments();

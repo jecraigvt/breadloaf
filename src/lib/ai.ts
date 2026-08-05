@@ -1,4 +1,6 @@
-import { GoogleGenerativeAI, SchemaType, type FunctionDeclarationsTool } from "@google/generative-ai";
+import OpenAI, { toFile } from "openai";
+import { zodTextFormat } from "openai/helpers/zod";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { GROCERY_CATEGORIES, resolveCategory } from "@/lib/grocery-categories";
 import { slugifyCategory, isTokenSubset, categorySimilarity } from "@/lib/document-categories";
@@ -15,41 +17,18 @@ import {
   indexMemory,
 } from "@/lib/embeddings";
 import { resolveDocumentTitle } from "@/lib/document-title";
-
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
+import { parseToolArguments } from "@/lib/openai-json";
+import { getOpenAIClient, withRetry } from "@/lib/openai-client";
 
 // ─── Model Routing ─────────────────────────────────────────────
-// Stable (GA) models preferred — preview models can be retired on 2 weeks'
-// notice (gemini-3-pro-preview was shut down March 2026 with a forced
-// migration). Verified against ai.google.dev July 2026.
-// Flash 3.5 (stable, GA May 2026): chat, document processing — $1.50/$9.00 per 1M tokens
-// Pro 3.1 (still preview-only; no stable Pro exists yet — revisit when one ships):
-//   complex analysis — $2-4/$12-18 per 1M tokens
-// Embedding 2 (stable, GA April 2026) — $0.20 per 1M tokens
+// Keep provider model IDs centralized so routing, analysis, transcription,
+// and embeddings cannot drift onto different model generations.
 export const MODELS = {
-  flash: "gemini-3.5-flash",
-  pro: "gemini-3.1-pro-preview",
-  embedding: "gemini-embedding-2",
+  flash: "gpt-5.6-luna",
+  pro: "gpt-5.6-terra",
+  embedding: "text-embedding-3-small",
+  transcription: "gpt-4o-mini-transcribe",
 } as const;
-
-// Retry transient Gemini failures — 503 (model overloaded) and 429 (rate
-// limit) usually clear within seconds. Anything else rethrows immediately.
-export async function withGeminiRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
-  let lastErr: unknown;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      const status = (err as { status?: number })?.status;
-      if (status !== 503 && status !== 429) throw err;
-      if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
-      }
-    }
-  }
-  throw lastErr;
-}
 
 // ─── Embedding Functions ───────────────────────────────────────
 export interface CategoryOption {
@@ -71,6 +50,27 @@ interface CategorizationResult {
   maintenanceCost?: number | null;
   maintenanceDate?: string | null;
   maintenanceVendor?: string | null;
+}
+
+const CategorizationResultSchema = z.object({
+  suggestedCategory: z.string(),
+  newCategoryProposal: z.object({
+    name: z.string(),
+    description: z.string(),
+  }).nullable(),
+  title: z.string(),
+  summary: z.string(),
+  extractedText: z.string(),
+  tags: z.array(z.string()),
+  confidence: z.number(),
+  maintenanceCost: z.number().nullable(),
+  maintenanceDate: z.string().nullable(),
+  maintenanceVendor: z.string().nullable(),
+});
+
+function requireParsed<T>(value: T | null): T {
+  if (value === null) throw new Error("OpenAI returned no structured output");
+  return value;
 }
 
 function describeCategories(categories: CategoryOption[]): string {
@@ -116,62 +116,32 @@ export async function processMediaFile(
   existingCategories: CategoryOption[],
   fileName?: string
 ): Promise<CategorizationResult> {
-  const model = genAI.getGenerativeModel({ model: MODELS.flash });
+  const mediaFile = await toFile(
+    Buffer.from(base64Data, "base64"),
+    fileName || "media",
+    { type: mimeType }
+  );
+  const transcription = await withRetry(() =>
+    getOpenAIClient().audio.transcriptions.create({
+      model: MODELS.transcription,
+      file: mediaFile,
+    })
+  );
+  const transcript = transcription.text.trim();
+  if (!transcript) throw new Error("OpenAI returned an empty media transcript");
 
-  const isAudio = mimeType.startsWith("audio/");
-  const mediaType = isAudio ? "audio recording" : "video";
-
-  const result = await withGeminiRetry(() => model.generateContent([
-    {
-      inlineData: {
-        mimeType: mimeType as string,
-        data: base64Data,
-      },
-    },
-    {
-      text: `You are processing a ${mediaType} for the Craig family property archive at Breadloaf Hill, Vermont. The property is owned as an S-Corp by four Craig brothers (Tom, Jim, Sandy, Greg), with Ethan (Jim's son) now on the board.
-
-Existing categories:
-${describeCategories(existingCategories)}
-
-${NEW_CATEGORY_RULES}
-
-${DOCUMENT_TITLE_RULES}
-
-Source filename (provenance only; do not use it as the title): ${fileName || "unknown"}
-
-Analyze this ${mediaType} and return ONLY valid JSON (no markdown fences):
-{
-  "suggestedCategory": "exact name of an existing category, or \\"\\" if proposing a new one",
-  "newCategoryProposal": null or {"name": "...", "description": "..."},
-  "title": "descriptive title for this ${mediaType}",
-  "summary": "comprehensive summary — capture ALL key facts, decisions, action items, dollar amounts, names mentioned, topics discussed. This is what the family assistant will reference, so be thorough.",
-  "extractedText": "full transcript or detailed description of everything said/shown. Include speaker names if identifiable, timestamps of key moments, and exact quotes for important decisions.",
-  "tags": ["relevant", "search", "tags"],
-  "confidence": 0.0 to 1.0
-}
-
-For board meetings: capture all votes, motions, decisions, assignments, deadlines, and financial discussions.
-For property walkthroughs: note condition of structures, items needing attention, any damage or improvements.
-Be extremely thorough — extract every useful detail.`,
-    },
-  ]));
-
-  const text = result.response.text();
-  try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text) as CategorizationResult;
-    return finalizeCategorizationTitle(parsed, { fileName, fileType: mimeType });
-  } catch {
-    return finalizeCategorizationTitle({
-      suggestedCategory: isAudio ? "Meeting Minutes" : "Other",
-      title: "",
-      summary: text.slice(0, 500),
-      extractedText: text,
-      tags: [],
-      confidence: 0.5,
-    }, { fileName, fileType: mimeType });
-  }
+  const categorization = await categorizeText(
+    transcript,
+    fileName || "media",
+    existingCategories,
+    { mediaKind: mimeType.startsWith("video/") ? "video" : "audio recording" }
+  );
+  return {
+    ...categorization,
+    // Preserve the raw transcript rather than the categorizer's condensed
+    // extraction so the recording remains fully searchable.
+    extractedText: transcript,
+  };
 }
 
 export async function categorizeDocument(
@@ -180,20 +150,7 @@ export async function categorizeDocument(
   existingCategories: CategoryOption[],
   fileName?: string
 ): Promise<CategorizationResult> {
-  const model = genAI.getGenerativeModel({ model: MODELS.flash });
-
-  // Gemini reads images AND PDFs inline
-  const mimeType = fileType as "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
-
-  const result = await withGeminiRetry(() => model.generateContent([
-    {
-      inlineData: {
-        mimeType,
-        data: fileBase64,
-      },
-    },
-    {
-      text: `You are a document categorization assistant for the Breadloaf Hill family property archive in Vermont.
+  const prompt = `You are a document categorization assistant for the Breadloaf Hill family property archive in Vermont.
 
 Existing categories:
 ${describeCategories(existingCategories)}
@@ -227,39 +184,66 @@ This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Gre
 - Articles of incorporation, bylaws, annual reports, state filings → "Corporate Filings"
 - P&L, balance sheets, income statements, financial reports → "Financial Statements"
 - Bank statements, account statements → "Bank Statements"
-- Capital account statements, shareholder equity → "Capital Accounts"`,
-    },
-  ]));
+- Capital account statements, shareholder equity → "Capital Accounts"`;
 
-  const text = result.response.text();
-  try {
-    // Try to extract JSON from the response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text) as CategorizationResult;
-    return finalizeCategorizationTitle(parsed, { fileName, fileType });
-  } catch {
-    return finalizeCategorizationTitle({
-      suggestedCategory: "Other",
-      title: "",
-      summary: text.slice(0, 200),
-      extractedText: text,
-      tags: [],
-      confidence: 0.5,
-    }, { fileName, fileType });
-  }
+  const content = fileType === "application/pdf"
+    ? [
+        { type: "input_file" as const, filename: fileName || "document.pdf", file_data: `data:application/pdf;base64,${fileBase64}` },
+        { type: "input_text" as const, text: prompt },
+      ]
+    : [
+        { type: "input_image" as const, image_url: `data:${fileType};base64,${fileBase64}`, detail: "auto" as const },
+        { type: "input_text" as const, text: prompt },
+      ];
+  const response = await withRetry(() => getOpenAIClient().responses.parse({
+    model: MODELS.flash,
+    input: [{ role: "user", content }],
+    text: { format: zodTextFormat(CategorizationResultSchema, "document_categorization") },
+  }));
+  return finalizeCategorizationTitle(requireParsed(response.output_parsed), { fileName, fileType });
 }
 
 // Categorize a document from extracted text (Word/Excel/CSV/TXT — types
 // Gemini can't read inline). Same contract as categorizeDocument.
+export interface CategorizeTextOptions {
+  // Set when the text is a transcript rather than a document. A recording's
+  // value is in the detail it captures, so the summary instruction and the
+  // extraction cues both change. Before the OpenAI migration these lived in
+  // processMediaFile's own prompt; splitting that into transcribe-then-
+  // categorize dropped them, which thinned board-meeting and walkthrough
+  // summaries down to the document prompt's "2-3 sentences".
+  mediaKind?: "audio recording" | "video";
+}
+
 export async function categorizeText(
   documentText: string,
   fileName: string,
-  existingCategories: CategoryOption[]
+  existingCategories: CategoryOption[],
+  options: CategorizeTextOptions = {}
 ): Promise<CategorizationResult> {
-  const model = genAI.getGenerativeModel({ model: MODELS.flash });
+  const { mediaKind } = options;
 
-  const result = await withGeminiRetry(() => model.generateContent(
-    `You are a document categorization assistant for the Breadloaf Hill family property archive in Vermont.
+  const intro = mediaKind
+    ? `You are processing a ${mediaKind} for the Craig family property archive at Breadloaf Hill, Vermont. The property is owned as an S-Corp by four Craig brothers (Tom, Jim, Sandy, Greg), with Ethan (Jim's son) now on the board.`
+    : `You are a document categorization assistant for the Breadloaf Hill family property archive in Vermont.`;
+
+  const summaryRule = mediaKind
+    ? `"summary": "comprehensive summary — capture ALL key facts, decisions, action items, dollar amounts, names mentioned, topics discussed. This is what the family assistant will reference, so be thorough",`
+    : `"summary": "2-3 sentence summary of the document content",`;
+
+  const sourceLabel = mediaKind
+    ? `Below is the transcript of an uploaded ${mediaKind} (file name: "${fileName}")`
+    : `Below is the text content extracted from an uploaded document (file name: "${fileName}")`;
+
+  const mediaGuidance = mediaKind
+    ? `
+
+For board meetings: capture all votes, motions, decisions, assignments, deadlines, and financial discussions.
+For property walkthroughs: note condition of structures, items needing attention, any damage or improvements.
+Be extremely thorough — extract every useful detail.`
+    : "";
+
+  const prompt = `${intro}
 
 Existing categories:
 ${describeCategories(existingCategories)}
@@ -268,12 +252,12 @@ ${NEW_CATEGORY_RULES}
 
 ${DOCUMENT_TITLE_RULES}
 
-Below is the text content extracted from an uploaded document (file name: "${fileName}"). Analyze it and return ONLY valid JSON (no markdown fences, no extra text) with these fields:
+${sourceLabel}. Analyze it and return ONLY valid JSON (no markdown fences, no extra text) with these fields:
 {
   "suggestedCategory": "exact name of an existing category, or \\"\\" if proposing a new one",
   "newCategoryProposal": null or {"name": "...", "description": "..."},
   "title": "descriptive title for this document",
-  "summary": "2-3 sentence summary of the document content",
+  ${summaryRule}
   "extractedText": "the key facts from the document — names, dates, dollar amounts, decisions, account numbers redacted to last 4 digits",
   "tags": ["relevant", "tags", "for", "searching"],
   "confidence": 0.0 to 1.0,
@@ -288,27 +272,20 @@ This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Gre
 - Articles of incorporation, bylaws, annual reports, state filings → "Corporate Filings"
 - P&L, balance sheets, income statements, financial reports → "Financial Statements"
 - Bank statements, account statements → "Bank Statements"
-- Capital account statements, shareholder equity → "Capital Accounts"
+- Capital account statements, shareholder equity → "Capital Accounts"${mediaGuidance}
 
-Document text:
-${documentText}`
-  ));
+${mediaKind ? "Transcript" : "Document text"}:
+${documentText}`;
 
-  const text = result.response.text();
-  try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text) as CategorizationResult;
-    return finalizeCategorizationTitle(parsed, { fileName, fileType: "text/plain" });
-  } catch {
-    return finalizeCategorizationTitle({
-      suggestedCategory: "",
-      title: "",
-      summary: text.slice(0, 200),
-      extractedText: documentText.slice(0, 2000),
-      tags: [],
-      confidence: 0.3,
-    }, { fileName, fileType: "text/plain" });
-  }
+  const response = await withRetry(() => getOpenAIClient().responses.parse({
+    model: MODELS.flash,
+    input: prompt,
+    text: { format: zodTextFormat(CategorizationResultSchema, "text_categorization") },
+  }));
+  return finalizeCategorizationTitle(requireParsed(response.output_parsed), {
+    fileName,
+    fileType: "text/plain",
+  });
 }
 
 interface ScannedPantryItem {
@@ -318,23 +295,18 @@ interface ScannedPantryItem {
   category: string;
 }
 
+const ScannedPantryItemsSchema = z.array(z.object({
+  name: z.string(),
+  quantity: z.number(),
+  unit: z.string(),
+  category: z.string(),
+}));
+
 export async function scanPantryItems(
   imageBase64: string,
   fileType: string
 ): Promise<ScannedPantryItem[]> {
-  const model = genAI.getGenerativeModel({ model: MODELS.flash });
-
-  const mimeType = fileType as "image/jpeg" | "image/png" | "image/webp";
-
-  const result = await model.generateContent([
-    {
-      inlineData: {
-        mimeType,
-        data: imageBase64,
-      },
-    },
-    {
-      text: `You are a pantry inventory assistant. Look at this photo of pantry shelves, a fridge, or food storage area.
+  const prompt = `You are a pantry inventory assistant. Look at this photo of pantry shelves, a fridge, or food storage area.
 
 Identify all visible items and return ONLY valid JSON (no markdown fences, no extra text) as an array:
 [
@@ -352,39 +324,45 @@ Guidelines:
 - Be specific with names (e.g., "Canned Tomatoes" not just "cans")
 - Choose the most appropriate category
 - If you can read brand names, include them (e.g., "Barilla Spaghetti")
-- If the image is unclear or not of food/pantry items, return an empty array []`,
-    },
-  ]);
+- If the image is unclear or not of food/pantry items, return an empty array []`;
 
-  const text = result.response.text();
-  try {
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-    return JSON.parse(text);
-  } catch {
-    return [];
-  }
+  const response = await withRetry(() => getOpenAIClient().responses.parse({
+    model: MODELS.flash,
+    input: [{
+      role: "user",
+      content: [
+        { type: "input_image", image_url: `data:${fileType};base64,${imageBase64}`, detail: "auto" },
+        { type: "input_text", text: prompt },
+      ],
+    }],
+    text: { format: zodTextFormat(ScannedPantryItemsSchema, "pantry_items") },
+  }));
+  return requireParsed(response.output_parsed);
 }
 
 // Function-calling tools for the assistant
-const assistantTools: FunctionDeclarationsTool[] = [
-  {
-    functionDeclarations: [
+const assistantToolDeclarations: Array<{
+  name: string;
+  description: string;
+  parameters: {
+    type: "object";
+    properties: Record<string, unknown>;
+    required: string[];
+  };
+}> = [
       {
         name: "add_grocery_item",
         description:
           "Add an item to the family grocery/shopping list. Use when someone asks to add something they need to buy.",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             name: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Name of the grocery item",
             },
             category: {
-              type: SchemaType.STRING,
+              type: "string",
               description: `Category, one of: ${GROCERY_CATEGORIES.join(", ")}. Omit if unsure — the list auto-categorizes by item name.`,
             },
           },
@@ -396,28 +374,28 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "Add a stay/visit to the property calendar (also syncs to the family Google Calendar). Use when someone says they or other family members will be at the property on certain dates.",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             guestName: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Who is staying, as it should appear on the calendar (e.g. 'Jim & Carol', 'The Kellers'). If the user says 'we' or 'me', use their name.",
             },
             checkIn: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Arrival date, YYYY-MM-DD",
             },
             checkOut: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Departure date, YYYY-MM-DD (must be after checkIn)",
             },
             roomName: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Optional room to assign (e.g. 'Tom Craig's Room', 'Loft', 'Woods Cabin'). Omit if not specified.",
             },
             notes: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Optional notes about the visit",
             },
           },
@@ -429,31 +407,31 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "Log a maintenance task, repair, or property work item to the maintenance log",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             title: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Short title of the maintenance task",
             },
             description: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Detailed description of the work",
             },
             category: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Category: plumbing, electrical, structural, grounds, appliance, seasonal, other",
             },
             performedBy: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Who performed the work",
             },
             cost: {
-              type: SchemaType.NUMBER,
+              type: "number",
               description: "Cost in dollars if known",
             },
             assetName: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Name of the property system/equipment this work was done on (e.g. 'Well & Water System', 'Generator'), if it maps to one. Links the record to that system's history.",
             },
@@ -466,40 +444,40 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "Create or update a property system/equipment record (the 'notebook' of permanently installed systems: well pump, furnace, generator, septic, installed dehumidifier, etc.). Use PROACTIVELY whenever you learn about a permanently installed system or major piece of equipment — from conversation, a document, or a voice-memo walkthrough. If a matching system already exists, it is updated (details filled in, notes appended) rather than duplicated. NOT for consumables, portable items, or supplies.",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             name: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Name of the system as the family would say it (e.g. 'Well & Water System', 'Basement Dehumidifier'). Check the PROPERTY SYSTEMS list first and reuse an existing name when you mean the same system.",
             },
             category: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "One of: water, power, hvac, structure, appliance, grounds, safety, other",
             },
             location: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Where it is on the property (e.g. 'basement, north wall')",
             },
             make: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Manufacturer if known",
             },
             model: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Model number/name if known",
             },
             serial: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Serial number if known",
             },
             installedYear: {
-              type: SchemaType.NUMBER,
+              type: "number",
               description: "Year installed, if known",
             },
             notes: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Quirks, tips, history, warnings — anything a new caretaker would need. When UPDATING an existing system, send ONLY the new information (existing notes are kept automatically — do not restate them).",
             },
@@ -512,15 +490,15 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "File or refile a document in the archive into a category. Use this to answer a document filing question (a document that landed in Needs Review), or when someone clearly says where a specific document belongs. Prefer an existing category name; a new one is created only if nothing matches.",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             documentId: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "The id of the document to file (from the filing question's related document id, or a document referenced in the archive context).",
             },
             categoryName: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "The category to file it under. Match an existing category name when the answer points to one.",
             },
@@ -532,14 +510,14 @@ const assistantTools: FunctionDeclarationsTool[] = [
         name: "add_bulletin_message",
         description: "Post a message to the family bulletin/message board",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             content: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "The message content",
             },
             author: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Who is posting the message",
             },
           },
@@ -550,22 +528,22 @@ const assistantTools: FunctionDeclarationsTool[] = [
         name: "add_dinner_signup",
         description: "Sign up to cook dinner on a specific date",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             date: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Date for the dinner in YYYY-MM-DD format",
             },
             chef: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Who is cooking",
             },
             meal: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "What meal is being cooked",
             },
             headCount: {
-              type: SchemaType.NUMBER,
+              type: "number",
               description: "How many people to cook for",
             },
           },
@@ -577,23 +555,23 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "Add a new item to the pantry inventory or note something that is in stock",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             name: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Name of the pantry item",
             },
             category: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Category: canned goods, dry goods, condiments, spices, baking, snacks, beverages, cleaning, paper goods, other",
             },
             quantity: {
-              type: SchemaType.NUMBER,
+              type: "number",
               description: "Quantity in stock",
             },
             unit: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Unit of measurement (e.g., rolls, cans, boxes, bags)",
             },
@@ -606,37 +584,37 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "Log a property expense for the S-Corp. Use when someone reports a cost, bill, payment, or purchase for the property.",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             date: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Date of the expense in YYYY-MM-DD format",
             },
             amount: {
-              type: SchemaType.NUMBER,
+              type: "number",
               description: "Dollar amount of the expense",
             },
             description: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "What the expense was for",
             },
             category: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Category: utilities, maintenance, insurance, taxes, improvements, supplies, professional-services, other",
             },
             type: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Type: operating (regular costs) or capital (improvements that add value)",
             },
             paidBy: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Who paid: Tom, Jim, Sandy, Greg, or Shared",
             },
             vendor: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Vendor or company name if known",
             },
           },
@@ -648,58 +626,58 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "Save durable information to long-term memory when it does not belong in a native operational record or a physical asset. Types: 'semantic' for facts/preferences, 'episodic' for events/decisions, and 'procedural' for reusable how-to knowledge. Same-topic changes preserve the prior version as superseded history.",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             type: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Memory type: 'semantic' (facts, preferences, relationships), 'episodic' (events, decisions, meetings), or 'procedural' (processes, how-to, steps)",
             },
             topic: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Short label (e.g., 'roof repair', 'Sandy board roles', 'winterization steps')",
             },
             content: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "The detailed memory — include names, dates, amounts, decisions, steps, context. Be thorough.",
             },
             source: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Where this info came from (e.g., 'conversation with Jim', 'board meeting July 2026')",
             },
             sourceType: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Structured source type when known, such as document, meeting-minutes, or conversation",
             },
             sourceId: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "ID of the source record when known",
             },
             scope: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Recall scope: property, family, user, or entity. Defaults to property.",
             },
             subject: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Person, system, organization, or topic this memory is primarily about",
             },
             confidence: {
-              type: SchemaType.NUMBER,
+              type: "number",
               description: "Confidence from 0 to 1; use lower values for uncertain or second-hand information",
             },
             importance: {
-              type: SchemaType.NUMBER,
+              type: "number",
               description: "Long-term importance from 0 to 1; routine details should stay near 0.5",
             },
             validFrom: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Date this became true, in YYYY-MM-DD format, when known",
             },
             validUntil: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Date this stops being true, in YYYY-MM-DD format, when known",
             },
           },
@@ -711,39 +689,39 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "Create a persistent question for the family when information is ambiguous, conflicting, or consequential enough that you should not guess. The question remains available after the chat closes. Do not use this for a question the current user can answer immediately in the active conversation unless they are leaving or the question belongs to someone else.",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             question: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "One clear question that can be answered without rereading the full source",
             },
             context: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Why you are asking and the evidence that made the issue ambiguous",
             },
             targetPerson: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "The person most likely to know, or omit to ask the whole family",
             },
             questionType: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "clarification, duplicate, governance, archive, or safety",
             },
             options: {
-              type: SchemaType.ARRAY,
+              type: "array",
               description: "Two to four concise suggested answers when useful",
-              items: { type: SchemaType.STRING },
+              items: { type: "string" },
             },
             sourceType: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "conversation, document, meeting-minutes, archive, or property-system",
             },
             sourceId: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Related record ID when known",
             },
             source: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Human-readable source label, such as a document title",
             },
           },
@@ -755,39 +733,43 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "Record a current family or corporate position and preserve the prior holder in history. Use when a direct instruction or authoritative approved record clearly appoints someone. If the source is a draft, discussion, nomination, or unclear, use ask_family instead.",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             personName: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Full name of the new position holder",
             },
             position: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Position name, such as President, Treasurer, or Secretary",
             },
             effectiveDate: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Effective date in YYYY-MM-DD format; use today's date only for a direct current instruction",
             },
             sourceType: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "conversation or meeting-minutes",
             },
             sourceId: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Related document ID when known",
             },
             source: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Human-readable source, such as Approved 2026 board meeting minutes",
             },
           },
           required: ["personName", "position", "effectiveDate", "sourceType", "source"],
         },
       },
-    ],
-  },
 ];
+
+const assistantTools: OpenAI.Responses.Tool[] = assistantToolDeclarations.map((tool) => ({
+  type: "function",
+  strict: false,
+  ...tool,
+}));
 
 // Fuzzy asset lookup: exact (case-insensitive) name first, then containment
 // either direction ("Well Pump" matches "Well & Water System" only via
@@ -1467,10 +1449,7 @@ export async function chatWithAssistant(
 
   const selectedModel = MODELS[selectAssistantModelTier(lastUserMessage.content)];
 
-  const startChatWith = (modelId: string) =>
-    genAI.getGenerativeModel({
-      model: modelId,
-      systemInstruction: `You are Bucky Dragon — the Craig family's all-knowing property assistant for Breadloaf Hill. You serve as the central knowledge hub for 4 family branches and 20+ family members who share a Vermont property at 3995 Vermont Route 125, Ripton, VT.
+  const systemPrompt = `You are Bucky Dragon — the Craig family's all-knowing property assistant for Breadloaf Hill. You serve as the central knowledge hub for 4 family branches and 20+ family members who share a Vermont property at 3995 Vermont Route 125, Ripton, VT.
 
 PERSONALITY: You're modeled on Wash, the pilot from Firefly — quick-witted, playful, warmly sarcastic, a little goofy, self-deprecating, prone to mock-dramatic flourishes and the occasional dinosaur aside. You clearly adore this family and this scrappy old property, and it shows. The humor is seasoning, not the meal: answers stay accurate, specific, and genuinely useful, and when the topic is serious — money, corporate filings, emergencies, safety — you drop the bits and shoot straight. Don't quote Firefly dialogue; you're an homage, not a transcript.
 
@@ -1571,56 +1550,48 @@ Guidelines:
 - If you don't have info, say so clearly and suggest how to get it (scan a document, add an expense, post to the board)
 - When multiple family members might need info, give the complete picture — you serve all 4 branches
 - For financial questions, always mention the per-family share and who has paid what
-- Keep a warm, familiar tone — you know these people and this property`,
-      tools: assistantTools,
-    }).startChat({
-      history: messages.slice(0, -1).map((m) => ({
-        role: m.role,
-        parts: [{ text: m.content }],
-      })),
-    });
+- Keep a warm, familiar tone — you know these people and this property`;
 
   const lastMessage = messages[messages.length - 1];
   const outgoing = attachmentContext
     ? lastMessage.content + attachmentContext
     : lastMessage.content;
 
-  // Explicit heavy analysis routes to preview Pro, the endpoint most prone to
-  // 503 "overloaded". If the FIRST send
-  // overloads (before any tool has executed, so there are no side effects to
-  // duplicate), fall back to stable flash so the user gets an answer instead
-  // of an error. Later tool-loop sends stay on whichever chat succeeded.
-  let chat = startChatWith(selectedModel);
-  let result = await withGeminiRetry(() => chat.sendMessage(outgoing)).catch(
-    async (err) => {
-      const status = (err as { status?: number })?.status;
-      if (selectedModel === MODELS.pro && (status === 503 || status === 429)) {
-        chat = startChatWith(MODELS.flash);
-        return withGeminiRetry(() => chat.sendMessage(outgoing));
-      }
-      throw err;
-    }
+  const input: OpenAI.Responses.ResponseInput = [
+    ...messages.slice(0, -1).map((message) => ({
+      role: message.role === "model" ? "assistant" as const : "user" as const,
+      content: message.content,
+    })),
+    { role: "user", content: outgoing },
+  ];
+  const createResponse = () => getOpenAIClient().responses.create({
+    model: selectedModel,
+    instructions: systemPrompt,
+    input,
+    tools: assistantTools,
+  });
+  let result = await withRetry(createResponse);
+  let functionCalls = result.output.filter(
+    (item): item is OpenAI.Responses.ResponseFunctionToolCall => item.type === "function_call"
   );
-  let functionCalls = result.response.functionCalls();
   let iterations = 0;
 
   // Walkthrough memos can legitimately produce many tool calls (one asset
   // per system described, plus memories) — allow more rounds than plain chat
   while (functionCalls && functionCalls.length > 0 && iterations < 8) {
-    const functionResponses: {
-      functionResponse: { name: string; response: Record<string, unknown> };
-    }[] = [];
+    const functionResponses: OpenAI.Responses.ResponseInput = [];
     for (const fc of functionCalls) {
+      const args = parseToolArguments(fc.arguments);
       try {
         const response = await executeToolFunction(
           fc.name,
-          fc.args as Record<string, unknown>,
+          args,
           username
         );
         try {
           await recordBuckyToolResult(
             fc.name,
-            fc.args as Record<string, unknown>,
+            args,
             response,
             username
           );
@@ -1630,24 +1601,31 @@ Guidelines:
           console.error(`[Bucky Ledger] Failed to audit ${fc.name}:`, auditError);
         }
         functionResponses.push({
-          functionResponse: { name: fc.name, response: stripToolAuditMetadata(response) },
+          type: "function_call_output",
+          call_id: fc.call_id,
+          output: JSON.stringify(stripToolAuditMetadata(response)),
         });
       } catch (error) {
         functionResponses.push({
-          functionResponse: {
-            name: fc.name,
-            response: {
-              error: `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-            },
-          },
+          type: "function_call_output",
+          call_id: fc.call_id,
+          output: JSON.stringify({
+            error: `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+          }),
         });
       }
     }
 
-    result = await withGeminiRetry(() => chat.sendMessage(functionResponses));
-    functionCalls = result.response.functionCalls();
+    input.push(
+      ...(result.output as unknown as OpenAI.Responses.ResponseInput),
+      ...functionResponses
+    );
+    result = await withRetry(createResponse);
+    functionCalls = result.output.filter(
+      (item): item is OpenAI.Responses.ResponseFunctionToolCall => item.type === "function_call"
+    );
     iterations++;
   }
 
-  return result.response.text();
+  return result.output_text;
 }
