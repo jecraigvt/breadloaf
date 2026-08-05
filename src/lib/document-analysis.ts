@@ -41,12 +41,23 @@ function normalizedType(fileType: string): string {
 }
 
 function readableInlineType(fileType: string): boolean {
+  // Historical classification must reflect the pipeline that wrote the row,
+  // not today's expanded extractor support. Legacy .doc/.xls were unsupported
+  // when the Phase 1 migration classified the existing archive.
   return (
     fileType.startsWith("audio/") ||
     fileType.startsWith("video/") ||
     fileType.startsWith("image/") ||
     fileType === "application/pdf" ||
-    isExtractableType(fileType)
+    [
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.oasis.opendocument.text",
+      "application/vnd.oasis.opendocument.spreadsheet",
+      "application/vnd.oasis.opendocument.presentation",
+      "text/plain",
+      "text/csv",
+    ].includes(fileType)
   );
 }
 

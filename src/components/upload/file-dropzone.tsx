@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { Upload, FileImage, FileText } from "lucide-react";
+import { FILE_DROPZONE_ACCEPT } from "@/lib/document-file-types";
 
 interface FileDropzoneProps {
   onFile: (file: File) => void;
@@ -25,29 +26,7 @@ export function FileDropzone({ onFile, onFiles }: FileDropzoneProps) {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: {
-      "image/jpeg": [".jpg", ".jpeg"],
-      "image/png": [".png"],
-      "image/webp": [".webp"],
-      "image/heic": [".heic"],
-      "application/pdf": [".pdf"],
-      "application/msword": [".doc"],
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
-      "application/vnd.ms-excel": [".xls"],
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
-      "application/vnd.oasis.opendocument.text": [".odt"],
-      "application/vnd.oasis.opendocument.spreadsheet": [".ods"],
-      "application/vnd.oasis.opendocument.presentation": [".odp"],
-      "text/plain": [".txt"],
-      "text/csv": [".csv"],
-      "audio/mpeg": [".mp3"],
-      "audio/wav": [".wav"],
-      "audio/mp4": [".m4a"],
-      "audio/x-m4a": [".m4a"],
-      "video/mp4": [".mp4"],
-      "video/quicktime": [".mov"],
-      "video/webm": [".webm"],
-    },
+    accept: FILE_DROPZONE_ACCEPT,
     maxSize: 100 * 1024 * 1024,
     multiple: Boolean(onFiles),
   });

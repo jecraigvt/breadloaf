@@ -2,44 +2,9 @@ import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { generateId } from "./utils";
 import { sha256 } from "./archive-integrity";
+import { resolveSupportedFileType } from "./document-file-types";
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
-
-const ALLOWED_TYPES = [
-  // Images
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/heic",
-  // Documents
-  "application/pdf",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.ms-powerpoint",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/vnd.oasis.opendocument.text",
-  "application/vnd.oasis.opendocument.spreadsheet",
-  "application/vnd.oasis.opendocument.presentation",
-  "text/plain",
-  "text/csv",
-  // Audio
-  "audio/mpeg",
-  "audio/mp3",
-  "audio/wav",
-  "audio/x-wav",
-  "audio/mp4",
-  "audio/m4a",
-  "audio/x-m4a",
-  "audio/ogg",
-  "audio/webm",
-  // Video
-  "video/mp4",
-  "video/quicktime",
-  "video/webm",
-  "video/x-msvideo",
-];
 
 const MAX_SIZE = 100 * 1024 * 1024; // 100MB for audio/video
 
@@ -56,8 +21,11 @@ export function isMediaType(type: string): boolean {
 }
 
 export async function saveUploadedFile(file: File) {
-  if (!ALLOWED_TYPES.includes(file.type)) {
-    throw new Error(`File type ${file.type} not allowed`);
+  const resolvedType = resolveSupportedFileType(file.type, file.name);
+  if (!resolvedType) {
+    throw new Error(
+      `File type ${file.type || "unknown"} is not supported because Breadloaf cannot read it`
+    );
   }
 
   if (file.size > MAX_SIZE) {
@@ -76,7 +44,7 @@ export async function saveUploadedFile(file: File) {
   return {
     fileName: file.name,
     filePath: `/uploads/${uniqueName}`,
-    fileType: file.type,
+    fileType: resolvedType,
     fileSize: file.size,
     checksum: sha256(buffer),
   };

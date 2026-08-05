@@ -5,10 +5,7 @@ import { prisma } from "../src/lib/prisma";
 import { MODELS } from "../src/lib/ai";
 import { hybridSearch } from "../src/lib/embeddings";
 import { getOpenAIClient, withRetry } from "../src/lib/openai-client";
-import {
-  classifyHistoricalAnalysis,
-  meaningfulAnalysisContent,
-} from "../src/lib/document-analysis";
+import { meaningfulAnalysisContent } from "../src/lib/document-analysis";
 import {
   ROUND_TRIP_NEGATIVE_CONTROLS,
   distinctiveTitleWords,
@@ -33,6 +30,8 @@ interface ArchiveDocument {
   fileSize: number;
   aiSummary: string | null;
   aiExtractedText: string | null;
+  analysisState: string;
+  analysisError: string | null;
 }
 
 interface VerificationResult {
@@ -115,11 +114,10 @@ async function verifyDocument(
     document.aiExtractedText
   );
   if (!content) {
-    const failure = classifyHistoricalAnalysis(document);
     return {
       label: document.title,
       passed: false,
-      reason: `no usable analysis content (${failure.state}: ${failure.error})`,
+      reason: `no usable analysis content (${document.analysisState}: ${document.analysisError || "no error recorded"})`,
     };
   }
   if (indexChunks === 0) {
@@ -195,6 +193,8 @@ async function main() {
         fileSize: true,
         aiSummary: true,
         aiExtractedText: true,
+        analysisState: true,
+        analysisError: true,
       },
       orderBy: { createdAt: "asc" },
     }),

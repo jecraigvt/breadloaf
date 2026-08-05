@@ -1,50 +1,65 @@
 import mammoth from "mammoth";
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
+import WordExtractor from "word-extractor";
+import * as XLSX from "xlsx";
+import {
+  DOC_TYPE,
+  DOCX_TYPE,
+  XLS_TYPE,
+  XLSX_TYPE,
+  ODF_TYPES,
+  isExtractableMimeType,
+  normalizeMimeType,
+} from "@/lib/document-file-types";
 
-// Server-side text extraction for document types Gemini can't read inline.
-// Returns null for unsupported types (legacy .doc/.ppt) so callers can fall
-// back to manual categorization.
+// Server-side text extraction for document types the AI cannot read inline.
+// Returns null for malformed or genuinely empty files. Unsupported types are
+// refused before persistence by document-file-types.ts.
 
 const MAX_CHARS = 20000;
 const MAX_ROWS_PER_SHEET = 300;
 
-const DOCX_TYPE =
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-const XLSX_TYPE =
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-// OpenDocument (LibreOffice/OpenOffice): text, spreadsheet, presentation
-const ODF_TYPES = new Set([
-  "application/vnd.oasis.opendocument.text",
-  "application/vnd.oasis.opendocument.spreadsheet",
-  "application/vnd.oasis.opendocument.presentation",
-]);
+const ODF_TYPE_SET = new Set<string>(ODF_TYPES);
 
 export function isExtractableType(fileType: string): boolean {
-  return (
-    fileType === DOCX_TYPE ||
-    fileType === XLSX_TYPE ||
-    ODF_TYPES.has(fileType) ||
-    fileType === "text/plain" ||
-    fileType === "text/csv"
-  );
+  return isExtractableMimeType(fileType);
 }
 
 export async function extractTextFromFile(
   buffer: Buffer,
   fileType: string
 ): Promise<string | null> {
+  const type = normalizeMimeType(fileType);
   try {
-    if (fileType === "text/plain" || fileType === "text/csv") {
-      return buffer.toString("utf-8").slice(0, MAX_CHARS);
+    if (type === "text/plain" || type === "text/csv") {
+      return normalizeExtractedText(buffer.toString("utf-8"));
     }
 
-    if (fileType === DOCX_TYPE) {
+    if (type === DOC_TYPE) {
+      const extractor = new WordExtractor();
+      const document = await extractor.extract(buffer);
+      return normalizeExtractedText([
+        document.getBody(),
+        document.getHeaders({ includeFooters: false }),
+        document.getFooters(),
+        document.getFootnotes(),
+        document.getEndnotes(),
+        document.getAnnotations(),
+        document.getTextboxes(),
+      ].filter(Boolean).join("\n"));
+    }
+
+    if (type === DOCX_TYPE) {
       const result = await mammoth.extractRawText({ buffer });
-      return result.value.slice(0, MAX_CHARS);
+      return normalizeExtractedText(result.value);
     }
 
-    if (fileType === XLSX_TYPE) {
+    if (type === XLS_TYPE) {
+      return extractLegacySpreadsheetText(buffer);
+    }
+
+    if (type === XLSX_TYPE) {
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
       const parts: string[] = [];
@@ -63,10 +78,10 @@ export async function extractTextFromFile(
           if (cells.trim()) parts.push(cells);
         });
       });
-      return parts.join("\n").slice(0, MAX_CHARS);
+      return normalizeExtractedText(parts.join("\n"));
     }
 
-    if (ODF_TYPES.has(fileType)) {
+    if (ODF_TYPE_SET.has(type)) {
       return await extractOdfText(buffer);
     }
 
@@ -75,6 +90,30 @@ export async function extractTextFromFile(
     console.error("Text extraction failed:", err);
     return null;
   }
+}
+
+function normalizeExtractedText(value: string): string | null {
+  const text = value.replace(/\u0000/g, "").trim();
+  return text ? text.slice(0, MAX_CHARS) : null;
+}
+
+function extractLegacySpreadsheetText(buffer: Buffer): string | null {
+  const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
+  const parts: string[] = [];
+  for (const sheetName of workbook.SheetNames) {
+    parts.push(`=== Sheet: ${sheetName} ===`);
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], {
+      header: 1,
+      raw: false,
+      defval: "",
+      blankrows: false,
+    });
+    for (const row of rows.slice(0, MAX_ROWS_PER_SHEET)) {
+      const cells = Array.isArray(row) ? row.map((value) => formatCell(value)).join("\t") : "";
+      if (cells.trim()) parts.push(cells);
+    }
+  }
+  return normalizeExtractedText(parts.join("\n"));
 }
 
 // OpenDocument files are zips containing content.xml. Convert structural
@@ -97,7 +136,7 @@ async function extractOdfText(buffer: Buffer): Promise<string | null> {
     .replace(/&apos;/g, "'")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return text.slice(0, MAX_CHARS) || null;
+  return normalizeExtractedText(text);
 }
 
 function formatCell(value: unknown): string {
