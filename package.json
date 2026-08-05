@@ -11,7 +11,9 @@
     "db:migrate": "npx prisma migrate dev",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:reset": "npx prisma migrate reset",
-    "archive:verify": "npx tsx scripts/verify-archive.ts",
+    "archive:verify": "npm run archive:verify:checksums && npm run archive:verify:roundtrip",
+    "archive:verify:checksums": "npx tsx scripts/verify-archive.ts",
+    "archive:verify:roundtrip": "npx tsx scripts/verify-archive-retrieval.ts",
     "archive:retitle": "npx tsx scripts/retitle-documents.ts",
     "memory:reindex": "npx tsx scripts/re-embed.ts",
     "postinstall": "npx prisma generate"
