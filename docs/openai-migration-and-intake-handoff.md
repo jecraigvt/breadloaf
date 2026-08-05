@@ -970,6 +970,57 @@ receipts), *Woods Cabin Committee Records*, and the *2025 board minutes*. Those
 are near-duplicate confusion and guard shape. Whether to chase them or accept
 ~94% as the honest ceiling is a judgement call to make with the numbers in hand.
 
+### Phase 3 result — measured 2026-08-05, after re-analysis and re-tune
+
+```
+                 baseline    phase 2    corrected    FINAL
+round-trip         74.0%      78.0%         —        94.0%
+golden             84.0%      92.0%       68.0%      88.0%
+negative controls                                     4 of 4
+analysisState   ok 40 / 8 broken                   ok 46 / 2 blank
+```
+
+Golden's "corrected" column is 17h removing the hollow passes. The honest
+progression is `68.0% -> 88.0%`; comparing 84.0% to 88.0% understates the work
+because the first number was counting empty documents as found.
+
+**Re-analysis broke the guard tuning, and that is the lasting lesson.** Spread
+1.20 passed 4 of 4 controls before re-analysis and 2 of 4 after — without a line
+of retrieval code changing. Forty-six documents gained content, and nonsense
+queries began matching newly-populated photo summaries. The guard values are
+properties of the corpus, not of the code. **Re-tune after any corpus-wide
+change**; the constant in `embeddings.ts` now says so.
+
+The re-tune grid also showed `relativeSemanticFloor` is inert — every value from
+0.65 to 0.80 gave identical results. `uncorroboratedTopSpread` is the only real
+lever. 1.28 was the minimum recovering all four controls; 1.30 was taken for
+margin at identical measured cost.
+
+**The harness is stochastic.** Round-trip questions are generated fresh by a
+model each run, so bare runs differ by a few points for no reason. Compare
+settings with `scripts/tune-archive-retrieval-guards.ts`, which fixes the
+questions across the grid — never by diffing two harness runs.
+
+### The ceiling is 96%, not 100%
+
+Two documents are **genuinely blank**. `Breadloaf Maintenance Log.docx` and
+`Breadloaf Maintenance Schedule.docx` are each 721,255 bytes, of which ~1.46MB
+uncompressed is four embedded EB Garamond font files. `word/document.xml` is
+2,211 bytes and contains no text at all.
+
+`"No readable text could be extracted"` is **correct**, not a bug. No pipeline
+can extract text that was never typed. These need re-uploading by whoever holds
+the real files — a message to the family, not a task for an agent.
+
+So 48 of 50 round-trip checks and 23 of 25 golden checks is the true maximum.
+Current state is 47/50 and 22/25.
+
+### Still open
+
+**17f — surface the health numbers** is not done. `analysisState != "ok"` counts
+and the latest pass rates are still invisible in the product. That was the whole
+reason this went unnoticed for a month, so it should not be dropped.
+
 ## Task 17h — stop the golden harness passing on empty documents
 
 Found during the phase 2 review. `"what do the bylaws say about succession"`

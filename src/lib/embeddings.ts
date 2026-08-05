@@ -158,10 +158,27 @@ export function fuseSearchResults(
 
 const SEMANTIC_CANDIDATES = 40;
 const KEYWORD_CANDIDATES = 60;
-// Dimensionless, query-relative gates measured as a 35-pair grid against the
-// live archive on 2026-08-05. Floor 0.70 / spread 1.20 tied for the best pair
-// (78% round-trip, 92% golden) while all four counted controls returned nothing.
-// Spreads of 1.15 and 1.18 admitted false-positive context for every control.
+// Dimensionless, query-relative gates. RE-TUNE AFTER ANY CORPUS-WIDE CHANGE:
+// these values are properties of the archive's content, not of the code, and
+// re-analysis on 2026-08-05 invalidated the previous pair without touching a
+// line of retrieval logic. Spread 1.20 had passed 4/4 controls before that
+// re-analysis and dropped to 2/4 after it, because 46 documents gained content
+// and nonsense queries began matching newly-populated photo summaries.
+//
+// Re-measured as a 35-pair grid against the repaired archive. The floor turned
+// out to be inert — every value from 0.65 to 0.80 produced identical results —
+// so the spread is the only real lever. 1.28 was the minimum that recovered all
+// four controls; 1.30 is chosen for margin at identical measured cost:
+//
+//   spread 1.15         90% round-trip / 92% golden / 2 of 4 controls
+//   spread 1.18-1.25    86% round-trip / 92% golden / 2 of 4 controls
+//   spread 1.28-1.30    86% round-trip / 96% golden / 4 of 4 controls
+//
+// Tune with scripts/tune-archive-retrieval-guards.ts, which fixes the generated
+// questions across the grid. Do NOT compare bare harness runs to each other:
+// round-trip questions are generated fresh by a model each run, so a few points
+// of movement between runs is noise rather than a result.
+//
 // Keyword evidence must explain at least half of the query's IDF weight so one
 // stray real word in a nonsense query cannot admit the other semantic noise.
 export interface RetrievalGuards {
@@ -171,7 +188,7 @@ export interface RetrievalGuards {
 
 export const DEFAULT_RETRIEVAL_GUARDS: RetrievalGuards = {
   relativeSemanticFloor: 0.7,
-  uncorroboratedTopSpread: 1.2,
+  uncorroboratedTopSpread: 1.3,
 };
 const KEYWORD_QUERY_COVERAGE = 0.5;
 
