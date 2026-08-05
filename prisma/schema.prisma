@@ -436,14 +436,16 @@ model JarvisMemory {
 }
 
 model Embedding {
-  id         String   @id @default(cuid())
-  sourceType String // document, memory, asset, expense, maintenance
-  sourceId   String
-  chunkIndex Int      @default(0)
-  content    String // contextualized source chunk used for keyword + vector retrieval
-  vector     String // JSON array of floats
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id           String                      @id @default(cuid())
+  sourceType   String // document, memory, asset, expense, maintenance
+  sourceId     String
+  chunkIndex   Int                         @default(0)
+  content      String // contextualized source chunk used for keyword + vector retrieval
+  vector       String // JSON source retained for Prisma writes; DB trigger mirrors it into pgvector
+  embedding    Unsupported("vector(1536)")?
+  searchVector Unsupported("tsvector")?
+  createdAt    DateTime                    @default(now())
+  updatedAt    DateTime                    @updatedAt
 
   @@unique([sourceType, sourceId, chunkIndex])
   @@index([sourceType])

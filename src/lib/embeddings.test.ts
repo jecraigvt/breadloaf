@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { splitContentIntoChunks, tokenizeSearchQuery } from "./embeddings";
+import {
+  filterSemanticCandidates,
+  filterKeywordCandidates,
+  fuseSearchResults,
+  splitContentIntoChunks,
+  tokenizeSearchQuery,
+  type SearchResult,
+} from "./embeddings";
 
 test("keeps short knowledge in one chunk", () => {
   assert.deepEqual(splitContentIntoChunks("Well pump reset button is behind the blue cover."), [
@@ -21,4 +28,70 @@ test("keyword terms retain useful exact identifiers", () => {
     tokenizeSearchQuery("What do we know about Grundfos SQ 5-70 in the well?"),
     ["grundfos", "5-70", "well"]
   );
+});
+
+test("keyword terms discard short common words that caused substring noise", () => {
+  assert.deepEqual(tokenizeSearchQuery("the heater will not ignite"), ["heater", "ignite"]);
+  assert.deepEqual(tokenizeSearchQuery("who handles the insurance renewal?"), ["insurance", "renewal"]);
+});
+
+function result(sourceId: string, score: number): SearchResult {
+  return { sourceType: "document", sourceId, chunkIndex: 0, content: sourceId, score };
+}
+
+test("semantic filtering uses the query's top score rather than an absolute model constant", () => {
+  assert.deepEqual(
+    filterSemanticCandidates([
+      result("heating", 0.252),
+      result("photo", 0.225),
+      result("directory", 0.17),
+    ], true).map((entry) => entry.sourceId),
+    ["heating", "photo"]
+  );
+  assert.deepEqual(
+    filterSemanticCandidates([
+      result("strong", 0.64),
+      result("weak", 0.27),
+    ], true).map((entry) => entry.sourceId),
+    ["strong"]
+  );
+});
+
+test("uncorroborated semantic noise must stand out from its runner-up", () => {
+  assert.deepEqual(
+    filterSemanticCandidates([
+      result("purple-photo", 0.277),
+      result("monkey-photo", 0.252),
+      result("dishwasher-memory", 0.25),
+      result("photo-two", 0.242),
+      result("photo-three", 0.236),
+    ], false),
+    []
+  );
+  assert.deepEqual(
+    filterSemanticCandidates([
+      result("clear-semantic-match", 0.64),
+      result("runner-up", 0.27),
+      result("third", 0.25),
+      result("fourth", 0.24),
+      result("fifth", 0.22),
+    ], false).map((entry) => entry.sourceId),
+    ["clear-semantic-match"]
+  );
+});
+
+test("keyword retrieval requires enough of the query to be grounded", () => {
+  assert.deepEqual(filterKeywordCandidates([result("dishwasher-only", 0.32)]), []);
+  assert.deepEqual(
+    filterKeywordCandidates([result("heater-and-ignite", 0.8)]).map((entry) => entry.sourceId),
+    ["heater-and-ignite"]
+  );
+});
+
+test("a weak keyword match cannot erase a clear semantic lead", () => {
+  const fused = fuseSearchResults(
+    [result("heating", 0.252), result("photo", 0.225)],
+    [result("photo", 0.45), result("directory", 0.4)]
+  );
+  assert.deepEqual(fused.map((entry) => entry.sourceId), ["heating", "photo", "directory"]);
 });

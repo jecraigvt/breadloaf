@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getOpenAIClient, withRetry } from "@/lib/openai-client";
+import { Prisma } from "@prisma/client";
 
 export const EMBEDDING_MODEL = "text-embedding-3-small";
 
@@ -52,9 +53,11 @@ export function splitContentIntoChunks(content: string): string[] {
 
 export function tokenizeSearchQuery(query: string): string[] {
   const stopWords = new Set([
-    "about", "after", "before", "could", "does", "from", "have", "into",
-    "just", "know", "please", "show", "that", "their", "there", "these",
-    "the", "they", "this", "what", "when", "where", "which", "with", "would",
+    "about", "after", "and", "are", "before", "can", "cannot", "could",
+    "did", "does", "for", "from", "had", "handle", "handles", "has", "have", "how", "into",
+    "just", "know", "not", "our", "please", "show", "that", "the", "their",
+    "said", "say", "tell", "there", "these", "they", "this", "told", "was", "we", "were", "what", "when",
+    "where", "which", "who", "why", "will", "with", "would", "you", "your",
   ]);
   return Array.from(
     new Set(
@@ -123,117 +126,194 @@ export async function removeFromIndex(sourceType: string, sourceId: string): Pro
   await prisma.embedding.deleteMany({ where: { sourceType, sourceId } });
 }
 
-function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length || a.length === 0) return 0;
-  let dot = 0;
-  let magA = 0;
-  let magB = 0;
-  for (let index = 0; index < a.length; index++) {
-    dot += a[index] * b[index];
-    magA += a[index] * a[index];
-    magB += b[index] * b[index];
-  }
-  const denominator = Math.sqrt(magA) * Math.sqrt(magB);
-  return denominator === 0 ? 0 : dot / denominator;
-}
-
 function searchKey(result: Pick<SearchResult, "sourceType" | "sourceId" | "chunkIndex">) {
   return `${result.sourceType}:${result.sourceId}:${result.chunkIndex}`;
 }
 
-// Minimum cosine similarity for a chunk to reach rank fusion. This constant is
-// MODEL-SPECIFIC and must be re-measured whenever the embedding model changes —
-// different models produce different similarity distributions, and the old
-// value silently discarded good matches after the migration.
-//
-// Measured against the live index (65 rows) on 2026-08-05, gemini-embedding-2's
-// 0.28 was above the top score for whole queries: "the heater will not ignite"
-// peaked at 0.252 on Emergency Generator Operating Instructions — the right
-// answer — and returned nothing at all. Every real query's best match survives
-// at 0.25, while the nonsense control "purple monkey dishwasher" keeps only 3
-// of 65, all at ranks the fusion outranks anyway.
-//
-// An absolute floor is the weak part of this design: per-query score spread is
-// wide (one query kept 18 rows at 0.28 while another kept 0), so a threshold
-// relative to each query's top score would be more robust. Left for task 12,
-// which reworks this retrieval path anyway.
-const SEMANTIC_FLOOR = 0.25;
+export function fuseSearchResults(
+  semantic: SearchResult[],
+  keyword: SearchResult[]
+): SearchResult[] {
+  const semanticTop = semantic[0]?.score || 1;
+  const channels = new Map<string, { result: SearchResult; semantic: number; keyword: number }>();
+  for (const result of semantic) {
+    channels.set(searchKey(result), { result, semantic: result.score / semanticTop, keyword: 0 });
+  }
+  for (const result of keyword) {
+    const key = searchKey(result);
+    const existing = channels.get(key);
+    channels.set(key, {
+      result,
+      semantic: existing?.semantic || 0,
+      keyword: result.score,
+    });
+  }
+  return Array.from(channels.values()).map(({ result, semantic: semanticScore, keyword: keywordScore }) => ({
+    ...result,
+    // Keep the stronger channel authoritative. Corroboration gets a small
+    // bonus without letting a weak lexical match erase a clear semantic lead.
+    score: Math.max(semanticScore, keywordScore) + Math.min(semanticScore, keywordScore) * 0.1,
+  })).sort((left, right) => right.score - left.score);
+}
+
+const SEMANTIC_CANDIDATES = 40;
+const KEYWORD_CANDIDATES = 60;
+// Dimensionless, query-relative gates measured against the live 65-chunk index
+// on 2026-08-05. A 0.72 top-relative floor kept the five known-good rankings.
+// With no lexical corroboration, the weakest known-good query had a 1.26x
+// top-to-fifth spread while "purple monkey dishwasher" had 1.17x, hence 1.25.
+// Keyword evidence must explain at least half of the query's IDF weight so one
+// stray real word in a nonsense query cannot admit the other semantic noise.
+const RELATIVE_SEMANTIC_FLOOR = 0.72;
+const UNCORROBORATED_TOP_SPREAD = 1.25;
+const KEYWORD_QUERY_COVERAGE = 0.5;
+
+interface DatabaseSearchResult extends Omit<SearchResult, "score"> {
+  score: number | string;
+}
+
+function normalizeDatabaseResults(results: DatabaseSearchResult[]): SearchResult[] {
+  return results.map((result) => ({ ...result, score: Number(result.score) }));
+}
+
+// Similarity magnitudes are model-specific, so retain candidates relative to
+// this query's own best result. If no query term occurs anywhere, require the
+// best semantic match to stand distinctly above the runner-up; this keeps
+// ungrounded controls such as "purple monkey dishwasher" from manufacturing
+// context while preserving strong semantic-only matches.
+export function filterSemanticCandidates(
+  candidates: SearchResult[],
+  hasKeywordEvidence: boolean
+): SearchResult[] {
+  if (candidates.length === 0) return [];
+  const topScore = candidates[0].score;
+  if (topScore <= 0) return [];
+  const comparisonScore = candidates[Math.min(4, candidates.length - 1)]?.score ?? 0;
+  if (
+    !hasKeywordEvidence &&
+    comparisonScore > 0 &&
+    topScore / comparisonScore < UNCORROBORATED_TOP_SPREAD
+  ) {
+    return [];
+  }
+  return candidates.filter((candidate) => candidate.score >= topScore * RELATIVE_SEMANTIC_FLOOR);
+}
+
+export function filterKeywordCandidates(candidates: SearchResult[]): SearchResult[] {
+  return (candidates[0]?.score || 0) >= KEYWORD_QUERY_COVERAGE ? candidates : [];
+}
+
+async function keywordSearch(
+  terms: string[],
+  sourceTypes?: string[]
+): Promise<SearchResult[]> {
+  if (terms.length === 0) return [];
+  const sourceFilter = sourceTypes?.length
+    ? Prisma.sql`AND e."sourceType" IN (${Prisma.join(sourceTypes)})`
+    : Prisma.empty;
+  const termValues = Prisma.join(terms.map((term) => Prisma.sql`(${term})`));
+  const rows = await prisma.$queryRaw<DatabaseSearchResult[]>(Prisma.sql`
+    WITH query_terms(term) AS (
+      VALUES ${termValues}
+    ),
+    scoped AS (
+      SELECT e.*
+      FROM "Embedding" e
+      WHERE TRUE ${sourceFilter}
+    ),
+    corpus AS (
+      SELECT COUNT(*)::float8 AS total
+      FROM scoped
+    ),
+    term_stats AS (
+      SELECT
+        query_terms.term,
+        (LN((corpus.total + 1) / (COUNT(scoped.id)::float8 + 1)) + 1)::float8 AS weight
+      FROM query_terms
+      CROSS JOIN corpus
+      LEFT JOIN scoped
+        ON scoped."searchVector" @@ plainto_tsquery('simple', query_terms.term)
+      GROUP BY query_terms.term, corpus.total
+    ),
+    total_weight AS (
+      SELECT SUM(weight)::float8 AS weight
+      FROM term_stats
+    )
+    SELECT
+      scoped."sourceType",
+      scoped."sourceId",
+      scoped."chunkIndex",
+      scoped.content,
+      (SUM(term_stats.weight) / NULLIF(total_weight.weight, 0))::float8 AS score
+    FROM scoped
+    JOIN term_stats
+      ON scoped."searchVector" @@ plainto_tsquery('simple', term_stats.term)
+    CROSS JOIN total_weight
+    GROUP BY
+      scoped.id,
+      scoped."sourceType",
+      scoped."sourceId",
+      scoped."chunkIndex",
+      scoped.content,
+      scoped."updatedAt",
+      total_weight.weight
+    ORDER BY score DESC, scoped."updatedAt" DESC
+    LIMIT ${KEYWORD_CANDIDATES}
+  `);
+  return normalizeDatabaseResults(rows);
+}
+
+async function semanticSearchCandidates(
+  queryVector: number[],
+  sourceTypes?: string[]
+): Promise<SearchResult[]> {
+  const sourceFilter = sourceTypes?.length
+    ? Prisma.sql`WHERE e."sourceType" IN (${Prisma.join(sourceTypes)})`
+    : Prisma.empty;
+  const vector = JSON.stringify(queryVector);
+  const rows = await prisma.$queryRaw<DatabaseSearchResult[]>(Prisma.sql`
+    SELECT
+      e."sourceType",
+      e."sourceId",
+      e."chunkIndex",
+      e.content,
+      (1 - (e.embedding <=> ${vector}::vector))::float8 AS score
+    FROM "Embedding" e
+    ${sourceFilter}
+    ORDER BY e.embedding <=> ${vector}::vector
+    LIMIT ${SEMANTIC_CANDIDATES}
+  `);
+  return normalizeDatabaseResults(rows);
+}
 
 export async function hybridSearch(
   query: string,
   limit = 12,
   sourceTypes?: string[]
 ): Promise<SearchResult[]> {
-  const where = sourceTypes?.length ? { sourceType: { in: sourceTypes } } : {};
   const terms = tokenizeSearchQuery(query);
-
-  const [allEmbeddings, keywordMatches] = await Promise.all([
+  const [queryVector, keywordCandidates] = await Promise.all([
     process.env.OPENAI_API_KEY
-      ? prisma.embedding.findMany({ where })
-      : Promise.resolve([]),
-    terms.length
-      ? prisma.embedding.findMany({
-          where: {
-            ...where,
-            OR: terms.map((term) => ({ content: { contains: term, mode: "insensitive" as const } })),
-          },
-          take: 60,
+      ? generateEmbedding(query).catch((error) => {
+          console.error("[Embedding] Semantic query failed; using keyword retrieval:", error);
+          return null;
         })
-      : Promise.resolve([]),
+      : Promise.resolve(null),
+    keywordSearch(terms, sourceTypes),
   ]);
+  const keyword = filterKeywordCandidates(keywordCandidates);
 
   let semantic: SearchResult[] = [];
-  if (allEmbeddings.length > 0) {
+  if (queryVector) {
     try {
-      const queryVector = await generateEmbedding(query);
-      semantic = allEmbeddings
-        .map((entry) => ({
-          sourceType: entry.sourceType,
-          sourceId: entry.sourceId,
-          chunkIndex: entry.chunkIndex,
-          content: entry.content,
-          score: cosineSimilarity(queryVector, JSON.parse(entry.vector) as number[]),
-        }))
-        .filter((entry) => entry.score >= SEMANTIC_FLOOR)
-        .sort((left, right) => right.score - left.score)
-        .slice(0, 40);
+      const candidates = await semanticSearchCandidates(queryVector, sourceTypes);
+      semantic = filterSemanticCandidates(candidates, keyword.length > 0);
     } catch (error) {
       console.error("[Embedding] Semantic query failed; using keyword retrieval:", error);
     }
   }
 
-  const keyword = keywordMatches
-    .map((entry) => {
-      const lower = entry.content.toLowerCase();
-      const matches = terms.reduce((count, term) => count + (lower.includes(term) ? 1 : 0), 0);
-      return {
-        sourceType: entry.sourceType,
-        sourceId: entry.sourceId,
-        chunkIndex: entry.chunkIndex,
-        content: entry.content,
-        score: matches / Math.max(terms.length, 1),
-      };
-    })
-    .sort((left, right) => right.score - left.score);
-
-  const fused = new Map<string, SearchResult>();
-  const addRanked = (results: SearchResult[], weight: number) => {
-    results.forEach((result, rank) => {
-      const key = searchKey(result);
-      const contribution = weight / (60 + rank + 1);
-      const existing = fused.get(key);
-      fused.set(key, {
-        ...result,
-        score: (existing?.score || 0) + contribution,
-      });
-    });
-  };
-  addRanked(semantic, 1);
-  addRanked(keyword, 1.15);
-
-  return Array.from(fused.values())
-    .sort((left, right) => right.score - left.score)
-    .slice(0, limit);
+  return fuseSearchResults(semantic, keyword).slice(0, limit);
 }
 
 export async function semanticSearch(
