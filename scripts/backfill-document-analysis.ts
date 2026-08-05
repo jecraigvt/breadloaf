@@ -9,15 +9,8 @@ import "dotenv/config";
 import { readFile, stat } from "fs/promises";
 import path from "path";
 import { prisma } from "../src/lib/prisma";
-import {
-  categorizeDocument,
-  categorizeText,
-  processMediaFile,
-  type CategoryOption,
-} from "../src/lib/ai";
 import { resolveDocumentCategory } from "../src/lib/document-categories";
-import { extractTextFromFile, isExtractableType } from "../src/lib/extract-text";
-import { AI_SIZE_LIMIT } from "../src/lib/document-analysis";
+import { AI_SIZE_LIMIT, analyzeDocumentBuffer } from "../src/lib/document-analysis";
 import { indexDocument } from "../src/lib/embeddings";
 
 const apply = process.argv.includes("--apply");
@@ -27,8 +20,6 @@ const limit = parsedLimit && parsedLimit > 0 ? parsedLimit : undefined;
 const uploadRoot = path.resolve(
   process.env.BACKFILL_UPLOAD_ROOT || path.join(process.cwd(), "public", "uploads")
 );
-
-type AnalysisResult = Awaited<ReturnType<typeof categorizeDocument>>;
 
 interface Counters {
   enriched: number;
@@ -41,26 +32,6 @@ function documentPath(filePath: string): string | null {
   const relative = filePath.replace(/^[/\\]*uploads[/\\]/, "");
   const resolved = path.resolve(uploadRoot, relative);
   return resolved.startsWith(`${uploadRoot}${path.sep}`) ? resolved : null;
-}
-
-async function analyze(
-  buffer: Buffer,
-  document: { fileType: string; fileName: string },
-  categories: CategoryOption[]
-): Promise<AnalysisResult> {
-  const type = document.fileType.split(";")[0].trim().toLowerCase();
-  if (type.startsWith("audio/") || type.startsWith("video/")) {
-    return processMediaFile(buffer.toString("base64"), type, categories, document.fileName);
-  }
-  if (type.startsWith("image/") || type === "application/pdf") {
-    return categorizeDocument(buffer.toString("base64"), type, categories, document.fileName);
-  }
-  if (isExtractableType(type)) {
-    const extracted = await extractTextFromFile(buffer, type);
-    if (!extracted?.trim()) throw new Error("no extractable text");
-    return categorizeText(extracted, document.fileName, categories);
-  }
-  throw new Error(`unsupported file type: ${type || "unknown"}`);
 }
 
 async function closeReadyArchiveQuestions(documentIds: string[]): Promise<number> {
@@ -162,19 +133,38 @@ async function main() {
       console.log(`file-missing ${document.id} ${document.fileName} (${document.filePath})`);
       continue;
     }
-    if (actualSize > AI_SIZE_LIMIT) {
+    const isOversizedPdf =
+      actualSize > AI_SIZE_LIMIT &&
+      document.fileType.split(";")[0].trim().toLowerCase() === "application/pdf";
+    if (actualSize > AI_SIZE_LIMIT && !isOversizedPdf) {
       counters.skippedOversize++;
       console.log(`skipped-oversize ${document.id} ${document.fileName} (${(actualSize / 1024 / 1024).toFixed(1)}MB)`);
       continue;
     }
     if (!apply) {
-      console.log(`enriched ${document.id} ${document.fileName} (preview only; would analyze)`);
+      console.log(
+        `enriched ${document.id} ${document.fileName} (preview only; would ${isOversizedPdf ? "sample and analyze" : "analyze"})`
+      );
       continue;
     }
 
     try {
       const buffer = await readFile(fullPath);
-      const result = await analyze(buffer, document, categories);
+      const outcome = await analyzeDocumentBuffer({
+        buffer,
+        fileName: document.fileName,
+        fileType: document.fileType,
+        categories,
+      });
+      if (outcome.state === "too_large") {
+        counters.skippedOversize++;
+        console.log(`skipped-oversize ${document.id} ${document.fileName} (${outcome.error})`);
+        continue;
+      }
+      if (!outcome.result) {
+        throw new Error(`${outcome.state}: ${outcome.error || "analysis failed"}`);
+      }
+      const result = outcome.result;
       const summary = result.summary.trim();
       if (!summary) throw new Error("AI returned an empty summary");
       const extractedText = result.extractedText.trim() || summary;

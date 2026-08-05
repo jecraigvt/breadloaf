@@ -5,6 +5,7 @@ import {
   type CategoryOption,
 } from "@/lib/ai";
 import { extractTextFromFile, isExtractableType } from "@/lib/extract-text";
+import { PdfSampleTooLargeError, samplePdfPages } from "@/lib/pdf-sampling";
 
 export const AI_SIZE_LIMIT = 15 * 1024 * 1024;
 
@@ -175,7 +176,7 @@ export async function analyzeDocumentBuffer(input: {
   const { buffer, fileName, categories } = input;
   const type = normalizedType(input.fileType);
 
-  if (buffer.length > AI_SIZE_LIMIT) {
+  if (buffer.length > AI_SIZE_LIMIT && type !== "application/pdf") {
     return {
       state: "too_large",
       error: `File is ${(buffer.length / 1024 / 1024).toFixed(1)} MB; AI analysis is limited to 15 MB.`,
@@ -187,6 +188,20 @@ export async function analyzeDocumentBuffer(input: {
     let result: CategorizedDocument | null = null;
     if (type.startsWith("audio/") || type.startsWith("video/")) {
       result = await processMediaFile(buffer.toString("base64"), type, categories, fileName);
+    } else if (type === "application/pdf" && buffer.length > AI_SIZE_LIMIT) {
+      const sample = await samplePdfPages(buffer, AI_SIZE_LIMIT);
+      result = await categorizeDocument(
+        sample.buffer.toString("base64"),
+        type,
+        categories,
+        fileName,
+        {
+          pdfSample: {
+            sourcePageCount: sample.sourcePageCount,
+            sampledPageNumbers: sample.sampledPageNumbers,
+          },
+        }
+      );
     } else if (type.startsWith("image/") || type === "application/pdf") {
       result = await categorizeDocument(buffer.toString("base64"), type, categories, fileName);
     } else if (isExtractableType(type)) {
@@ -216,6 +231,9 @@ export async function analyzeDocumentBuffer(input: {
     }
     return { state: "ok", error: null, result };
   } catch (error) {
+    if (error instanceof PdfSampleTooLargeError) {
+      return { state: "too_large", error: cleanError(error), result: null };
+    }
     return { state: "provider_error", error: cleanError(error), result: null };
   }
 }

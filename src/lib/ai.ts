@@ -149,8 +149,16 @@ export async function categorizeDocument(
   fileBase64: string,
   fileType: string,
   existingCategories: CategoryOption[],
-  fileName?: string
+  fileName?: string,
+  options: {
+    pdfSample?: { sourcePageCount: number; sampledPageNumbers: number[] };
+  } = {}
 ): Promise<CategorizationResult> {
+  const sampleInstruction = options.pdfSample
+    ? `\nThis is a representative sample from an oversized ${options.pdfSample.sourcePageCount}-page PDF. The supplied sample contains original pages ${options.pdfSample.sampledPageNumbers.join(", ")}.
+- Base the summary and extractedText only on the supplied pages and state that the analysis is sampled, not exhaustive.
+- For a photo collection, put concise searchable descriptions of visible people, likely eras, settings, objects, and any legible names or captions into extractedText; do not limit extractedText to OCR.`
+    : "";
   const prompt = `You are a document categorization assistant for the Breadloaf Hill family property archive in Vermont.
 
 Existing categories:
@@ -161,6 +169,7 @@ ${NEW_CATEGORY_RULES}
 ${DOCUMENT_TITLE_RULES}
 
 Source filename (provenance only; do not use it as the title): ${fileName || "unknown"}
+${sampleInstruction}
 
 Analyze this document and return ONLY valid JSON (no markdown fences, no extra text) with these fields:
 {
