@@ -10,6 +10,7 @@ import {
   analyzeDocumentBuffer,
   type AnalysisState,
 } from "@/lib/document-analysis";
+import { resolveSupportedFileType } from "@/lib/document-file-types";
 
 // Shared server-side document filing: save to /uploads, categorize with AI,
 // apply category guardrails, create the Document row, cross-link maintenance
@@ -41,7 +42,12 @@ export async function fileDocumentFromBuffer(opts: {
   uploadedBy?: string;
 }): Promise<FiledDocument> {
   const { buffer, fileName, uploadedBy } = opts;
-  const type = opts.contentType.split(";")[0].trim().toLowerCase();
+  const type = resolveSupportedFileType(opts.contentType, fileName);
+  if (!type) {
+    throw new Error(
+      `File type ${opts.contentType || "unknown"} is not supported because Breadloaf cannot read it`
+    );
+  }
 
   if (buffer.length > SAVE_SIZE_LIMIT) {
     throw new Error(`File too large (${Math.round(buffer.length / 1024 / 1024)}MB, max 100MB)`);

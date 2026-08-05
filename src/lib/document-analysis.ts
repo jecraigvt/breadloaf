@@ -5,6 +5,7 @@ import {
   type CategoryOption,
 } from "@/lib/ai";
 import { extractTextFromFile, isExtractableType } from "@/lib/extract-text";
+import { PdfSampleTooLargeError, samplePdfPages } from "@/lib/pdf-sampling";
 
 export const AI_SIZE_LIMIT = 15 * 1024 * 1024;
 
@@ -41,12 +42,23 @@ function normalizedType(fileType: string): string {
 }
 
 function readableInlineType(fileType: string): boolean {
+  // Historical classification must reflect the pipeline that wrote the row,
+  // not today's expanded extractor support. Legacy .doc/.xls were unsupported
+  // when the Phase 1 migration classified the existing archive.
   return (
     fileType.startsWith("audio/") ||
     fileType.startsWith("video/") ||
     fileType.startsWith("image/") ||
     fileType === "application/pdf" ||
-    isExtractableType(fileType)
+    [
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.oasis.opendocument.text",
+      "application/vnd.oasis.opendocument.spreadsheet",
+      "application/vnd.oasis.opendocument.presentation",
+      "text/plain",
+      "text/csv",
+    ].includes(fileType)
   );
 }
 
@@ -164,7 +176,7 @@ export async function analyzeDocumentBuffer(input: {
   const { buffer, fileName, categories } = input;
   const type = normalizedType(input.fileType);
 
-  if (buffer.length > AI_SIZE_LIMIT) {
+  if (buffer.length > AI_SIZE_LIMIT && type !== "application/pdf") {
     return {
       state: "too_large",
       error: `File is ${(buffer.length / 1024 / 1024).toFixed(1)} MB; AI analysis is limited to 15 MB.`,
@@ -176,6 +188,20 @@ export async function analyzeDocumentBuffer(input: {
     let result: CategorizedDocument | null = null;
     if (type.startsWith("audio/") || type.startsWith("video/")) {
       result = await processMediaFile(buffer.toString("base64"), type, categories, fileName);
+    } else if (type === "application/pdf" && buffer.length > AI_SIZE_LIMIT) {
+      const sample = await samplePdfPages(buffer, AI_SIZE_LIMIT);
+      result = await categorizeDocument(
+        sample.buffer.toString("base64"),
+        type,
+        categories,
+        fileName,
+        {
+          pdfSample: {
+            sourcePageCount: sample.sourcePageCount,
+            sampledPageNumbers: sample.sampledPageNumbers,
+          },
+        }
+      );
     } else if (type.startsWith("image/") || type === "application/pdf") {
       result = await categorizeDocument(buffer.toString("base64"), type, categories, fileName);
     } else if (isExtractableType(type)) {
@@ -205,6 +231,9 @@ export async function analyzeDocumentBuffer(input: {
     }
     return { state: "ok", error: null, result };
   } catch (error) {
+    if (error instanceof PdfSampleTooLargeError) {
+      return { state: "too_large", error: cleanError(error), result: null };
+    }
     return { state: "provider_error", error: cleanError(error), result: null };
   }
 }

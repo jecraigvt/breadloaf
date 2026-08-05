@@ -20,16 +20,12 @@ import {
 import { resolveDocumentTitle } from "@/lib/document-title";
 import { parseToolArguments } from "@/lib/openai-json";
 import { getOpenAIClient, withRetry } from "@/lib/openai-client";
+import { MODELS } from "@/lib/ai-models";
+import { distillRetrievalQueries } from "@/lib/bucky-retrieval-query";
+
+export { MODELS } from "@/lib/ai-models";
 
 // ─── Model Routing ─────────────────────────────────────────────
-// Keep provider model IDs centralized so routing, analysis, transcription,
-// and embeddings cannot drift onto different model generations.
-export const MODELS = {
-  flash: "gpt-5.6-luna",
-  pro: "gpt-5.6-terra",
-  embedding: "text-embedding-3-small",
-  transcription: "gpt-4o-mini-transcribe",
-} as const;
 
 // ─── Embedding Functions ───────────────────────────────────────
 export interface CategoryOption {
@@ -149,8 +145,16 @@ export async function categorizeDocument(
   fileBase64: string,
   fileType: string,
   existingCategories: CategoryOption[],
-  fileName?: string
+  fileName?: string,
+  options: {
+    pdfSample?: { sourcePageCount: number; sampledPageNumbers: number[] };
+  } = {}
 ): Promise<CategorizationResult> {
+  const sampleInstruction = options.pdfSample
+    ? `\nThis is a representative sample from an oversized ${options.pdfSample.sourcePageCount}-page PDF. The supplied sample contains original pages ${options.pdfSample.sampledPageNumbers.join(", ")}.
+- Base the summary and extractedText only on the supplied pages and state that the analysis is sampled, not exhaustive.
+- For a photo collection, put concise searchable descriptions of visible people, likely eras, settings, objects, and any legible names or captions into extractedText; do not limit extractedText to OCR.`
+    : "";
   const prompt = `You are a document categorization assistant for the Breadloaf Hill family property archive in Vermont.
 
 Existing categories:
@@ -161,6 +165,7 @@ ${NEW_CATEGORY_RULES}
 ${DOCUMENT_TITLE_RULES}
 
 Source filename (provenance only; do not use it as the title): ${fileName || "unknown"}
+${sampleInstruction}
 
 Analyze this document and return ONLY valid JSON (no markdown fences, no extra text) with these fields:
 {
@@ -1414,7 +1419,8 @@ export async function chatWithAssistant(
 ): Promise<string> {
   const lastUserMessage = messages.filter((m) => m.role === "user").pop();
   if (!lastUserMessage) return "What would you like help with?";
-  const context = await buildBuckyContext(lastUserMessage.content);
+  const retrievalQueries = await distillRetrievalQueries(lastUserMessage.content);
+  const context = await buildBuckyContext(lastUserMessage.content, retrievalQueries);
 
   const selectedModel = MODELS[selectAssistantModelTier(lastUserMessage.content)];
 
@@ -1516,6 +1522,7 @@ Guidelines:
 - When answering questions, reference specific data: names, dates, dollar amounts, room details, document contents
 - Be proactive — if someone asks about a visit, also mention relevant maintenance, expenses, or notes
 - If you have a document that's relevant, mention it by name so they can look it up
+- When no archive document is loaded for a request, say clearly that archive retrieval found no match. If suggesting where to browse next, name only exact existing categories from ARCHIVE CATEGORIES in the knowledge directory, with their counts when useful. Never invent, rename, or imply the existence of a category that is not in that list.
 - If you don't have info, say so clearly and suggest how to get it (scan a document, add an expense, post to the board)
 - When multiple family members might need info, give the complete picture — you serve all 4 branches
 - For financial questions, always mention the per-family share and who has paid what

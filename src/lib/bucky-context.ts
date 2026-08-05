@@ -10,6 +10,24 @@ export interface BuckyContext {
   relevantKnowledge: string;
 }
 
+interface ArchiveCategoryCount {
+  name: string;
+  _count: { documents: number };
+}
+
+export function formatArchiveCategoryDirectory(
+  categories: ArchiveCategoryCount[],
+  uncategorizedCount: number
+): string {
+  const lines = categories.map(
+    (category) => `- ${category.name} (${category._count.documents})`
+  );
+  if (uncategorizedCount > 0) {
+    lines.push(`- Unfiled / no category (${uncategorizedCount}; filing state, not a category name)`);
+  }
+  return lines.length ? lines.join("\n") : "- No archive categories are configured.";
+}
+
 function dateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -50,7 +68,35 @@ function matchedChunks(results: SearchResult[], sourceType: string, sourceId: st
     .map((result) => result.content.slice(0, 2200));
 }
 
-export async function buildBuckyContext(query: string): Promise<BuckyContext> {
+function resultKey(result: SearchResult): string {
+  return `${result.sourceType}:${result.sourceId}:${result.chunkIndex}`;
+}
+
+export function mergeRetrievedKnowledge(
+  resultSets: SearchResult[][],
+  limit = 18
+): SearchResult[] {
+  const merged = new Map<string, { result: SearchResult; reciprocalRank: number }>();
+  for (const results of resultSets) {
+    results.forEach((result, rank) => {
+      const key = resultKey(result);
+      const existing = merged.get(key);
+      merged.set(key, {
+        result: existing?.result || result,
+        reciprocalRank: (existing?.reciprocalRank || 0) + 1 / (60 + rank + 1),
+      });
+    });
+  }
+  return Array.from(merged.values())
+    .map(({ result, reciprocalRank }) => ({ ...result, score: reciprocalRank }))
+    .sort((left, right) => right.score - left.score)
+    .slice(0, limit);
+}
+
+export async function buildBuckyContext(
+  query: string,
+  retrievalQueries: string[] = [query]
+): Promise<BuckyContext> {
   const now = new Date();
   const stayWindowEnd = new Date(now);
   stayWindowEnd.setDate(stayWindowEnd.getDate() + 120);
@@ -88,6 +134,7 @@ export async function buildBuckyContext(query: string): Promise<BuckyContext> {
     openQuestions,
     expenseSummary,
     counts,
+    archiveCategories,
     retrieved,
     pantryItems,
     recentExpenses,
@@ -127,8 +174,32 @@ export async function buildBuckyContext(query: string): Promise<BuckyContext> {
       prisma.asset.count({ where: { status: "active" } }),
       prisma.maintenanceRecord.count(),
       prisma.expense.count(),
+      prisma.document.count({
+        where: {
+          deletedAt: null,
+          accessScope: "family",
+          categoryId: null,
+        },
+      }),
     ]),
-    hybridSearch(query, 18, KNOWLEDGE_SOURCE_TYPES),
+    prisma.category.findMany({
+      select: {
+        name: true,
+        _count: {
+          select: {
+            documents: {
+              where: { deletedAt: null, accessScope: "family" },
+            },
+          },
+        },
+      },
+      orderBy: { name: "asc" },
+    }),
+    Promise.all(
+      (retrievalQueries.length ? retrievalQueries : [query]).map((retrievalQuery) =>
+        hybridSearch(retrievalQuery, 18, KNOWLEDGE_SOURCE_TYPES)
+      )
+    ).then((resultSets) => mergeRetrievedKnowledge(resultSets, 18)),
     wantsPantry
       ? prisma.pantryItem.findMany({ orderBy: [{ category: "asc" }, { name: "asc" }], take: 41 })
       : Promise.resolve([]),
@@ -322,6 +393,7 @@ export async function buildBuckyContext(query: string): Promise<BuckyContext> {
       `- ${counts[2]} active property systems`,
       `- ${counts[3]} maintenance records`,
       `- ${counts[4]} expenses`,
+      `ARCHIVE CATEGORIES (exact names; family-access document counts):\n${formatArchiveCategoryDirectory(archiveCategories, counts[5])}`,
       "Only records relevant to this request are expanded below. A count above zero means more knowledge exists even when no detail was loaded.",
     ].join("\n"),
     relevantKnowledge: relevantParts.length

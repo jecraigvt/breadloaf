@@ -1,30 +1,16 @@
 import "dotenv/config";
-import { zodTextFormat } from "openai/helpers/zod";
-import { z } from "zod";
 import { prisma } from "../src/lib/prisma";
-import { MODELS } from "../src/lib/ai";
 import { hybridSearch } from "../src/lib/embeddings";
-import { getOpenAIClient, withRetry } from "../src/lib/openai-client";
-import {
-  classifyHistoricalAnalysis,
-  meaningfulAnalysisContent,
-} from "../src/lib/document-analysis";
+import { meaningfulAnalysisContent } from "../src/lib/document-analysis";
+import { deriveArchiveQuestion } from "../src/lib/archive-roundtrip-question";
 import {
   ROUND_TRIP_NEGATIVE_CONTROLS,
-  distinctiveTitleWords,
-  leakedTitleWords,
   verificationPassRate,
 } from "../src/lib/archive-verification";
 
 const TOP_N = 3;
 const CONCURRENCY = 4;
-const MAX_CONTENT_CHARS = 7000;
-const QUESTION_ATTEMPTS = 3;
 const verbose = process.argv.includes("--verbose");
-
-const QuestionSchema = z.object({
-  question: z.string().min(12).max(240),
-});
 
 interface ArchiveDocument {
   id: string;
@@ -33,6 +19,8 @@ interface ArchiveDocument {
   fileSize: number;
   aiSummary: string | null;
   aiExtractedText: string | null;
+  analysisState: string;
+  analysisError: string | null;
 }
 
 interface VerificationResult {
@@ -61,50 +49,6 @@ async function mapConcurrent<T, R>(
   return results;
 }
 
-async function deriveQuestion(document: ArchiveDocument, content: string): Promise<string> {
-  const forbidden = distinctiveTitleWords(document.title);
-  let lastProblem = "";
-
-  for (let attempt = 1; attempt <= QUESTION_ATTEMPTS; attempt++) {
-    const prompt = `Write one realistic question a family member could ask whose answer is supported by the archive content below.
-
-Rules:
-- Derive the question only from the supplied content, not from a filename or title.
-- Ask about a specific subject, fact, decision, instruction, person, date, amount, or event in the content.
-- Do not say document, file, title, archive, upload, summary, or filename.
-- Do not use any forbidden title word: ${forbidden.join(", ") || "(none)"}.
-- Use natural conversational language and end with a question mark.
-${lastProblem ? `- The prior attempt was rejected because ${lastProblem}. Choose a different phrasing.` : ""}
-
-Archive content:
-${content.slice(0, MAX_CONTENT_CHARS)}`;
-    const response = await withRetry(() =>
-      getOpenAIClient().responses.parse({
-        model: MODELS.flash,
-        input: prompt,
-        text: { format: zodTextFormat(QuestionSchema, "archive_round_trip_question") },
-      })
-    );
-    const question = response.output_parsed?.question.trim();
-    if (!question) {
-      lastProblem = "it returned no question";
-      continue;
-    }
-    const leaked = leakedTitleWords(question, forbidden);
-    if (leaked.length > 0) {
-      lastProblem = `it reused forbidden word(s): ${leaked.join(", ")}`;
-      continue;
-    }
-    if (/\b(?:document|file|title|archive|upload|summary|filename)\b/i.test(question)) {
-      lastProblem = "it referred to the archive or source artifact";
-      continue;
-    }
-    return question.endsWith("?") ? question : `${question}?`;
-  }
-
-  throw new Error(lastProblem || "question generation failed");
-}
-
 async function verifyDocument(
   document: ArchiveDocument,
   indexChunks: number,
@@ -115,11 +59,10 @@ async function verifyDocument(
     document.aiExtractedText
   );
   if (!content) {
-    const failure = classifyHistoricalAnalysis(document);
     return {
       label: document.title,
       passed: false,
-      reason: `no usable analysis content (${failure.state}: ${failure.error})`,
+      reason: `no usable analysis content (${document.analysisState}: ${document.analysisError || "no error recorded"})`,
     };
   }
   if (indexChunks === 0) {
@@ -131,7 +74,7 @@ async function verifyDocument(
   }
 
   try {
-    const question = await deriveQuestion(document, content);
+    const question = await deriveArchiveQuestion(document, content);
     const results = await hybridSearch(question, TOP_N, ["document"]);
     const rank = results.findIndex((result) => result.sourceId === document.id);
     const returned = results.map((result) => titles.get(result.sourceId) || result.sourceId);
@@ -195,6 +138,8 @@ async function main() {
         fileSize: true,
         aiSummary: true,
         aiExtractedText: true,
+        analysisState: true,
+        analysisError: true,
       },
       orderBy: { createdAt: "asc" },
     }),

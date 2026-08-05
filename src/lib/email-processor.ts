@@ -6,7 +6,6 @@ import { prisma } from "@/lib/prisma";
 import { fetchUnseenEmails, emailConfigured, type InboundEmail, type InboundAttachment } from "@/lib/email-inbox";
 import { MODELS } from "@/lib/ai";
 import { indexDocument } from "@/lib/embeddings";
-import { isExtractableType } from "@/lib/extract-text";
 import { resolveDocumentCategory } from "@/lib/document-categories";
 import { findOverlappingStay, createStayWithCalendarSync } from "@/lib/stays";
 import { generateId } from "@/lib/utils";
@@ -14,6 +13,7 @@ import { sha256 } from "@/lib/archive-integrity";
 import { resolveDocumentTitle } from "@/lib/document-title";
 import { getOpenAIClient, withRetry } from "@/lib/openai-client";
 import { analyzeDocumentBuffer } from "@/lib/document-analysis";
+import { resolveSupportedFileType } from "@/lib/document-file-types";
 
 // ─── Guardrails ─────────────────────────────────────────────────
 // Email is an untrusted inlet: it can only ADD stays, documents, and
@@ -354,51 +354,6 @@ async function archiveBodyAsDocument(
 
 const SAVE_SIZE_LIMIT = 30 * 1024 * 1024;
 
-// Email clients often declare attachments as application/octet-stream (or
-// generic types), so the filename extension is the more reliable signal.
-const EXT_TYPE_MAP: Record<string, string> = {
-  pdf: "application/pdf",
-  doc: "application/msword",
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  xls: "application/vnd.ms-excel",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ppt: "application/vnd.ms-powerpoint",
-  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  odt: "application/vnd.oasis.opendocument.text",
-  ods: "application/vnd.oasis.opendocument.spreadsheet",
-  odp: "application/vnd.oasis.opendocument.presentation",
-  txt: "text/plain",
-  csv: "text/csv",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  webp: "image/webp",
-  heic: "image/heic",
-  m4a: "audio/m4a",
-  mp3: "audio/mpeg",
-  wav: "audio/wav",
-  ogg: "audio/ogg",
-  mp4: "video/mp4",
-  mov: "video/quicktime",
-  avi: "video/x-msvideo",
-};
-
-// Formats we can't read yet but should still archive (→ Needs Review)
-// rather than silently drop a family document.
-const SAVE_ONLY_TYPES = new Set([
-  "application/msword",
-  "application/vnd.ms-excel",
-  "application/vnd.ms-powerpoint",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-]);
-
-function effectiveType(attachment: InboundAttachment): string {
-  const declared = attachment.contentType.split(";")[0].trim().toLowerCase();
-  if (declared && declared !== "application/octet-stream") return declared;
-  const ext = (attachment.filename.split(".").pop() || "").toLowerCase();
-  return EXT_TYPE_MAP[ext] || declared;
-}
-
 type FileResult =
   | { filed: { title: string; category: string | null } }
   | { skipped: string }
@@ -410,17 +365,11 @@ async function fileAttachment(
 ): Promise<FileResult> {
   if (attachment.inline) return null;
 
-  const type = effectiveType(attachment);
-  const aiReadable =
-    type.startsWith("image/") ||
-    type.startsWith("audio/") ||
-    type.startsWith("video/") ||
-    type === "application/pdf" ||
-    isExtractableType(type);
-  const saveOnly = SAVE_ONLY_TYPES.has(type);
-
-  if (!aiReadable && !saveOnly) {
-    return { skipped: `"${attachment.filename}" — unrecognized file type (${attachment.contentType})` };
+  const type = resolveSupportedFileType(attachment.contentType, attachment.filename);
+  if (!type) {
+    return {
+      skipped: `"${attachment.filename}" — refused because Breadloaf cannot read ${attachment.contentType || "that file type"}`,
+    };
   }
   if (attachment.size > SAVE_SIZE_LIMIT) {
     return { skipped: `"${attachment.filename}" — too large (${Math.round(attachment.size / 1024 / 1024)}MB)` };
