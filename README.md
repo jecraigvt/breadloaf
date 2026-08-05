@@ -149,6 +149,12 @@ prisma migrate deploy && prisma db seed && next start
 - Archive processing generates descriptive content-based titles while retaining the original filename as provenance.
 - Architecture, failure behavior, maintenance commands, and the production rollout are documented in [`docs/bucky-memory-and-operations.md`](docs/bucky-memory-and-operations.md).
 
+## Active Work — OpenAI Migration
+
+- Document processing has been failing since mid-July because the production Gemini key is on the free tier: 5 requests per minute on flash, and zero quota for pro. Adding billing to the Google project is not available, so the app is migrating to OpenAI.
+- The migration is also ~7.5x cheaper on the workhorse model and 10x cheaper on embeddings.
+- Thirteen scoped tasks — provider migration, two-stage document intake, retrieval scaling, and a homepage simplification — are specified in [`docs/openai-migration-and-intake-handoff.md`](docs/openai-migration-and-intake-handoff.md).
+
 ## Project Structure
 
 ```text
