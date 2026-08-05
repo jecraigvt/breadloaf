@@ -607,9 +607,47 @@ Either:
 
 Task 2 helps for free: 3072 → 1536 dims halves the bytes.
 
-**Done when:** Bucky message latency is flat as the embedding count grows, and
-the keyword/semantic fusion still returns the same top results for a set of
-known queries.
+### Two retrieval-quality bugs found on 2026-08-05, fix them in this task
+
+**1. The keyword side matches substrings of short common words, and outranks
+the semantic side while doing it.**
+
+`tokenizeSearchQuery` drops a stopword list but keeps any token of 3+ characters
+not on it — so `"the heater will not ignite"` tokenizes to
+`["heater", "will", "not", "ignite"]`. Those go to Prisma as
+`content: { contains: term }`, which is a **substring** match. `"will"` matches
+**"William"**. `"not"` matches "notes", "cannot", "notice".
+
+Measured effect: that query's top three hits are the Craig Family Contact
+Directory, a corporate meeting agenda, and a cabin action-items list — none
+related to heating — while the genuinely correct match (Emergency Generator
+Operating Instructions) sits below them. Keyword carries weight `1.15` against
+semantic's `1.0` in the fusion, so the noise wins.
+
+Fix by matching on word boundaries rather than substrings, and by requiring
+rarer terms — a term appearing in most rows carries no signal. This bug predates
+the OpenAI migration; it was simply invisible while semantic scoring was doing
+more of the work.
+
+**2. The semantic floor is an absolute constant, and absolute constants are
+model-specific.**
+
+`SEMANTIC_FLOOR` in `embeddings.ts` was `0.28`, tuned for `gemini-embedding-2`.
+`text-embedding-3-small` produces a compressed distribution, so after the
+migration whole queries returned **nothing**: `"the heater will not ignite"`
+peaked at 0.252 against all 65 rows and cleared the bar zero times.
+
+Lowered to `0.25` on 2026-08-05 with the measurement recorded in the comment
+above it. That is a stopgap. Per-query spread is wide — one query kept 18 rows
+at 0.28 while another kept 0 — so **make the floor relative to each query's top
+score** rather than absolute. Re-measure whenever the embedding model changes,
+and leave a comment saying so.
+
+**Done when:** Bucky message latency is flat as the embedding count grows; the
+keyword/semantic fusion still returns the same top results for a set of known
+queries; `"the heater will not ignite"` surfaces a heating document rather than
+the contact directory; and a nonsense control query (`"purple monkey
+dishwasher"`) returns nothing useful.
 
 ---
 

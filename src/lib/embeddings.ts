@@ -141,6 +141,24 @@ function searchKey(result: Pick<SearchResult, "sourceType" | "sourceId" | "chunk
   return `${result.sourceType}:${result.sourceId}:${result.chunkIndex}`;
 }
 
+// Minimum cosine similarity for a chunk to reach rank fusion. This constant is
+// MODEL-SPECIFIC and must be re-measured whenever the embedding model changes —
+// different models produce different similarity distributions, and the old
+// value silently discarded good matches after the migration.
+//
+// Measured against the live index (65 rows) on 2026-08-05, gemini-embedding-2's
+// 0.28 was above the top score for whole queries: "the heater will not ignite"
+// peaked at 0.252 on Emergency Generator Operating Instructions — the right
+// answer — and returned nothing at all. Every real query's best match survives
+// at 0.25, while the nonsense control "purple monkey dishwasher" keeps only 3
+// of 65, all at ranks the fusion outranks anyway.
+//
+// An absolute floor is the weak part of this design: per-query score spread is
+// wide (one query kept 18 rows at 0.28 while another kept 0), so a threshold
+// relative to each query's top score would be more robust. Left for task 12,
+// which reworks this retrieval path anyway.
+const SEMANTIC_FLOOR = 0.25;
+
 export async function hybridSearch(
   query: string,
   limit = 12,
@@ -176,7 +194,7 @@ export async function hybridSearch(
           content: entry.content,
           score: cosineSimilarity(queryVector, JSON.parse(entry.vector) as number[]),
         }))
-        .filter((entry) => entry.score >= 0.28)
+        .filter((entry) => entry.score >= SEMANTIC_FLOOR)
         .sort((left, right) => right.score - left.score)
         .slice(0, 40);
     } catch (error) {
