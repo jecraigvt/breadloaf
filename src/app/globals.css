@@ -362,6 +362,10 @@ h3.chapter {
   background: var(--paper);
   border-top: 1px solid var(--rule);
 }
+.tiles-hub > .tile,
+.tiles-hub > .tile-text {
+  aspect-ratio: 1/1.02;
+}
 .tile {
   position: relative;
   aspect-ratio: 1/1.22;
@@ -434,6 +438,12 @@ h3.chapter {
   box-shadow: inset 0 2px 0 var(--ember);
 }
 .tile-lead .big em { color: var(--ember-deep); }
+.tile-text.tile-wide {
+  grid-column: 1 / -1;
+  aspect-ratio: auto;
+  min-height: 126px;
+  border-right: 0;
+}
 .tile-text .lbl {
   font-family: var(--mono); font-size: 9px;
   text-transform: uppercase; letter-spacing: 0.18em; color: var(--muted);

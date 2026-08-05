@@ -16,7 +16,7 @@ Family hub website for the Craig family property at 3995 Vermont Route 125, Ript
 - **Photos:** iCloud shared album (external link)
 
 ## Design System — Editorial Cabin-Catalog
-The app uses a "family magazine" editorial style — warm paper tones, italic serif display type, mono-caps eyebrow labels, and Roman-numeral section numbering (I–XIV).
+The app uses a "family magazine" editorial style — warm paper tones, italic serif display type, mono-caps eyebrow labels, and Roman-numeral section numbering (I–V on the homepage hub).
 
 - **Shell frame:** every route renders inside `.stage > .shell` (see `src/app/layout.tsx`). On mobile the shell fills the viewport; on desktop (≥900px) it's a 440px-wide "phone frame" centered on a dark `--deep` stage with a drop shadow.
 - **Bottom nav lives INSIDE the shell** (`src/components/layout/nav-bar.tsx`) using `position: sticky; bottom: 0`. Five items: Hub / Dates / Rooms / Guide / Board. The active item has an ember-colored top underline.
@@ -233,7 +233,7 @@ src/lib/
 - API routes follow REST pattern: `route.ts` for GET/POST, `[id]/route.ts` for PATCH/DELETE
 - Store user's name in localStorage under key `breadloaf-username`
 - Icons from lucide-react, green-700 primary color, stone neutrals
-- Hub cards on homepage ordered by assumed frequency of use. Slimmed July 2026: Board, Maintenance, and Add Docs tiles removed (Board lives in bottom nav + homepage preview; maintenance logging and doc intake go through Bucky). **Bucky is section I and the top-left tile** (`HUB_LEAD` in `src/app/page.tsx`, styled `.tile-lead`) since he is the main way things get done. Sections now I–XIV — renumber Roman numerals if tiles change again; `FIG. NN` is a separate sequence over the photo tiles only.
+- Hub cards on homepage ordered by assumed frequency of use. Slimmed August 2026 to five surfaces: **Bucky is section I and the top-left tile** (`HUB_LEAD` in `src/app/page.tsx`, styled `.tile-lead`), followed by Calendar, Rooms, Family, and All Tools. Sections are I–V; `FIG. 01–02` is the separate sequence over the two photo tiles. Demoted destinations remain directly reachable from `/more`; Guide and Board also remain in the persistent bottom nav, the Album remains in the photography strip, and Bucky retains tool coverage for common writes.
 - Prisma models use cuid() for IDs, DateTime for timestamps
 - Google Calendar sync uses GoogleAuth (not JWT) — see `src/lib/google-calendar.ts`
 - Calendar sync runs on homepage, calendar page, stays page, and assistant message
