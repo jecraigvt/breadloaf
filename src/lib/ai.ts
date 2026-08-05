@@ -1,4 +1,7 @@
 import { GoogleGenerativeAI, SchemaType, type FunctionDeclarationsTool } from "@google/generative-ai";
+import OpenAI from "openai";
+import { zodTextFormat } from "openai/helpers/zod";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { GROCERY_CATEGORIES, resolveCategory } from "@/lib/grocery-categories";
 import { slugifyCategory, isTokenSubset, categorySimilarity } from "@/lib/document-categories";
@@ -18,6 +21,12 @@ import { resolveDocumentTitle } from "@/lib/document-title";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
+function getOpenAIClient(): OpenAI {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
+  return new OpenAI({ apiKey });
+}
+
 // ─── Model Routing ─────────────────────────────────────────────
 // Stable (GA) models preferred — preview models can be retired on 2 weeks'
 // notice (gemini-3-pro-preview was shut down March 2026 with a forced
@@ -27,9 +36,10 @@ const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 //   complex analysis — $2-4/$12-18 per 1M tokens
 // Embedding 2 (stable, GA April 2026) — $0.20 per 1M tokens
 export const MODELS = {
-  flash: "gemini-3.5-flash",
-  pro: "gemini-3.1-pro-preview",
-  embedding: "gemini-embedding-2",
+  flash: "gpt-5.6-luna",
+  pro: "gpt-5.6-terra",
+  embedding: "text-embedding-3-small",
+  transcription: "gpt-4o-mini-transcribe",
 } as const;
 
 // Retry transient Gemini failures — 503 (model overloaded) and 429 (rate
@@ -71,6 +81,27 @@ interface CategorizationResult {
   maintenanceCost?: number | null;
   maintenanceDate?: string | null;
   maintenanceVendor?: string | null;
+}
+
+const CategorizationResultSchema = z.object({
+  suggestedCategory: z.string(),
+  newCategoryProposal: z.object({
+    name: z.string(),
+    description: z.string(),
+  }).nullable(),
+  title: z.string(),
+  summary: z.string(),
+  extractedText: z.string(),
+  tags: z.array(z.string()),
+  confidence: z.number(),
+  maintenanceCost: z.number().nullable(),
+  maintenanceDate: z.string().nullable(),
+  maintenanceVendor: z.string().nullable(),
+});
+
+function requireParsed<T>(value: T | null): T {
+  if (value === null) throw new Error("OpenAI returned no structured output");
+  return value;
 }
 
 function describeCategories(categories: CategoryOption[]): string {
@@ -180,20 +211,7 @@ export async function categorizeDocument(
   existingCategories: CategoryOption[],
   fileName?: string
 ): Promise<CategorizationResult> {
-  const model = genAI.getGenerativeModel({ model: MODELS.flash });
-
-  // Gemini reads images AND PDFs inline
-  const mimeType = fileType as "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
-
-  const result = await withGeminiRetry(() => model.generateContent([
-    {
-      inlineData: {
-        mimeType,
-        data: fileBase64,
-      },
-    },
-    {
-      text: `You are a document categorization assistant for the Breadloaf Hill family property archive in Vermont.
+  const prompt = `You are a document categorization assistant for the Breadloaf Hill family property archive in Vermont.
 
 Existing categories:
 ${describeCategories(existingCategories)}
@@ -227,26 +245,23 @@ This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Gre
 - Articles of incorporation, bylaws, annual reports, state filings → "Corporate Filings"
 - P&L, balance sheets, income statements, financial reports → "Financial Statements"
 - Bank statements, account statements → "Bank Statements"
-- Capital account statements, shareholder equity → "Capital Accounts"`,
-    },
-  ]));
+- Capital account statements, shareholder equity → "Capital Accounts"`;
 
-  const text = result.response.text();
-  try {
-    // Try to extract JSON from the response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text) as CategorizationResult;
-    return finalizeCategorizationTitle(parsed, { fileName, fileType });
-  } catch {
-    return finalizeCategorizationTitle({
-      suggestedCategory: "Other",
-      title: "",
-      summary: text.slice(0, 200),
-      extractedText: text,
-      tags: [],
-      confidence: 0.5,
-    }, { fileName, fileType });
-  }
+  const content = fileType === "application/pdf"
+    ? [
+        { type: "input_file" as const, filename: fileName || "document.pdf", file_data: `data:application/pdf;base64,${fileBase64}` },
+        { type: "input_text" as const, text: prompt },
+      ]
+    : [
+        { type: "input_image" as const, image_url: `data:${fileType};base64,${fileBase64}`, detail: "auto" as const },
+        { type: "input_text" as const, text: prompt },
+      ];
+  const response = await withGeminiRetry(() => getOpenAIClient().responses.parse({
+    model: MODELS.flash,
+    input: [{ role: "user", content }],
+    text: { format: zodTextFormat(CategorizationResultSchema, "document_categorization") },
+  }));
+  return finalizeCategorizationTitle(requireParsed(response.output_parsed), { fileName, fileType });
 }
 
 // Categorize a document from extracted text (Word/Excel/CSV/TXT — types
@@ -256,10 +271,7 @@ export async function categorizeText(
   fileName: string,
   existingCategories: CategoryOption[]
 ): Promise<CategorizationResult> {
-  const model = genAI.getGenerativeModel({ model: MODELS.flash });
-
-  const result = await withGeminiRetry(() => model.generateContent(
-    `You are a document categorization assistant for the Breadloaf Hill family property archive in Vermont.
+  const prompt = `You are a document categorization assistant for the Breadloaf Hill family property archive in Vermont.
 
 Existing categories:
 ${describeCategories(existingCategories)}
@@ -291,24 +303,17 @@ This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Gre
 - Capital account statements, shareholder equity → "Capital Accounts"
 
 Document text:
-${documentText}`
-  ));
+${documentText}`;
 
-  const text = result.response.text();
-  try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text) as CategorizationResult;
-    return finalizeCategorizationTitle(parsed, { fileName, fileType: "text/plain" });
-  } catch {
-    return finalizeCategorizationTitle({
-      suggestedCategory: "",
-      title: "",
-      summary: text.slice(0, 200),
-      extractedText: documentText.slice(0, 2000),
-      tags: [],
-      confidence: 0.3,
-    }, { fileName, fileType: "text/plain" });
-  }
+  const response = await withGeminiRetry(() => getOpenAIClient().responses.parse({
+    model: MODELS.flash,
+    input: prompt,
+    text: { format: zodTextFormat(CategorizationResultSchema, "text_categorization") },
+  }));
+  return finalizeCategorizationTitle(requireParsed(response.output_parsed), {
+    fileName,
+    fileType: "text/plain",
+  });
 }
 
 interface ScannedPantryItem {
@@ -318,23 +323,18 @@ interface ScannedPantryItem {
   category: string;
 }
 
+const ScannedPantryItemsSchema = z.array(z.object({
+  name: z.string(),
+  quantity: z.number(),
+  unit: z.string(),
+  category: z.string(),
+}));
+
 export async function scanPantryItems(
   imageBase64: string,
   fileType: string
 ): Promise<ScannedPantryItem[]> {
-  const model = genAI.getGenerativeModel({ model: MODELS.flash });
-
-  const mimeType = fileType as "image/jpeg" | "image/png" | "image/webp";
-
-  const result = await model.generateContent([
-    {
-      inlineData: {
-        mimeType,
-        data: imageBase64,
-      },
-    },
-    {
-      text: `You are a pantry inventory assistant. Look at this photo of pantry shelves, a fridge, or food storage area.
+  const prompt = `You are a pantry inventory assistant. Look at this photo of pantry shelves, a fridge, or food storage area.
 
 Identify all visible items and return ONLY valid JSON (no markdown fences, no extra text) as an array:
 [
@@ -352,20 +352,20 @@ Guidelines:
 - Be specific with names (e.g., "Canned Tomatoes" not just "cans")
 - Choose the most appropriate category
 - If you can read brand names, include them (e.g., "Barilla Spaghetti")
-- If the image is unclear or not of food/pantry items, return an empty array []`,
-    },
-  ]);
+- If the image is unclear or not of food/pantry items, return an empty array []`;
 
-  const text = result.response.text();
-  try {
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-    return JSON.parse(text);
-  } catch {
-    return [];
-  }
+  const response = await withGeminiRetry(() => getOpenAIClient().responses.parse({
+    model: MODELS.flash,
+    input: [{
+      role: "user",
+      content: [
+        { type: "input_image", image_url: `data:${fileType};base64,${imageBase64}`, detail: "auto" },
+        { type: "input_text", text: prompt },
+      ],
+    }],
+    text: { format: zodTextFormat(ScannedPantryItemsSchema, "pantry_items") },
+  }));
+  return requireParsed(response.output_parsed);
 }
 
 // Function-calling tools for the assistant
