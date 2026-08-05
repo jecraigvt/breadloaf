@@ -76,6 +76,9 @@ function titleFromNarrative(value?: string | null): string {
     .replace(/^(?:this|the)\s+(?:document|file|image|photo|recording|audio|video|email)\s+(?:is|contains|shows|describes|details|documents|summarizes|covers|provides)\s+/i, "")
     .replace(/^(?:it|this)\s+(?:shows|describes|details|documents|summarizes|covers|provides)\s+/i, "")
     .replace(/^(?:a|an|the)\s+(?=[A-Za-z])/i, "");
+  // Historical rows may still contain the old friendly failure placeholders.
+  // New intake paths store null AI fields plus analysisState/analysisError;
+  // retain this detection only so old data can never become a fake title.
   const processingMessage =
     /\b(?:categorize manually|ask Bucky|AI analysis|AI categorization|could not (?:be )?(?:read|analy[sz]ed)|unable to analy[sz]e)\b/i;
 

@@ -4,15 +4,16 @@ import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { fetchUnseenEmails, emailConfigured, type InboundEmail, type InboundAttachment } from "@/lib/email-inbox";
-import { categorizeDocument, categorizeText, processMediaFile, MODELS } from "@/lib/ai";
+import { MODELS } from "@/lib/ai";
 import { indexDocument } from "@/lib/embeddings";
-import { extractTextFromFile, isExtractableType } from "@/lib/extract-text";
+import { isExtractableType } from "@/lib/extract-text";
 import { resolveDocumentCategory } from "@/lib/document-categories";
 import { findOverlappingStay, createStayWithCalendarSync } from "@/lib/stays";
 import { generateId } from "@/lib/utils";
 import { sha256 } from "@/lib/archive-integrity";
 import { resolveDocumentTitle } from "@/lib/document-title";
 import { getOpenAIClient, withRetry } from "@/lib/openai-client";
+import { analyzeDocumentBuffer } from "@/lib/document-analysis";
 
 // ─── Guardrails ─────────────────────────────────────────────────
 // Email is an untrusted inlet: it can only ADD stays, documents, and
@@ -268,13 +269,17 @@ async function archiveBodyAsDocument(
       select: { name: true, description: true },
       orderBy: { name: "asc" },
     });
-    let result = null;
-    try {
-      result = await categorizeText(content, email.subject, categories);
-    } catch (error) {
+    const safeName = (email.subject || "email").replace(/[^\w\- ]+/g, "").trim().slice(0, 60) || "email";
+    const analysis = await analyzeDocumentBuffer({
+      buffer,
+      fileName: `${safeName}.txt`,
+      fileType: "text/plain",
+      categories,
+    });
+    const result = analysis.result;
+    if (!result) {
       console.error(
-        `[Mail Room] AI analysis failed for email body "${email.subject}"; filing for review:`,
-        error
+        `[Mail Room] ${analysis.state} for email body "${email.subject}"; filing for review: ${analysis.error}`
       );
     }
     const resolution = result
@@ -291,14 +296,13 @@ async function archiveBodyAsDocument(
           needsReview: true,
         };
 
-    const safeName = (email.subject || "email").replace(/[^\w\- ]+/g, "").trim().slice(0, 60) || "email";
     const doc = await prisma.document.create({
       data: {
         title: resolveDocumentTitle({
           suggestedTitle: result?.title,
           fileName: `${safeName}.txt`,
           summary: result?.summary,
-          extractedText: result?.extractedText || content,
+          extractedText: result?.extractedText,
           fileType: "text/plain",
           createdAt: email.receivedAt,
         }),
@@ -310,7 +314,9 @@ async function archiveBodyAsDocument(
         categoryId: resolution.categoryId,
         tags: result?.tags?.length ? JSON.stringify(result.tags) : null,
         aiSummary: result?.summary || null,
-        aiExtractedText: result?.extractedText || content,
+        aiExtractedText: result?.extractedText || null,
+        analysisState: analysis.state,
+        analysisError: analysis.error,
         uploadedBy: `${email.fromName} (email)`,
         checksum: sha256(buffer),
       },
@@ -346,7 +352,6 @@ async function archiveBodyAsDocument(
 
 // ─── Attachment filing ──────────────────────────────────────────
 
-const AI_SIZE_LIMIT = 15 * 1024 * 1024;
 const SAVE_SIZE_LIMIT = 30 * 1024 * 1024;
 
 // Email clients often declare attachments as application/octet-stream (or
@@ -435,35 +440,17 @@ async function fileAttachment(
     orderBy: { name: "asc" },
   });
 
-  let result = null;
-  if (attachment.size <= AI_SIZE_LIMIT) {
-    try {
-      if (type.startsWith("audio/") || type.startsWith("video/")) {
-        result = await processMediaFile(
-          attachment.content.toString("base64"),
-          type,
-          categories,
-          attachment.filename
-        );
-      } else if (type.startsWith("image/") || type === "application/pdf") {
-        result = await categorizeDocument(
-          attachment.content.toString("base64"),
-          type,
-          categories,
-          attachment.filename
-        );
-      } else if (isExtractableType(type)) {
-        const extracted = await extractTextFromFile(attachment.content, type);
-        if (extracted?.trim()) {
-          result = await categorizeText(extracted, attachment.filename, categories);
-        }
-      }
-    } catch (error) {
-      console.error(
-        `[Mail Room] AI analysis failed for ${attachment.filename}; filing for review:`,
-        error
-      );
-    }
+  const analysis = await analyzeDocumentBuffer({
+    buffer: attachment.content,
+    fileName: attachment.filename,
+    fileType: type,
+    categories,
+  });
+  const result = analysis.result;
+  if (!result) {
+    console.error(
+      `[Mail Room] ${analysis.state} for ${attachment.filename}; filing for review: ${analysis.error}`
+    );
   }
 
   const resolution = result
@@ -493,6 +480,8 @@ async function fileAttachment(
       tags: result?.tags?.length ? JSON.stringify(result.tags) : null,
       aiSummary: result?.summary || null,
       aiExtractedText: result?.extractedText || null,
+      analysisState: analysis.state,
+      analysisError: analysis.error,
       uploadedBy: `${email.fromName} (email)`,
       checksum: sha256(attachment.content),
     },

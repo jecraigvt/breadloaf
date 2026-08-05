@@ -3,6 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { indexDocument, indexMaintenance } from "@/lib/embeddings";
 import { slugifyCategory } from "@/lib/document-categories";
 import { resolveDocumentTitle } from "@/lib/document-title";
+import {
+  normalizeStoredAnalysis,
+} from "@/lib/document-analysis";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -73,13 +76,27 @@ export async function POST(request: NextRequest) {
       uploadedBy,
       checksum,
       accessScope,
+      analysisState: requestedAnalysisState,
+      analysisError: requestedAnalysisError,
     } = body;
+
+    const {
+      analysisState,
+      analysisError,
+      aiSummary: storedSummary,
+      aiExtractedText: storedExtractedText,
+    } = normalizeStoredAnalysis({
+      analysisState: requestedAnalysisState,
+      analysisError: requestedAnalysisError,
+      aiSummary,
+      aiExtractedText,
+    });
 
     const resolvedTitle = resolveDocumentTitle({
       suggestedTitle: title,
       fileName,
-      summary: aiSummary || description,
-      extractedText: aiExtractedText,
+      summary: storedSummary || description,
+      extractedText: storedExtractedText,
       fileType,
       createdAt: new Date(),
     });
@@ -104,15 +121,17 @@ export async function POST(request: NextRequest) {
     const document = await prisma.document.create({
       data: {
         title: resolvedTitle,
-        description,
+        description: analysisState === "ok" ? description || null : null,
         fileName,
         filePath,
         fileType,
         fileSize: typeof fileSize === "string" ? parseInt(fileSize) : fileSize,
         categoryId,
         tags: tags ? JSON.stringify(tags) : null,
-        aiSummary,
-        aiExtractedText,
+        aiSummary: storedSummary,
+        aiExtractedText: storedExtractedText,
+        analysisState,
+        analysisError,
         uploadedBy,
         checksum: checksum || null,
         accessScope: ["family", "board", "vault"].includes(accessScope) ? accessScope : "family",
