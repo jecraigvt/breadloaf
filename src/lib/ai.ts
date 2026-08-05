@@ -1,4 +1,3 @@
-import { GoogleGenerativeAI, SchemaType, type FunctionDeclarationsTool } from "@google/generative-ai";
 import OpenAI, { toFile } from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
@@ -18,8 +17,7 @@ import {
   indexMemory,
 } from "@/lib/embeddings";
 import { resolveDocumentTitle } from "@/lib/document-title";
-
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
+import { parseToolArguments } from "@/lib/openai-json";
 
 function getOpenAIClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -338,22 +336,28 @@ Guidelines:
 }
 
 // Function-calling tools for the assistant
-const assistantTools: FunctionDeclarationsTool[] = [
-  {
-    functionDeclarations: [
+const assistantToolDeclarations: Array<{
+  name: string;
+  description: string;
+  parameters: {
+    type: "object";
+    properties: Record<string, unknown>;
+    required: string[];
+  };
+}> = [
       {
         name: "add_grocery_item",
         description:
           "Add an item to the family grocery/shopping list. Use when someone asks to add something they need to buy.",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             name: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Name of the grocery item",
             },
             category: {
-              type: SchemaType.STRING,
+              type: "string",
               description: `Category, one of: ${GROCERY_CATEGORIES.join(", ")}. Omit if unsure — the list auto-categorizes by item name.`,
             },
           },
@@ -365,28 +369,28 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "Add a stay/visit to the property calendar (also syncs to the family Google Calendar). Use when someone says they or other family members will be at the property on certain dates.",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             guestName: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Who is staying, as it should appear on the calendar (e.g. 'Jim & Carol', 'The Kellers'). If the user says 'we' or 'me', use their name.",
             },
             checkIn: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Arrival date, YYYY-MM-DD",
             },
             checkOut: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Departure date, YYYY-MM-DD (must be after checkIn)",
             },
             roomName: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Optional room to assign (e.g. 'Tom Craig's Room', 'Loft', 'Woods Cabin'). Omit if not specified.",
             },
             notes: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Optional notes about the visit",
             },
           },
@@ -398,31 +402,31 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "Log a maintenance task, repair, or property work item to the maintenance log",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             title: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Short title of the maintenance task",
             },
             description: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Detailed description of the work",
             },
             category: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Category: plumbing, electrical, structural, grounds, appliance, seasonal, other",
             },
             performedBy: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Who performed the work",
             },
             cost: {
-              type: SchemaType.NUMBER,
+              type: "number",
               description: "Cost in dollars if known",
             },
             assetName: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Name of the property system/equipment this work was done on (e.g. 'Well & Water System', 'Generator'), if it maps to one. Links the record to that system's history.",
             },
@@ -435,40 +439,40 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "Create or update a property system/equipment record (the 'notebook' of permanently installed systems: well pump, furnace, generator, septic, installed dehumidifier, etc.). Use PROACTIVELY whenever you learn about a permanently installed system or major piece of equipment — from conversation, a document, or a voice-memo walkthrough. If a matching system already exists, it is updated (details filled in, notes appended) rather than duplicated. NOT for consumables, portable items, or supplies.",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             name: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Name of the system as the family would say it (e.g. 'Well & Water System', 'Basement Dehumidifier'). Check the PROPERTY SYSTEMS list first and reuse an existing name when you mean the same system.",
             },
             category: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "One of: water, power, hvac, structure, appliance, grounds, safety, other",
             },
             location: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Where it is on the property (e.g. 'basement, north wall')",
             },
             make: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Manufacturer if known",
             },
             model: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Model number/name if known",
             },
             serial: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Serial number if known",
             },
             installedYear: {
-              type: SchemaType.NUMBER,
+              type: "number",
               description: "Year installed, if known",
             },
             notes: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Quirks, tips, history, warnings — anything a new caretaker would need. When UPDATING an existing system, send ONLY the new information (existing notes are kept automatically — do not restate them).",
             },
@@ -481,15 +485,15 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "File or refile a document in the archive into a category. Use this to answer a document filing question (a document that landed in Needs Review), or when someone clearly says where a specific document belongs. Prefer an existing category name; a new one is created only if nothing matches.",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             documentId: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "The id of the document to file (from the filing question's related document id, or a document referenced in the archive context).",
             },
             categoryName: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "The category to file it under. Match an existing category name when the answer points to one.",
             },
@@ -501,14 +505,14 @@ const assistantTools: FunctionDeclarationsTool[] = [
         name: "add_bulletin_message",
         description: "Post a message to the family bulletin/message board",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             content: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "The message content",
             },
             author: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Who is posting the message",
             },
           },
@@ -519,22 +523,22 @@ const assistantTools: FunctionDeclarationsTool[] = [
         name: "add_dinner_signup",
         description: "Sign up to cook dinner on a specific date",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             date: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Date for the dinner in YYYY-MM-DD format",
             },
             chef: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Who is cooking",
             },
             meal: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "What meal is being cooked",
             },
             headCount: {
-              type: SchemaType.NUMBER,
+              type: "number",
               description: "How many people to cook for",
             },
           },
@@ -546,23 +550,23 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "Add a new item to the pantry inventory or note something that is in stock",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             name: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Name of the pantry item",
             },
             category: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Category: canned goods, dry goods, condiments, spices, baking, snacks, beverages, cleaning, paper goods, other",
             },
             quantity: {
-              type: SchemaType.NUMBER,
+              type: "number",
               description: "Quantity in stock",
             },
             unit: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Unit of measurement (e.g., rolls, cans, boxes, bags)",
             },
@@ -575,37 +579,37 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "Log a property expense for the S-Corp. Use when someone reports a cost, bill, payment, or purchase for the property.",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             date: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Date of the expense in YYYY-MM-DD format",
             },
             amount: {
-              type: SchemaType.NUMBER,
+              type: "number",
               description: "Dollar amount of the expense",
             },
             description: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "What the expense was for",
             },
             category: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Category: utilities, maintenance, insurance, taxes, improvements, supplies, professional-services, other",
             },
             type: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Type: operating (regular costs) or capital (improvements that add value)",
             },
             paidBy: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Who paid: Tom, Jim, Sandy, Greg, or Shared",
             },
             vendor: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Vendor or company name if known",
             },
           },
@@ -617,58 +621,58 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "Save durable information to long-term memory when it does not belong in a native operational record or a physical asset. Types: 'semantic' for facts/preferences, 'episodic' for events/decisions, and 'procedural' for reusable how-to knowledge. Same-topic changes preserve the prior version as superseded history.",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             type: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Memory type: 'semantic' (facts, preferences, relationships), 'episodic' (events, decisions, meetings), or 'procedural' (processes, how-to, steps)",
             },
             topic: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Short label (e.g., 'roof repair', 'Sandy board roles', 'winterization steps')",
             },
             content: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "The detailed memory — include names, dates, amounts, decisions, steps, context. Be thorough.",
             },
             source: {
-              type: SchemaType.STRING,
+              type: "string",
               description:
                 "Where this info came from (e.g., 'conversation with Jim', 'board meeting July 2026')",
             },
             sourceType: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Structured source type when known, such as document, meeting-minutes, or conversation",
             },
             sourceId: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "ID of the source record when known",
             },
             scope: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Recall scope: property, family, user, or entity. Defaults to property.",
             },
             subject: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Person, system, organization, or topic this memory is primarily about",
             },
             confidence: {
-              type: SchemaType.NUMBER,
+              type: "number",
               description: "Confidence from 0 to 1; use lower values for uncertain or second-hand information",
             },
             importance: {
-              type: SchemaType.NUMBER,
+              type: "number",
               description: "Long-term importance from 0 to 1; routine details should stay near 0.5",
             },
             validFrom: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Date this became true, in YYYY-MM-DD format, when known",
             },
             validUntil: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Date this stops being true, in YYYY-MM-DD format, when known",
             },
           },
@@ -680,39 +684,39 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "Create a persistent question for the family when information is ambiguous, conflicting, or consequential enough that you should not guess. The question remains available after the chat closes. Do not use this for a question the current user can answer immediately in the active conversation unless they are leaving or the question belongs to someone else.",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             question: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "One clear question that can be answered without rereading the full source",
             },
             context: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Why you are asking and the evidence that made the issue ambiguous",
             },
             targetPerson: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "The person most likely to know, or omit to ask the whole family",
             },
             questionType: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "clarification, duplicate, governance, archive, or safety",
             },
             options: {
-              type: SchemaType.ARRAY,
+              type: "array",
               description: "Two to four concise suggested answers when useful",
-              items: { type: SchemaType.STRING },
+              items: { type: "string" },
             },
             sourceType: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "conversation, document, meeting-minutes, archive, or property-system",
             },
             sourceId: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Related record ID when known",
             },
             source: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Human-readable source label, such as a document title",
             },
           },
@@ -724,39 +728,43 @@ const assistantTools: FunctionDeclarationsTool[] = [
         description:
           "Record a current family or corporate position and preserve the prior holder in history. Use when a direct instruction or authoritative approved record clearly appoints someone. If the source is a draft, discussion, nomination, or unclear, use ask_family instead.",
         parameters: {
-          type: SchemaType.OBJECT,
+          type: "object",
           properties: {
             personName: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Full name of the new position holder",
             },
             position: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Position name, such as President, Treasurer, or Secretary",
             },
             effectiveDate: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Effective date in YYYY-MM-DD format; use today's date only for a direct current instruction",
             },
             sourceType: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "conversation or meeting-minutes",
             },
             sourceId: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Related document ID when known",
             },
             source: {
-              type: SchemaType.STRING,
+              type: "string",
               description: "Human-readable source, such as Approved 2026 board meeting minutes",
             },
           },
           required: ["personName", "position", "effectiveDate", "sourceType", "source"],
         },
       },
-    ],
-  },
 ];
+
+const assistantTools: OpenAI.Responses.Tool[] = assistantToolDeclarations.map((tool) => ({
+  type: "function",
+  strict: false,
+  ...tool,
+}));
 
 // Fuzzy asset lookup: exact (case-insensitive) name first, then containment
 // either direction ("Well Pump" matches "Well & Water System" only via
@@ -1436,10 +1444,7 @@ export async function chatWithAssistant(
 
   const selectedModel = MODELS[selectAssistantModelTier(lastUserMessage.content)];
 
-  const startChatWith = (modelId: string) =>
-    genAI.getGenerativeModel({
-      model: modelId,
-      systemInstruction: `You are Bucky Dragon — the Craig family's all-knowing property assistant for Breadloaf Hill. You serve as the central knowledge hub for 4 family branches and 20+ family members who share a Vermont property at 3995 Vermont Route 125, Ripton, VT.
+  const systemPrompt = `You are Bucky Dragon — the Craig family's all-knowing property assistant for Breadloaf Hill. You serve as the central knowledge hub for 4 family branches and 20+ family members who share a Vermont property at 3995 Vermont Route 125, Ripton, VT.
 
 PERSONALITY: You're modeled on Wash, the pilot from Firefly — quick-witted, playful, warmly sarcastic, a little goofy, self-deprecating, prone to mock-dramatic flourishes and the occasional dinosaur aside. You clearly adore this family and this scrappy old property, and it shows. The humor is seasoning, not the meal: answers stay accurate, specific, and genuinely useful, and when the topic is serious — money, corporate filings, emergencies, safety — you drop the bits and shoot straight. Don't quote Firefly dialogue; you're an homage, not a transcript.
 
@@ -1540,56 +1545,48 @@ Guidelines:
 - If you don't have info, say so clearly and suggest how to get it (scan a document, add an expense, post to the board)
 - When multiple family members might need info, give the complete picture — you serve all 4 branches
 - For financial questions, always mention the per-family share and who has paid what
-- Keep a warm, familiar tone — you know these people and this property`,
-      tools: assistantTools,
-    }).startChat({
-      history: messages.slice(0, -1).map((m) => ({
-        role: m.role,
-        parts: [{ text: m.content }],
-      })),
-    });
+- Keep a warm, familiar tone — you know these people and this property`;
 
   const lastMessage = messages[messages.length - 1];
   const outgoing = attachmentContext
     ? lastMessage.content + attachmentContext
     : lastMessage.content;
 
-  // Explicit heavy analysis routes to preview Pro, the endpoint most prone to
-  // 503 "overloaded". If the FIRST send
-  // overloads (before any tool has executed, so there are no side effects to
-  // duplicate), fall back to stable flash so the user gets an answer instead
-  // of an error. Later tool-loop sends stay on whichever chat succeeded.
-  let chat = startChatWith(selectedModel);
-  let result = await withGeminiRetry(() => chat.sendMessage(outgoing)).catch(
-    async (err) => {
-      const status = (err as { status?: number })?.status;
-      if (selectedModel === MODELS.pro && (status === 503 || status === 429)) {
-        chat = startChatWith(MODELS.flash);
-        return withGeminiRetry(() => chat.sendMessage(outgoing));
-      }
-      throw err;
-    }
+  const input: OpenAI.Responses.ResponseInput = [
+    ...messages.slice(0, -1).map((message) => ({
+      role: message.role === "model" ? "assistant" as const : "user" as const,
+      content: message.content,
+    })),
+    { role: "user", content: outgoing },
+  ];
+  const createResponse = () => getOpenAIClient().responses.create({
+    model: selectedModel,
+    instructions: systemPrompt,
+    input,
+    tools: assistantTools,
+  });
+  let result = await withGeminiRetry(createResponse);
+  let functionCalls = result.output.filter(
+    (item): item is OpenAI.Responses.ResponseFunctionToolCall => item.type === "function_call"
   );
-  let functionCalls = result.response.functionCalls();
   let iterations = 0;
 
   // Walkthrough memos can legitimately produce many tool calls (one asset
   // per system described, plus memories) — allow more rounds than plain chat
   while (functionCalls && functionCalls.length > 0 && iterations < 8) {
-    const functionResponses: {
-      functionResponse: { name: string; response: Record<string, unknown> };
-    }[] = [];
+    const functionResponses: OpenAI.Responses.ResponseInput = [];
     for (const fc of functionCalls) {
+      const args = parseToolArguments(fc.arguments);
       try {
         const response = await executeToolFunction(
           fc.name,
-          fc.args as Record<string, unknown>,
+          args,
           username
         );
         try {
           await recordBuckyToolResult(
             fc.name,
-            fc.args as Record<string, unknown>,
+            args,
             response,
             username
           );
@@ -1599,24 +1596,31 @@ Guidelines:
           console.error(`[Bucky Ledger] Failed to audit ${fc.name}:`, auditError);
         }
         functionResponses.push({
-          functionResponse: { name: fc.name, response: stripToolAuditMetadata(response) },
+          type: "function_call_output",
+          call_id: fc.call_id,
+          output: JSON.stringify(stripToolAuditMetadata(response)),
         });
       } catch (error) {
         functionResponses.push({
-          functionResponse: {
-            name: fc.name,
-            response: {
-              error: `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-            },
-          },
+          type: "function_call_output",
+          call_id: fc.call_id,
+          output: JSON.stringify({
+            error: `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+          }),
         });
       }
     }
 
-    result = await withGeminiRetry(() => chat.sendMessage(functionResponses));
-    functionCalls = result.response.functionCalls();
+    input.push(
+      ...(result.output as unknown as OpenAI.Responses.ResponseInput),
+      ...functionResponses
+    );
+    result = await withGeminiRetry(createResponse);
+    functionCalls = result.output.filter(
+      (item): item is OpenAI.Responses.ResponseFunctionToolCall => item.type === "function_call"
+    );
     iterations++;
   }
 
-  return result.response.text();
+  return result.output_text;
 }
