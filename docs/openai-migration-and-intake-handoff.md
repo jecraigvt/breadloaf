@@ -890,8 +890,40 @@ on, so it gets reviewed before it is used to bless anything. A lenient harness
 that reports 100% is worse than no harness — it converts an unknown problem into
 a false assurance.
 
-**Phase 2 — fix the causes.** 17b (extraction gaps), 16a (oversized PDF
-sampling), 16b (query distillation), 16c (real category directory).
+**Phase 2 — fix the causes.** 17b (extraction gaps), 17g (retrieval guard
+tuning), 16a (oversized PDF sampling), 16b (query distillation), 16c (real
+category directory).
+
+### Phase 1 baseline — measured 2026-08-05, before any fixes
+
+```
+round-trip:  74.0%   (13 failures of 50 checks)
+golden:      84.0%   ( 4 failures of 25 checks)
+```
+
+Every later change is measured against these two numbers. Report both, before
+and after, every time. "The script ran" is not a result.
+
+Round-trip failures split into two kinds:
+
+**Eight documents with no content** — the known set, now correctly attributed by
+`analysisState`: five `unsupported_type` (legacy `application/msword` — the
+Bylaws, Vision, Inheritance History, Succession Clause, Instruction Letter), two
+`provider_error` (the maintenance `.docx` pair), one `too_large` (Bestor
+Photos). These are 17b and 16a.
+
+**Five documents that hold real content and still fail** — this was not
+predicted by this spec, and it is the more interesting result. Two return
+**nothing at all** for questions generated from their own text:
+
+```
+"How much was charged in sales tax on the July 14, 2026 purchase?"     -> nothing
+"How much was shown on the price tag next to the gray modular seating?" -> nothing
+```
+
+The answers are provably in those documents. The other three lose to
+near-duplicates — the 2025 board minutes lose to the 2024 minutes, the
+activities guide loses to the contact directory. See 17g.
 
 **Phase 3 — repair and prove.** 17e (re-analyze and re-embed everything), re-run
 both harnesses, report before-and-after. Then 17f (surface the numbers).
@@ -1027,6 +1059,38 @@ the fictional "Genealogy" category.
 
 Every future miss reported by a family member gets added here. The set only
 grows.
+
+### 17g. Tune the retrieval guards against the harness
+
+Added after phase 1. Five documents hold real, indexed content and are still not
+retrievable by questions drawn from that content — two of them return nothing at
+all. That is a tuning problem, not a data problem, and it was invisible until
+there was a number attached to it.
+
+The suspects are both in `embeddings.ts`:
+
+- `UNCORROBORATED_TOP_SPREAD` (1.3) — requires the top semantic hit to stand
+  clear of the runner-up when no keyword matches. This is what correctly kills
+  `"purple monkey dishwasher"`. It is likely also killing specific factual
+  questions, where the answer sits in one chunk and nothing else in the archive
+  resembles it — precisely the case where the top hit has no spread because
+  there is no second candidate.
+- `RELATIVE_SEMANTIC_FLOOR` (0.72) — retains candidates within a fraction of the
+  query's top score.
+
+Both were chosen without data. Now there is a pass rate to optimise against.
+
+**Tune empirically, and report a table** of round-trip and golden pass rates
+across a grid of candidate values rather than changing them by feel. The
+negative controls are what make this safe: they prevent the obvious cheat of
+loosening every guard until everything passes, because loosening also breaks the
+controls. **A change that raises the document pass rate while breaking a
+negative control is a regression, not an improvement.**
+
+If no single pair of values satisfies both, say so rather than splitting the
+difference silently — that result would mean the guard needs a different shape
+(for example, keyword evidence gating only the spread test, not the floor), and
+that is worth knowing explicitly.
 
 ### 17e. Re-analyze everything, then verify
 
