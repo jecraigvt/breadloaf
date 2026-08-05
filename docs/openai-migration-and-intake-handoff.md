@@ -105,18 +105,41 @@ Luna is ~7.5× cheaper than Flash on both sides; embeddings are 10× cheaper.
 
 # Workstream A — OpenAI migration (tasks 1–6)
 
-## Task 1 — Provision the OpenAI key
+## Task 1 — Provision the OpenAI key — ✅ DONE (2026-08-05)
 
-Create an OpenAI API key and add `OPENAI_API_KEY` to the Railway `breadloaf-app`
-service. Tier 1 requires $5 paid; confirm the account's real RPM/TPM at
-`platform.openai.com/account/rate-limits` and record the numbers in this document
-so task 6's backoff can be tuned against them.
+`OPENAI_API_KEY` is set on the Railway `breadloaf-app` service.
+
+**Verified against the live key on 2026-08-05.** All six models this handoff
+names are available on the account:
+
+```
+gpt-5.6-sol   gpt-5.6-terra   gpt-5.6-luna
+text-embedding-3-small   gpt-4o-mini-transcribe   gpt-transcribe
+```
+
+**Observed rate limits** (from `x-ratelimit-*` response headers on a live
+`gpt-5.6-luna` call — use these to tune task 6's backoff):
+
+| Limit | Value |
+|---|---|
+| `x-ratelimit-limit-requests` | **500 / min** |
+| `x-ratelimit-limit-tokens` | **200,000 / min** |
+| `x-ratelimit-reset-requests` | 120ms |
+
+For contrast, the Gemini free tier that caused this migration allowed **5
+requests per minute**. This is a 100× increase on the exact constraint that
+broke document processing, so the retry helper is no longer load-bearing for
+normal family upload volume — but task 6 should still honor `Retry-After`
+rather than a fixed schedule.
+
+One thing to watch: TPM is 200,000 and image inputs are token-priced by
+resolution and the `detail` setting. A batch of full-resolution phone photos
+could approach the token ceiling well before the request ceiling. If task 9's
+triage pass hits 429s, check `x-ratelimit-remaining-tokens` before assuming a
+request-count problem.
 
 **Keep `GOOGLE_AI_API_KEY` in place** until task 6 is done. Several modules read
 it independently and will break the moment it disappears.
-
-**Done when:** `OPENAI_API_KEY` is set in Railway, and the observed rate limits
-are written into this file.
 
 ---
 
