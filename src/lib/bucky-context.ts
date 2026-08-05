@@ -10,6 +10,24 @@ export interface BuckyContext {
   relevantKnowledge: string;
 }
 
+interface ArchiveCategoryCount {
+  name: string;
+  _count: { documents: number };
+}
+
+export function formatArchiveCategoryDirectory(
+  categories: ArchiveCategoryCount[],
+  uncategorizedCount: number
+): string {
+  const lines = categories.map(
+    (category) => `- ${category.name} (${category._count.documents})`
+  );
+  if (uncategorizedCount > 0) {
+    lines.push(`- Unfiled / no category (${uncategorizedCount}; filing state, not a category name)`);
+  }
+  return lines.length ? lines.join("\n") : "- No archive categories are configured.";
+}
+
 function dateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -116,6 +134,7 @@ export async function buildBuckyContext(
     openQuestions,
     expenseSummary,
     counts,
+    archiveCategories,
     retrieved,
     pantryItems,
     recentExpenses,
@@ -155,7 +174,27 @@ export async function buildBuckyContext(
       prisma.asset.count({ where: { status: "active" } }),
       prisma.maintenanceRecord.count(),
       prisma.expense.count(),
+      prisma.document.count({
+        where: {
+          deletedAt: null,
+          accessScope: "family",
+          categoryId: null,
+        },
+      }),
     ]),
+    prisma.category.findMany({
+      select: {
+        name: true,
+        _count: {
+          select: {
+            documents: {
+              where: { deletedAt: null, accessScope: "family" },
+            },
+          },
+        },
+      },
+      orderBy: { name: "asc" },
+    }),
     Promise.all(
       (retrievalQueries.length ? retrievalQueries : [query]).map((retrievalQuery) =>
         hybridSearch(retrievalQuery, 18, KNOWLEDGE_SOURCE_TYPES)
@@ -354,6 +393,7 @@ export async function buildBuckyContext(
       `- ${counts[2]} active property systems`,
       `- ${counts[3]} maintenance records`,
       `- ${counts[4]} expenses`,
+      `ARCHIVE CATEGORIES (exact names; family-access document counts):\n${formatArchiveCategoryDirectory(archiveCategories, counts[5])}`,
       "Only records relevant to this request are expanded below. A count above zero means more knowledge exists even when no detail was loaded.",
     ].join("\n"),
     relevantKnowledge: relevantParts.length
