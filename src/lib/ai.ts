@@ -18,46 +18,17 @@ import {
 } from "@/lib/embeddings";
 import { resolveDocumentTitle } from "@/lib/document-title";
 import { parseToolArguments } from "@/lib/openai-json";
-
-function getOpenAIClient(): OpenAI {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
-  return new OpenAI({ apiKey });
-}
+import { getOpenAIClient, withRetry } from "@/lib/openai-client";
 
 // ─── Model Routing ─────────────────────────────────────────────
-// Stable (GA) models preferred — preview models can be retired on 2 weeks'
-// notice (gemini-3-pro-preview was shut down March 2026 with a forced
-// migration). Verified against ai.google.dev July 2026.
-// Flash 3.5 (stable, GA May 2026): chat, document processing — $1.50/$9.00 per 1M tokens
-// Pro 3.1 (still preview-only; no stable Pro exists yet — revisit when one ships):
-//   complex analysis — $2-4/$12-18 per 1M tokens
-// Embedding 2 (stable, GA April 2026) — $0.20 per 1M tokens
+// Keep provider model IDs centralized so routing, analysis, transcription,
+// and embeddings cannot drift onto different model generations.
 export const MODELS = {
   flash: "gpt-5.6-luna",
   pro: "gpt-5.6-terra",
   embedding: "text-embedding-3-small",
   transcription: "gpt-4o-mini-transcribe",
 } as const;
-
-// Retry transient Gemini failures — 503 (model overloaded) and 429 (rate
-// limit) usually clear within seconds. Anything else rethrows immediately.
-export async function withGeminiRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
-  let lastErr: unknown;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      const status = (err as { status?: number })?.status;
-      if (status !== 503 && status !== 429) throw err;
-      if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
-      }
-    }
-  }
-  throw lastErr;
-}
 
 // ─── Embedding Functions ───────────────────────────────────────
 export interface CategoryOption {
@@ -150,7 +121,7 @@ export async function processMediaFile(
     fileName || "media",
     { type: mimeType }
   );
-  const transcription = await withGeminiRetry(() =>
+  const transcription = await withRetry(() =>
     getOpenAIClient().audio.transcriptions.create({
       model: MODELS.transcription,
       file: mediaFile,
@@ -223,7 +194,7 @@ This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Gre
         { type: "input_image" as const, image_url: `data:${fileType};base64,${fileBase64}`, detail: "auto" as const },
         { type: "input_text" as const, text: prompt },
       ];
-  const response = await withGeminiRetry(() => getOpenAIClient().responses.parse({
+  const response = await withRetry(() => getOpenAIClient().responses.parse({
     model: MODELS.flash,
     input: [{ role: "user", content }],
     text: { format: zodTextFormat(CategorizationResultSchema, "document_categorization") },
@@ -272,7 +243,7 @@ This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Gre
 Document text:
 ${documentText}`;
 
-  const response = await withGeminiRetry(() => getOpenAIClient().responses.parse({
+  const response = await withRetry(() => getOpenAIClient().responses.parse({
     model: MODELS.flash,
     input: prompt,
     text: { format: zodTextFormat(CategorizationResultSchema, "text_categorization") },
@@ -321,7 +292,7 @@ Guidelines:
 - If you can read brand names, include them (e.g., "Barilla Spaghetti")
 - If the image is unclear or not of food/pantry items, return an empty array []`;
 
-  const response = await withGeminiRetry(() => getOpenAIClient().responses.parse({
+  const response = await withRetry(() => getOpenAIClient().responses.parse({
     model: MODELS.flash,
     input: [{
       role: "user",
@@ -1565,7 +1536,7 @@ Guidelines:
     input,
     tools: assistantTools,
   });
-  let result = await withGeminiRetry(createResponse);
+  let result = await withRetry(createResponse);
   let functionCalls = result.output.filter(
     (item): item is OpenAI.Responses.ResponseFunctionToolCall => item.type === "function_call"
   );
@@ -1615,7 +1586,7 @@ Guidelines:
       ...(result.output as unknown as OpenAI.Responses.ResponseInput),
       ...functionResponses
     );
-    result = await withGeminiRetry(createResponse);
+    result = await withRetry(createResponse);
     functionCalls = result.output.filter(
       (item): item is OpenAI.Responses.ResponseFunctionToolCall => item.type === "function_call"
     );

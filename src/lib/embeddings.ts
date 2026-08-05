@@ -1,18 +1,11 @@
-import OpenAI from "openai";
 import { prisma } from "@/lib/prisma";
+import { getOpenAIClient, withRetry } from "@/lib/openai-client";
 
 export const EMBEDDING_MODEL = "text-embedding-3-small";
 
 const MAX_CHUNK_CHARS = 3600;
 const CHUNK_OVERLAP_CHARS = 350;
 const CONTEXT_PREFIX_CHARS = 600;
-
-function getOpenAIClient(): OpenAI {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
-  return new OpenAI({ apiKey });
-}
-
 export interface SearchResult {
   sourceType: string;
   sourceId: string;
@@ -74,23 +67,8 @@ export function tokenizeSearchQuery(query: string): string[] {
   ).slice(0, 12);
 }
 
-async function withEmbeddingRetry<T>(operation: () => Promise<T>): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= 2; attempt++) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-      const status = (error as { status?: number }).status;
-      if ((status !== 429 && status !== 503) || attempt === 2) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
-    }
-  }
-  throw lastError;
-}
-
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const result = await withEmbeddingRetry(() =>
+  const result = await withRetry(() =>
     getOpenAIClient().embeddings.create({
       model: EMBEDDING_MODEL,
       input: text,

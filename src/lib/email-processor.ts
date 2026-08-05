@@ -1,6 +1,7 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
+import { zodTextFormat } from "openai/helpers/zod";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { fetchUnseenEmails, emailConfigured, type InboundEmail, type InboundAttachment } from "@/lib/email-inbox";
 import { categorizeDocument, categorizeText, processMediaFile, MODELS } from "@/lib/ai";
@@ -11,8 +12,7 @@ import { findOverlappingStay, createStayWithCalendarSync } from "@/lib/stays";
 import { generateId } from "@/lib/utils";
 import { sha256 } from "@/lib/archive-integrity";
 import { resolveDocumentTitle } from "@/lib/document-title";
-
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
+import { getOpenAIClient, withRetry } from "@/lib/openai-client";
 
 // ─── Guardrails ─────────────────────────────────────────────────
 // Email is an untrusted inlet: it can only ADD stays, documents, and
@@ -191,12 +191,20 @@ interface BodyAnalysis {
   bodyIsDocument: boolean;
 }
 
+const BodyAnalysisSchema = z.object({
+  stays: z.array(z.object({
+    guestName: z.string(),
+    checkIn: z.string(),
+    checkOut: z.string(),
+    confidence: z.number(),
+  })),
+  bodyIsDocument: z.boolean(),
+});
+
 async function analyzeEmailBody(email: InboundEmail): Promise<BodyAnalysis> {
-  const model = genAI.getGenerativeModel({ model: MODELS.flash });
   const today = new Date().toISOString().slice(0, 10);
 
-  const result = await model.generateContent(
-    `You extract visit announcements for the Breadloaf Hill family property calendar (Vermont; the Craig family: brothers Tom, Jim, Sandy, Greg and their branches).
+  const prompt = `You extract visit announcements for the Breadloaf Hill family property calendar (Vermont; the Craig family: brothers Tom, Jim, Sandy, Greg and their branches).
 
 Today's date: ${today}
 Email from: ${email.fromName} <${email.fromEmail}>
@@ -216,26 +224,24 @@ Separately, decide whether the email BODY ITSELF is a document worth archiving (
 
 Return ONLY valid JSON (no markdown fences):
 {"stays": [{"guestName": "...", "checkIn": "YYYY-MM-DD", "checkOut": "YYYY-MM-DD", "confidence": 0.0}], "bodyIsDocument": false}
-Return {"stays": [], "bodyIsDocument": false} if there is nothing.`
-  );
+Return {"stays": [], "bodyIsDocument": false} if there is nothing.`;
 
-  try {
-    const text = result.response.text();
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text);
-    return {
-      stays: (parsed.stays || []).filter(
-        (s: ExtractedStay) =>
-          s?.guestName?.trim() &&
-          /^\d{4}-\d{2}-\d{2}$/.test(s.checkIn || "") &&
-          /^\d{4}-\d{2}-\d{2}$/.test(s.checkOut || "") &&
-          new Date(s.checkOut) > new Date(s.checkIn)
-      ),
-      bodyIsDocument: parsed.bodyIsDocument === true,
-    };
-  } catch {
-    return { stays: [], bodyIsDocument: false };
-  }
+  const result = await withRetry(() => getOpenAIClient().responses.parse({
+    model: MODELS.flash,
+    input: prompt,
+    text: { format: zodTextFormat(BodyAnalysisSchema, "email_body_analysis") },
+  }));
+  if (!result.output_parsed) throw new Error("OpenAI returned no email body analysis");
+  return {
+    stays: result.output_parsed.stays.filter(
+      (stay) =>
+        stay.guestName.trim() &&
+        /^\d{4}-\d{2}-\d{2}$/.test(stay.checkIn) &&
+        /^\d{4}-\d{2}-\d{2}$/.test(stay.checkOut) &&
+        new Date(stay.checkOut) > new Date(stay.checkIn)
+    ),
+    bodyIsDocument: result.output_parsed.bodyIsDocument,
+  };
 }
 
 // Save the email body itself as an archived .txt document and run it
