@@ -42,6 +42,7 @@ import {
   type VoiceMemoDisposition,
 } from "@/lib/voice-note";
 import { BUCKY_ACTION_BOUNDARY } from "@/lib/bucky-action-boundary";
+import { createFamilyChangeProposal } from "@/lib/family-change";
 
 export { MODELS } from "@/lib/ai-models";
 
@@ -931,6 +932,89 @@ const assistantToolDeclarations: Array<{
         },
       },
       {
+        name: "propose_family_change",
+        description:
+          "Create one reviewable family-tree changeset. This NEVER edits the family graph; a human must inspect and confirm it in Bucky's Questions tab. Resolve later corrections into the final spelling before calling (for example, propose Korey only when a later source corrects Corey). Use proposal keys for newly proposed people and existing display/full names for people already in the tree. Never decide isMinor: mark possibleMinor and let the human choose.",
+        parameters: {
+          type: "object",
+          properties: {
+            summary: {
+              type: "string",
+              description: "One concise sentence describing the complete proposed family change",
+            },
+            sourceMemoryIds: {
+              type: "array",
+              description: "Exact MEMORY ids from the supplied context that support this proposal",
+              items: { type: "string" },
+            },
+            people: {
+              type: "array",
+              description: "People who may need to be added. Do not include a superseded spelling as a second person.",
+              items: {
+                type: "object",
+                properties: {
+                  key: { type: "string", description: "Stable lowercase proposal key, such as korey" },
+                  name: { type: "string", description: "Best supported full name; do not invent a surname" },
+                  displayName: { type: "string", description: "Name shown on the plate" },
+                  surname: { type: ["string", "null"], description: "Supported current surname, or null when unstated" },
+                  maidenName: { type: ["string", "null"], description: "Supported maiden name, or null when unstated" },
+                  possibleMinor: { type: "boolean", description: "True when age/minor status needs a human decision; never infer isMinor" },
+                  deceased: { type: "boolean", description: "True only when explicitly supported" },
+                },
+                required: ["key", "name", "displayName", "possibleMinor", "deceased"],
+              },
+            },
+            parentEdges: {
+              type: "array",
+              description: "Individual parent-to-child edges. Use proposal keys for new people and an existing display/full name for an existing person.",
+              items: {
+                type: "object",
+                properties: {
+                  parent: { type: "string" },
+                  child: { type: "string" },
+                },
+                required: ["parent", "child"],
+              },
+            },
+            spouseEdges: {
+              type: "array",
+              description: "Symmetric spouse facts; storage direction is normalized by the confirmation path",
+              items: {
+                type: "object",
+                properties: {
+                  personA: { type: "string" },
+                  personB: { type: "string" },
+                  status: { type: "string", enum: ["current", "former"] },
+                },
+                required: ["personA", "personB", "status"],
+              },
+            },
+            corrections: {
+              type: "array",
+              description: "Explicit corrections to people who already exist in the tree; source corrections to not-yet-added people belong directly in their final people entry",
+              items: {
+                type: "object",
+                properties: {
+                  target: { type: "string", description: "Existing display name or unambiguous full name" },
+                  changes: {
+                    type: "object",
+                    properties: {
+                      name: { type: "string" },
+                      displayName: { type: "string" },
+                      surname: { type: ["string", "null"] },
+                      maidenName: { type: ["string", "null"] },
+                      deceased: { type: "boolean" },
+                    },
+                  },
+                },
+                required: ["target", "changes"],
+              },
+            },
+          },
+          required: ["summary", "people", "parentEdges", "spouseEdges", "corrections"],
+        },
+      },
+      {
         name: "update_position",
         description:
           "Record a current family or corporate position and preserve the prior holder in history. Use when a direct instruction or authoritative approved record clearly appoints someone. If the source is a draft, discussion, nomination, or unclear, use ask_family instead.",
@@ -1482,6 +1566,17 @@ async function executeToolFunction(
         note: "The question is now in the persistent Questions tab.",
       };
     }
+    case "propose_family_change": {
+      return createFamilyChangeProposal({
+        version: 1,
+        summary: args.summary,
+        sourceMemoryIds: Array.isArray(args.sourceMemoryIds) ? args.sourceMemoryIds : [],
+        people: Array.isArray(args.people) ? args.people : [],
+        parentEdges: Array.isArray(args.parentEdges) ? args.parentEdges : [],
+        spouseEdges: Array.isArray(args.spouseEdges) ? args.spouseEdges : [],
+        corrections: Array.isArray(args.corrections) ? args.corrections : [],
+      }, username);
+    }
     case "update_position": {
       const personName = String(args.personName || "").trim();
       const position = String(args.position || "").trim();
@@ -1671,6 +1766,7 @@ WHAT YOU CAN DO:
    - Log property expenses with S-Corp tracking (e.g., "Tom paid $1200 for the new water heater")
    - Post messages to the family bulletin board (e.g., "Post that the driveway needs plowing")
    - Sign up to cook dinner (e.g., "Sign me up to make tacos on Saturday for 8 people")
+   - Propose a complete family-tree changeset for human review. This creates no people or relationships until a family member confirms it in Questions
 
 3. FILE DOCUMENTS sent in chat:
    - Family members can attach files (photos of receipts, PDFs, Word/Excel docs, audio, video) directly in this chat using the paperclip button
@@ -1710,6 +1806,14 @@ WHAT YOU CAN DO:
    - When information conflicts, a likely duplicate could lose history, or the right answer belongs to someone else, use ask_family so the issue survives this chat
    - Do not repeat an open question already listed above unless new evidence materially changes it
    - Vault access, permanent deletion, external communications, and security changes always require explicit human confirmation
+
+8. PROPOSE FAMILY-TREE CHANGES, NEVER APPLY THEM:
+   - Use propose_family_change for a complete, structured proposal. The tool persists review state only and has no family-graph write access
+   - Resolve corrections from all supplied sources before proposing. A later spelling correction replaces the earlier spelling; never propose both people
+   - Parent edges always name each individual parent. Spouse edges are separate facts and never imply parentage
+   - Cite exact MEMORY ids when a retrieved voice-note memory supports the proposal
+   - Never infer isMinor. Mark possibleMinor when age needs a human decision and say that confirmation is blocked until a person chooses
+   - After the tool succeeds, say what was proposed and plainly state that the family tree is still unchanged pending confirmation
 
 ${BUCKY_ACTION_BOUNDARY}
 

@@ -5,6 +5,12 @@ import { recordBuckyLedgerEntry } from "@/lib/bucky-ledger";
 import { getAuthCookieName, getFamilyFromAuthToken } from "@/lib/auth";
 import { indexMemory } from "@/lib/embeddings";
 import { promoteQuestionAnswerToMemory } from "@/lib/question-memory";
+import { getCurrentActor } from "@/lib/actor";
+import {
+  confirmFamilyChangeProposal,
+  FamilyChangeValidationError,
+} from "@/lib/family-change";
+import { FAMILY_CHANGE_QUESTION_TYPE } from "@/lib/family-change-contract";
 
 export async function PATCH(
   request: NextRequest,
@@ -19,6 +25,51 @@ export async function PATCH(
   const existing = await prisma.buckyQuestion.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Question not found" }, { status: 404 });
 
+  if (body.action === "confirm_family_change") {
+    if (existing.questionType !== FAMILY_CHANGE_QUESTION_TYPE) {
+      return NextResponse.json({ error: "This is not a family-change proposal" }, { status: 400 });
+    }
+    const actor = await getCurrentActor(request);
+    if (!actor) {
+      return NextResponse.json(
+        { error: "Claim your identity before confirming a family-tree change" },
+        { status: 403 }
+      );
+    }
+    try {
+      const result = await confirmFamilyChangeProposal({
+        questionId: id,
+        minorDecisions: body.minorDecisions,
+        confirmedBy: actor.fullName,
+      });
+      try {
+        await recordBuckyLedgerEntry({
+          actionType: "confirm_family_change",
+          summary: `${actor.displayName} confirmed a family-tree proposal`,
+          details: result.answer,
+          initiatedBy: actor.fullName,
+          entityType: "family_change_proposal",
+          entityId: id,
+          sourceType: existing.sourceType || undefined,
+          sourceId: existing.sourceId || undefined,
+          sourceLabel: existing.sourceLabel || undefined,
+          afterState: JSON.parse(JSON.stringify(result)),
+        });
+      } catch (auditError) {
+        // The graph transaction is already committed. Never invite a retry that
+        // could duplicate people merely because the ledger write failed.
+        console.error("Family-change confirmation audit failed:", auditError);
+      }
+      return NextResponse.json({ questionId: id, applied: true, result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to confirm proposal";
+      return NextResponse.json(
+        { error: message },
+        { status: error instanceof FamilyChangeValidationError ? 409 : 400 }
+      );
+    }
+  }
+
   if (body.action === "dismiss") {
     const question = await prisma.buckyQuestion.update({
       where: { id },
@@ -32,6 +83,13 @@ export async function PATCH(
       entityId: question.id,
     });
     return NextResponse.json({ question });
+  }
+
+  if (existing.questionType === FAMILY_CHANGE_QUESTION_TYPE) {
+    return NextResponse.json(
+      { error: "Family-change proposals must be confirmed or dismissed" },
+      { status: 400 }
+    );
   }
 
   const answer = String(body.answer || "").trim();

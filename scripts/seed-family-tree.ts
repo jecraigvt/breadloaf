@@ -14,6 +14,10 @@
 
 import { prisma } from "../src/lib/prisma";
 import { deriveBranches, type FamilyGraph } from "../src/lib/family-tree";
+import {
+  matchFamilyRoster,
+  type FamilyRosterCandidate,
+} from "../src/lib/family-member-matcher";
 
 const APPLY = process.argv.includes("--apply");
 
@@ -22,10 +26,7 @@ const JIM = "Jim's family";
 const SANDY = "Sandy's family";
 const GREG = "Greg's family";
 
-interface RosterPerson {
-  key: string;
-  name: string;
-  displayName: string;
+interface RosterPerson extends FamilyRosterCandidate {
   surname?: string;
   maidenName?: string;
   branch?: string;
@@ -311,47 +312,6 @@ const CHILDREN: Array<[string, string[]]> = [
   ["colleen", ["jack", "sam"]],
 ];
 
-function normalize(value: string): string {
-  return value
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[“”‘’"']/g, "")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/**
- * Directory rows often carry an inline nickname — `Katherine "K.C." Keller`. Drop the
- * quoted or parenthesised part so the row still matches on the plain legal name.
- */
-function stripInlineNickname(value: string): string {
-  return value
-    .replace(/[“‘"']\s*[^”’"']*\s*[”’"']/g, " ")
-    .replace(/\([^)]*\)/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/** Every spelling of an existing row we are willing to match against the roster. */
-function rowMatchKeys(name: string): string[] {
-  const keys = new Set<string>([normalize(name), normalize(stripInlineNickname(name))]);
-  return Array.from(keys).filter(Boolean);
-}
-
-/** Every spelling of a roster person an existing directory row might plausibly use. */
-function matchKeysFor(person: RosterPerson): string[] {
-  const keys = new Set<string>();
-  const first = person.name.split(" ")[0];
-  keys.add(normalize(person.name));
-  keys.add(normalize(person.displayName));
-  if (person.surname) {
-    keys.add(normalize(`${person.displayName} ${person.surname}`));
-    keys.add(normalize(`${first} ${person.surname}`));
-  }
-  return Array.from(keys).filter(Boolean);
-}
-
 async function main() {
   console.log(`Craig family roster — ${APPLY ? "APPLY" : "DRY RUN"}`);
   console.log(`${ROSTER.length} people, ${MARRIAGES.length} marriages\n`);
@@ -359,58 +319,15 @@ async function main() {
   const existing = await prisma.familyMember.findMany();
   console.log(`Existing FamilyMember rows: ${existing.length}\n`);
 
-  // Build normalized name -> roster keys, so collisions are visible instead of silent.
-  const claimants = new Map<string, string[]>();
-  for (const person of ROSTER) {
-    for (const key of matchKeysFor(person)) {
-      if (!claimants.has(key)) claimants.set(key, []);
-      claimants.get(key)!.push(person.key);
-    }
-  }
-
-  const matchedId = new Map<string, string>(); // roster key -> existing member id
-  const claimedRowIds = new Set<string>();
-  const ambiguous: string[] = [];
-  const unmatchedRows: string[] = [];
-
-  // Pass 1 — displayName, which this script itself writes and which is unique across
-  // the roster. This is what makes re-runs exact: after the first apply, "William
-  // Craig" is ambiguous by name but "Sandy" and "Will" are not.
-  const byDisplayName = new Map(
-    ROSTER.map((person) => [normalize(person.displayName), person.key])
-  );
-  for (const row of existing) {
-    if (!row.displayName) continue;
-    const rosterKey = byDisplayName.get(normalize(row.displayName));
-    if (!rosterKey || matchedId.has(rosterKey)) continue;
-    matchedId.set(rosterKey, row.id);
-    claimedRowIds.add(row.id);
-  }
-
-  // Pass 2 — fall back to the full name for rows this script has never touched.
-  for (const row of existing) {
-    if (claimedRowIds.has(row.id)) continue;
-
-    const candidates = Array.from(
-      new Set(rowMatchKeys(row.name).flatMap((key) => claimants.get(key) ?? []))
-    ).filter((key) => !matchedId.has(key));
-
-    if (candidates.length === 0) {
-      unmatchedRows.push(`${row.name} (${row.id})`);
-      continue;
-    }
-    if (candidates.length > 1) {
-      ambiguous.push(
-        `"${row.name}" could be: ${candidates.join(", ")} — set displayName by hand to resolve`
-      );
-      continue;
-    }
-    matchedId.set(candidates[0], row.id);
-    claimedRowIds.add(row.id);
-  }
+  // Shared with the reviewed proposal apply path. It matches displayName first,
+  // then full-name spellings, and refuses every non-one-to-one fallback.
+  const match = matchFamilyRoster(existing, ROSTER);
+  const matchedId = match.matchedId;
 
   const toUpdate = ROSTER.filter((person) => matchedId.has(person.key));
-  const toCreate = ROSTER.filter((person) => !matchedId.has(person.key));
+  const toCreate = ROSTER.filter((person) =>
+    match.unmatchedCandidateKeys.includes(person.key)
+  );
 
   console.log(`Matched to existing rows: ${toUpdate.length}`);
   for (const person of toUpdate) {
@@ -419,18 +336,21 @@ async function main() {
   console.log(`\nWill create: ${toCreate.length}`);
   for (const person of toCreate) console.log(`  create  ${person.displayName}`);
 
-  if (ambiguous.length > 0) {
+  if (match.ambiguous.length > 0) {
     console.log(`\nAMBIGUOUS — skipped, resolve by hand:`);
-    for (const line of ambiguous) console.log(`  ! ${line}`);
+    for (const ambiguity of match.ambiguous) console.log(`  ! ${ambiguity.message}`);
   }
-  if (unmatchedRows.length > 0) {
+  if (match.unmatchedRows.length > 0) {
     console.log(`\nExisting rows not in the roster (left untouched):`);
-    for (const line of unmatchedRows) console.log(`  ? ${line}`);
+    for (const row of match.unmatchedRows) console.log(`  ? ${row.name} (${row.id})`);
   }
 
   if (!APPLY) {
     console.log(`\nDry run — nothing written. Re-run with --apply to commit.`);
     return;
+  }
+  if (match.ambiguous.length > 0) {
+    throw new Error("Refusing to apply an ambiguous family roster");
   }
 
   // ---- Write members ----

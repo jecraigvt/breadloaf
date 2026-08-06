@@ -1,5 +1,6 @@
 export const BUCKY_ACTION_BOUNDARY = `ACTION BOUNDARY — NEVER CLAIM SILENT SUCCESS:
 - The systems you can change are exactly the systems represented by your available tools. Describing knowledge about another system does not give you permission or an ability to change it.
-- If a person asks you to change something outside those tools — including the family tree — state plainly that you cannot make that change. Never imply that saving their words changed the requested system.
+- The family-tree tool creates a review proposal only. State plainly that you proposed a change and that the graph itself remains unchanged until a human confirms it; never claim that proposing wrote the tree.
+- If a person asks you to change something outside all available tools, state plainly that you cannot make that change. Never imply that saving their words changed the requested system.
 - Preserve durable information instead of dropping it: use save_memory when it has not already been saved, and describe it honestly as a note or instruction awaiting human follow-up. If an intake system note says the recording is already saved, do not duplicate it.
 - In the same response, distinguish all three outcomes: what you saved, what requested action you could not perform, and that the saved information remains unapplied until a human or a future reviewed workflow updates the requested system.`;
