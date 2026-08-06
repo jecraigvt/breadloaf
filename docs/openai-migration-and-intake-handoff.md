@@ -1001,6 +1001,47 @@ model each run, so bare runs differ by a few points for no reason. Compare
 settings with `scripts/tune-archive-retrieval-guards.ts`, which fixes the
 questions across the grid — never by diffing two harness runs.
 
+### Re-analysis through the two-stage pipeline — 2026-08-06
+
+Ran again after tasks 9-11 shipped, to push existing documents through
+type-specific extraction rather than the single generic prompt.
+
+```
+fixed-corpus comparison at spread 1.30 (tuner, same questions both sides):
+  round-trip   90.0% -> 92.0%
+  golden       88.0% -> 88.0%
+  controls        4/4 -> 4/4
+
+content across 48 documents:
+  summary chars         15,358 -> 17,915   (+17%)
+  extractedText chars   31,208 -> 38,154   (+22%)
+  state transitions     46 ok->ok, 2 provider_error->provider_error
+  changedProtectedCategories: []
+```
+
+The specific bet paid off. A receipt gained *"transaction date 07/14/2026; time
+13:04; transaction #1; batch #128; credit card Visa"* — the exact fact a failing
+round-trip question had asked for. Another went from 87 to 334 characters of
+extracted text. Archived photos went from generic descriptions to *"Weil-McLain
+Gold GV boiler, copper piping, shutoff valves, PVC venting"*.
+
+**Golden held at 88% by trading a failure, not by standing still.** The mortgage-
+balance question started passing; *"what instructions did Dad leave for his four
+sons"* stopped. That document gained content (summary 323->404, extracted text
+1660->2246), so the loss is retrieval, not analysis — the corpus moved under the
+guards again, exactly as the constant in `embeddings.ts` warns. Re-running the
+grid confirmed 1.30 is still the best available pair, so this one is not
+tunable away at present. It is the strongest remaining candidate for the next
+retrieval improvement.
+
+**Operational notes for the next run.** `railway ssh` drops long sessions
+(`os error 10054`), and detaching with `nohup` does not survive either — the
+container has no `ps` and the process dies with the session. Run in chunks with
+`--offset=/--limit=` instead; six chunks of eight completed first-attempt.
+And the journal makes a second pass a no-op — every document returns
+`skipped-completed` — so a deliberate re-run needs a fresh
+`BACKFILL_JOURNAL_PATH` inside the upload root.
+
 ### The ceiling is 96%, not 100%
 
 Two documents are **genuinely blank**. `Breadloaf Maintenance Log.docx` and
