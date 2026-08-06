@@ -4,7 +4,8 @@ import { BUCKY_ACTION_BOUNDARY } from "./bucky-action-boundary";
 
 test("unsupported actions require an honest saved-but-not-applied response", () => {
   assert.match(BUCKY_ACTION_BOUNDARY, /exactly the systems represented by your available tools/i);
-  assert.match(BUCKY_ACTION_BOUNDARY, /including the family tree/i);
+  assert.match(BUCKY_ACTION_BOUNDARY, /family-tree tool creates a review proposal only/i);
+  assert.match(BUCKY_ACTION_BOUNDARY, /graph itself remains unchanged until a human confirms/i);
   assert.match(BUCKY_ACTION_BOUNDARY, /what you saved/i);
   assert.match(BUCKY_ACTION_BOUNDARY, /could not perform/i);
   assert.match(BUCKY_ACTION_BOUNDARY, /remains unapplied/i);

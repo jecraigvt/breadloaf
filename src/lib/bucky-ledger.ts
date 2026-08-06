@@ -72,6 +72,7 @@ const TOOL_SUMMARIES: Record<string, (args: Record<string, unknown>, result: Rec
   save_memory: (args, result) => `${result.action === "unchanged" ? "Confirmed" : result.action === "updated" ? "Updated" : "Saved"} memory: ${args.topic}`,
   add_expense: (args) => `Recorded expense: ${args.description} ($${args.amount})`,
   ask_family: (args) => `Asked the family: ${args.question}`,
+  propose_family_change: (args) => `Proposed family-tree review: ${args.summary}`,
   update_position: (_args, result) => `${result.currentHolder} became ${result.position}${result.previousHolder ? `, replacing ${result.previousHolder}` : ""}`,
 };
 
@@ -87,6 +88,7 @@ const TOOL_ENTITY_TYPES: Record<string, string> = {
   save_memory: "memory",
   add_expense: "expense",
   ask_family: "question",
+  propose_family_change: "family_change_proposal",
   update_position: "position",
 };
 

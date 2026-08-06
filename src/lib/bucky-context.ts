@@ -378,7 +378,7 @@ export async function buildBuckyContext(
     relevantParts.push(`[FAMILY MEMBER] ${member.name}${member.branch ? `\nBranch: ${member.branch}` : ""}${member.relation ? `\nRelationship: ${member.relation}` : ""}${member.boardRole ? `\nBoard role: ${member.boardRole}` : ""}${member.notes ? `\nNotes: ${member.notes}` : ""}`);
   }
   for (const memory of [...memoryDirectory, ...memories.filter((memory) => !memoryDirectory.some((listed) => listed.id === memory.id))]) {
-    relevantParts.push(`[${memory.type.toUpperCase()} MEMORY] ${memory.topic}${memory.subject ? `\nSubject: ${memory.subject}` : ""}${memory.location ? `\nLocation: ${memory.location}` : ""}\n${memory.content}${memory.source ? `\nSource: ${memory.source}` : ""}${memory.validFrom ? `\nEffective: ${dateOnly(memory.validFrom)}` : ""}`);
+    relevantParts.push(`[${memory.type.toUpperCase()} MEMORY ${memory.id}] ${memory.topic}${memory.subject ? `\nSubject: ${memory.subject}` : ""}${memory.location ? `\nLocation: ${memory.location}` : ""}\n${memory.content}${memory.source ? `\nSource: ${memory.source}` : ""}${memory.validFrom ? `\nEffective: ${dateOnly(memory.validFrom)}` : ""}`);
   }
   for (const document of [...documentDirectory, ...documents.filter((document) => !documentDirectory.some((listed) => listed.id === document.id))]) {
     const chunks = matchedChunks(retrieved, "document", document.id);

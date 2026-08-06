@@ -12,6 +12,12 @@ import {
   Undo2,
   X,
 } from "lucide-react";
+import {
+  FAMILY_CHANGE_QUESTION_TYPE,
+  parseFamilyChangeSet,
+  type FamilyChangeSet,
+  type FamilyMinorDecisions,
+} from "@/lib/family-change-contract";
 
 interface BuckyQuestion {
   id: string;
@@ -24,6 +30,7 @@ interface BuckyQuestion {
   sourceId: string | null;
   sourceLabel: string | null;
   options: unknown;
+  proposedAction: unknown;
   answer: string | null;
   answeredBy: string | null;
   answeredAt: string | null;
@@ -55,6 +62,7 @@ export function BuckyQuestionsPanel({ onCountChange }: { onCountChange: (count: 
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [minorDecisions, setMinorDecisions] = useState<Record<string, FamilyMinorDecisions>>({});
   const [notice, setNotice] = useState<string | null>(null);
 
   const loadQuestions = async (selectedStatus = status) => {
@@ -124,6 +132,33 @@ export function BuckyQuestionsPanel({ onCountChange }: { onCountChange: (count: 
     }
   };
 
+  const confirmFamilyChange = async (
+    question: BuckyQuestion,
+    changeSet: FamilyChangeSet
+  ) => {
+    if (processingId) return;
+    setProcessingId(question.id);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/bucky/questions/${question.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "confirm_family_change",
+          minorDecisions: minorDecisions[question.id] || {},
+        }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Unable to confirm proposal");
+      setNotice(`Family tree updated after human confirmation: ${changeSet.summary}`);
+      await loadQuestions("open");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "The family-tree proposal could not be confirmed.");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4">
       <div className="max-w-lg mx-auto">
@@ -162,13 +197,25 @@ export function BuckyQuestionsPanel({ onCountChange }: { onCountChange: (count: 
               const options = Array.isArray(question.options) ? question.options.map(String) : [];
               const link = sourceLink(question.sourceType, question.sourceId);
               const isProcessing = processingId === question.id;
+              let familyChange: FamilyChangeSet | null = null;
+              if (question.questionType === FAMILY_CHANGE_QUESTION_TYPE) {
+                try {
+                  familyChange = parseFamilyChangeSet(question.proposedAction);
+                } catch {
+                  familyChange = null;
+                }
+              }
+              const unresolvedMinorKeys = familyChange?.people
+                .filter((person) => person.possibleMinor)
+                .map((person) => person.key)
+                .filter((key) => !minorDecisions[question.id]?.[key]) ?? [];
               return (
                 <article key={question.id} className="rounded-lg border border-stone-200 bg-white p-4">
                   <div className="flex gap-3">
                     <CircleHelp size={18} className="mt-0.5 flex-shrink-0 text-amber-600" />
                     <div className="min-w-0 flex-1">
                       <h3 className="text-sm font-semibold text-stone-800">{question.question}</h3>
-                      {question.context && <p className="mt-1.5 text-xs leading-5 text-stone-600">{question.context}</p>}
+                      {question.context && <p className="mt-1.5 whitespace-pre-line text-xs leading-5 text-stone-600">{question.context}</p>}
                       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-stone-400">
                         {question.targetPerson && <span>For {question.targetPerson}</span>}
                         <span>{new Date(question.createdAt).toLocaleString()}</span>
@@ -183,6 +230,77 @@ export function BuckyQuestionsPanel({ onCountChange }: { onCountChange: (count: 
                         <div className="mt-3 border-t border-stone-100 pt-3">
                           <p className="text-sm text-stone-700">{question.answer}</p>
                           <p className="mt-1 text-[11px] text-stone-400">Answered by {question.answeredBy || "a family member"}</p>
+                        </div>
+                      ) : familyChange ? (
+                        <div className="mt-3 space-y-3 border-t border-stone-100 pt-3">
+                          {familyChange.people.filter((person) => person.possibleMinor).map((person) => {
+                            const decision = minorDecisions[question.id]?.[person.key];
+                            return (
+                              <fieldset key={person.key} className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                                <legend className="px-1 text-xs font-semibold text-amber-900">
+                                  Is {person.displayName} a minor?
+                                </legend>
+                                <p className="mb-2 text-[11px] leading-4 text-amber-800">
+                                  Bucky cannot decide this. A minor is shown by first name only on the public tree and cannot claim a profile.
+                                </p>
+                                <div className="flex gap-2">
+                                  {(["minor", "adult"] as const).map((value) => (
+                                    <button
+                                      key={value}
+                                      type="button"
+                                      onClick={() => setMinorDecisions((current) => ({
+                                        ...current,
+                                        [question.id]: {
+                                          ...(current[question.id] || {}),
+                                          [person.key]: value,
+                                        },
+                                      }))}
+                                      className={`rounded-lg border px-3 py-2 text-xs font-medium ${
+                                        decision === value
+                                          ? "border-amber-700 bg-amber-700 text-white"
+                                          : "border-amber-300 bg-white text-amber-900 hover:bg-amber-100"
+                                      }`}
+                                    >
+                                      {value === "minor" ? "Minor" : "Adult"}
+                                    </button>
+                                  ))}
+                                </div>
+                              </fieldset>
+                            );
+                          })}
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void confirmFamilyChange(question, familyChange!)}
+                              disabled={Boolean(processingId) || unresolvedMinorKeys.length > 0}
+                              className="flex-1 rounded-lg bg-green-700 px-3 py-2.5 text-xs font-semibold text-white hover:bg-green-800 disabled:opacity-40"
+                            >
+                              {isProcessing ? <Loader2 size={15} className="mx-auto animate-spin" /> : "Confirm these changes"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void dismissQuestion(question)}
+                              disabled={Boolean(processingId)}
+                              className="rounded-lg border border-stone-200 px-3 py-2.5 text-xs font-medium text-stone-500 hover:bg-stone-50 disabled:opacity-40"
+                            >
+                              Dismiss
+                            </button>
+                          </div>
+                          {unresolvedMinorKeys.length > 0 && (
+                            <p className="text-[11px] text-amber-700">Choose minor or adult before confirming.</p>
+                          )}
+                        </div>
+                      ) : question.questionType === FAMILY_CHANGE_QUESTION_TYPE ? (
+                        <div className="mt-3 space-y-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                          <p>This proposal is malformed and cannot be applied. Dismiss it and ask Bucky to propose it again.</p>
+                          <button
+                            type="button"
+                            onClick={() => void dismissQuestion(question)}
+                            disabled={Boolean(processingId)}
+                            className="rounded-md border border-red-300 bg-white px-2.5 py-1.5 font-medium hover:bg-red-100 disabled:opacity-40"
+                          >
+                            Dismiss malformed proposal
+                          </button>
                         </div>
                       ) : (
                         <div className="mt-3 space-y-2">

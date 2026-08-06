@@ -298,7 +298,7 @@ model BuckyQuestion {
   id             String    @id @default(cuid())
   question       String
   context        String?
-  status         String    @default("open") // open, answered, dismissed
+  status         String    @default("open") // open, staged (pre-deploy proposals), answered, dismissed
   targetPerson   String?
   questionType   String    @default("clarification")
   sourceType     String?
