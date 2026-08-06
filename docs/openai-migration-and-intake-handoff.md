@@ -1225,7 +1225,63 @@ negative controls; and the ancestral-photos question works.
 
 ---
 
-## How this will be reviewed
+# Workstream F — adoption
+
+## Task 18 — A mic on Bucky's hub tile
+
+**Sequenced after 15 and 9. Do not build it before those land** — see Routing.
+
+Speaking is the lowest-friction input mode for exactly the people least likely
+to use this site: the ones cataloguing boxes in the attic, or standing in the
+basement hearing something wrong with the furnace. Typing a paragraph on a phone
+is the barrier for that group, and a mic on the front door removes it. This is a
+larger adoption lever than anything in the tile grid.
+
+A small mic button in the corner of the `.tile-lead` Bucky tile
+(`HUB_LEAD`, `src/app/page.tsx`): tap, record in place, and on stop land in
+Bucky with the audio already uploading.
+
+The recorder already exists in `src/app/assistant/page.tsx` — `MediaRecorder`
+with `RECORDING_MIME_TYPES` preferring `audio/mp4` so Safari works. Extract it
+rather than writing a second one.
+
+### Three gotchas
+
+**The tile is a `<Link>` wrapping its whole body.** A nested `<button>` fires
+navigation on tap unless it calls `preventDefault()` and `stopPropagation()`.
+The symptom is subtle: the mic appears to work *and* the page jumps to chat.
+
+**The permission prompt breaks the instant-record illusion.** The first tap
+raises the browser's mic dialog. Check
+`navigator.permissions.query({ name: "microphone" })` first — when permission is
+not yet granted, simply navigate to Bucky and let the existing recorder ask
+there. Take the fast path only when permission already exists.
+
+**Recording state cannot survive the route change.** Do not start on `/` and
+continue on `/assistant`. Record in place in a small overlay on the homepage,
+then navigate once the blob exists. The alternative — a MediaRecorder living
+above the route, or a blob in IndexedDB — adds failure modes to a path whose
+whole purpose is not losing what someone just said.
+
+### Routing — the part that decides whether this helps or hurts
+
+Every attachment currently becomes a permanent `Document`. If this button works,
+it produces dozens of five-second notes — *"gate code is 4821"*, *"we're out of
+propane"* — filed as archive documents. That is clutter in the exact corpus
+Workstream E just spent three phases making findable, and it would push the
+round-trip pass rate down for a good reason that looks like a bad one.
+
+A quick note belongs in a `JarvisMemory` or a chat turn. A property walkthrough
+belongs in the archive. **That is task 9's triage decision**, which is why this
+task sits behind it. If 18 is somehow built first, gate on recording duration as
+a stopgap and leave a comment saying it is one.
+
+Attribution comes from `getCurrentActor()` — which is why 15 comes first, or
+every note is anonymous.
+
+**Done when:** one tap from the hub starts recording, stopping lands in Bucky
+with the audio processing, a short note does not create an archive document, and
+the note is attributed to the person whose device it is.
 
 In rough priority order:
 
