@@ -29,6 +29,10 @@ import {
   type IntakeDocumentType,
   type TypeSpecificAnalysisFields,
 } from "@/lib/document-intake";
+import {
+  formatHistoricalPhotoRoster,
+  type HistoricalPhotoRosterEntry,
+} from "@/lib/historical-photo";
 
 export { MODELS } from "@/lib/ai-models";
 
@@ -73,6 +77,13 @@ const CategorizationResultSchema = z.object({
   receiptSubtotal: z.number().nullable(),
   receiptSalesTax: z.number().nullable(),
   receiptTotal: z.number().nullable(),
+  historicalPhotoCandidateIds: z.array(z.string()),
+  historicalPhotoEra: z.string().nullable(),
+  historicalPhotoSetting: z.string().nullable(),
+});
+
+const HistoricalPhotoCategorizationSchema = CategorizationResultSchema.extend({
+  historicalPhotoCandidateIds: z.array(z.string()).min(1).max(4),
 });
 
 const IntakeTriageSchema = z.object({
@@ -236,6 +247,7 @@ export async function categorizeDocument(
   options: {
     pdfSample?: { sourcePageCount: number; sampledPageNumbers: number[] };
     intakeType?: IntakeDocumentType;
+    historicalPhotoRoster?: HistoricalPhotoRosterEntry[];
   } = {}
 ): Promise<CategorizationResult> {
   const sampleInstruction = options.pdfSample
@@ -244,6 +256,18 @@ export async function categorizeDocument(
 - For a photo collection, put concise searchable descriptions of visible people, likely eras, settings, objects, and any legible names or captions into extractedText; do not limit extractedText to OCR.`
     : "";
   const deepPassGuidance = intakeDeepPassGuidance(options.intakeType || "other");
+  const historicalPhotoInstruction =
+    options.intakeType === "historical_photo" && options.historicalPhotoRoster?.length
+      ? `FAMILY ROSTER FOR IDENTIFICATION PROPOSALS:
+${formatHistoricalPhotoRoster(options.historicalPhotoRoster)}
+
+- You MUST propose one to four likely people by returning ONLY their exact roster member IDs in historicalPhotoCandidateIds, ordered most likely first.
+- Use visible age, apparent era, family generation, relationships, setting, and captions as evidence. A proposal may be tentative, but it must be concrete enough for a tap-to-confirm question.
+- If identity evidence is weak, still choose the most plausible roster candidate or candidates and state the uncertainty in the summary. This creates a question for a human; it does not record the proposal as fact.
+- Never return a name or ID absent from the roster. Never ask an open-ended \"Who is this?\" question.
+- Put a short setting with no leading preposition in historicalPhotoSetting and a concise approximate date/era in historicalPhotoEra.
+- Current minors appear only by their public first-name label. Do not infer, restore, or output a surname for them.`
+      : "";
   const prompt = `You are a document categorization assistant for the Breadloaf Hill family property archive in Vermont.
 
 Existing categories:
@@ -256,6 +280,7 @@ ${DOCUMENT_TITLE_RULES}
 Source filename (provenance only; do not use it as the title): ${fileName || "unknown"}
 ${sampleInstruction}
 ${deepPassGuidance}
+${historicalPhotoInstruction}
 
 Analyze this document and return ONLY valid JSON (no markdown fences, no extra text) with these fields:
 {
@@ -271,7 +296,10 @@ Analyze this document and return ONLY valid JSON (no markdown fences, no extra t
   "maintenanceVendor": null or vendor/contractor name if this is a maintenance receipt/invoice,
   "receiptSubtotal": null or receipt/invoice subtotal as a number,
   "receiptSalesTax": null or receipt/invoice sales tax as a number,
-  "receiptTotal": null or receipt/invoice final total as a number
+  "receiptTotal": null or receipt/invoice final total as a number,
+  "historicalPhotoCandidateIds": [] or exact roster member IDs proposed for a historical photo,
+  "historicalPhotoEra": null or the likely era/date of a historical photo,
+  "historicalPhotoSetting": null or a short setting for a historical photo, without a leading preposition
 }
 
 Be specific with the title. Extract dates, names, amounts, and other key details in the summary.
@@ -297,7 +325,14 @@ This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Gre
   const response = await withRetry(() => getOpenAIClient().responses.parse({
     model: MODELS.flash,
     input: [{ role: "user", content }],
-    text: { format: zodTextFormat(CategorizationResultSchema, "document_categorization") },
+    text: {
+      format: zodTextFormat(
+        options.intakeType === "historical_photo" && options.historicalPhotoRoster?.length
+          ? HistoricalPhotoCategorizationSchema
+          : CategorizationResultSchema,
+        "document_categorization"
+      ),
+    },
   }));
   return finalizeCategorizationTitle(requireParsed(response.output_parsed), {
     fileName,
@@ -373,7 +408,10 @@ ${sourceLabel}. Analyze it and return ONLY valid JSON (no markdown fences, no ex
   "maintenanceVendor": null or vendor/contractor name if this is a maintenance receipt/invoice,
   "receiptSubtotal": null or receipt/invoice subtotal as a number,
   "receiptSalesTax": null or receipt/invoice sales tax as a number,
-  "receiptTotal": null or receipt/invoice final total as a number
+  "receiptTotal": null or receipt/invoice final total as a number,
+  "historicalPhotoCandidateIds": [],
+  "historicalPhotoEra": null,
+  "historicalPhotoSetting": null
 }
 
 This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Greg Craig). Categorization hints:

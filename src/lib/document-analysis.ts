@@ -7,6 +7,7 @@ import {
   type CategoryOption,
 } from "@/lib/ai";
 import type { IntakeDocumentType } from "@/lib/document-intake";
+import { loadHistoricalPhotoRoster } from "@/lib/historical-photo";
 import { extractTextFromFile, isExtractableType } from "@/lib/extract-text";
 import { PdfSampleTooLargeError, samplePdfPages } from "@/lib/pdf-sampling";
 
@@ -211,6 +212,10 @@ export async function analyzeDocumentBuffer(input: {
       const intakeType = await triageWithFallback(fileName, () =>
         triageInlineDocument(sampleBase64, type, fileName)
       );
+      const historicalPhotoRoster =
+        intakeType === "historical_photo"
+          ? await loadHistoricalPhotoRoster()
+          : undefined;
       result = await categorizeDocument(
         sampleBase64,
         type,
@@ -218,6 +223,7 @@ export async function analyzeDocumentBuffer(input: {
         fileName,
         {
           intakeType,
+          historicalPhotoRoster,
           pdfSample: {
             sourcePageCount: sample.sourcePageCount,
             sampledPageNumbers: sample.sampledPageNumbers,
@@ -229,8 +235,13 @@ export async function analyzeDocumentBuffer(input: {
       const intakeType = await triageWithFallback(fileName, () =>
         triageInlineDocument(base64, type, fileName)
       );
+      const historicalPhotoRoster =
+        intakeType === "historical_photo"
+          ? await loadHistoricalPhotoRoster()
+          : undefined;
       result = await categorizeDocument(base64, type, categories, fileName, {
         intakeType,
+        historicalPhotoRoster,
       });
     } else if (isExtractableType(type)) {
       const extracted = await extractTextFromFile(buffer, type);

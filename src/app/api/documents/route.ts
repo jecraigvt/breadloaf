@@ -7,6 +7,7 @@ import {
   normalizeStoredAnalysis,
 } from "@/lib/document-analysis";
 import { getArchiveHealth } from "@/lib/archive-health";
+import { createHistoricalPhotoQuestion } from "@/lib/historical-photo";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -83,6 +84,10 @@ export async function POST(request: NextRequest) {
       accessScope,
       analysisState: requestedAnalysisState,
       analysisError: requestedAnalysisError,
+      intakeType,
+      historicalPhotoCandidateIds,
+      historicalPhotoEra,
+      historicalPhotoSetting,
     } = body;
 
     const {
@@ -177,6 +182,29 @@ export async function POST(request: NextRequest) {
     indexDocument(document.id).catch((e) =>
       console.error("Document embedding failed:", e)
     );
+
+    if (intakeType === "historical_photo") {
+      try {
+        await createHistoricalPhotoQuestion({
+          documentId: document.id,
+          documentTitle: document.title,
+          analysis: {
+            intakeType,
+            historicalPhotoCandidateIds: Array.isArray(historicalPhotoCandidateIds)
+              ? historicalPhotoCandidateIds.map(String)
+              : [],
+            historicalPhotoEra:
+              typeof historicalPhotoEra === "string" ? historicalPhotoEra : null,
+            historicalPhotoSetting:
+              typeof historicalPhotoSetting === "string"
+                ? historicalPhotoSetting
+                : null,
+          },
+        });
+      } catch (error) {
+        console.error("Historical-photo question creation failed:", error);
+      }
+    }
 
     return NextResponse.json(document);
   } catch (error) {

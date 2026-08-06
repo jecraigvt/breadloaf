@@ -170,9 +170,12 @@ const KEYWORD_CANDIDATES = 60;
 // so the spread is the only real lever. 1.28 was the minimum that recovered all
 // four controls; 1.30 is chosen for margin at identical measured cost:
 //
-//   spread 1.15         90% round-trip / 92% golden / 2 of 4 controls
-//   spread 1.18-1.25    86% round-trip / 92% golden / 2 of 4 controls
-//   spread 1.28-1.30    86% round-trip / 96% golden / 4 of 4 controls
+//   spread 1.15-1.20    92% round-trip / 84% golden / 2 of 4 controls
+//   spread 1.22         90% round-trip / 84% golden / 2 of 4 controls
+//   spread 1.25         88% round-trip / 84% golden / 2 of 4 controls
+//   spread 1.28-1.30    90% round-trip / 88% golden / 4 of 4 controls
+// The tuner applies the same analysis-health requirement as the golden harness,
+// so the two genuinely blank Word files can never earn a hollow title-only pass.
 //
 // Tune with scripts/tune-archive-retrieval-guards.ts, which fixes the generated
 // questions across the grid. Do NOT compare bare harness runs to each other:

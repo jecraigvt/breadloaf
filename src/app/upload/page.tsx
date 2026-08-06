@@ -46,6 +46,10 @@ interface CategorizationResult {
   maintenanceCost?: number | null;
   maintenanceDate?: string | null;
   maintenanceVendor?: string | null;
+  intakeType?: string;
+  historicalPhotoCandidateIds?: string[];
+  historicalPhotoEra?: string | null;
+  historicalPhotoSetting?: string | null;
 }
 
 export default function UploadPage() {
@@ -301,6 +305,10 @@ export default function UploadPage() {
             maintenanceCost: catData.maintenanceCost,
             maintenanceDate: catData.maintenanceDate,
             maintenanceVendor: catData.maintenanceVendor,
+            intakeType: catData.intakeType,
+            historicalPhotoCandidateIds: catData.historicalPhotoCandidateIds,
+            historicalPhotoEra: catData.historicalPhotoEra,
+            historicalPhotoSetting: catData.historicalPhotoSetting,
           }),
         });
         if (!saveRes.ok) throw new Error(await saveRes.text());
@@ -350,6 +358,10 @@ export default function UploadPage() {
           maintenanceCost: result.maintenanceCost,
           maintenanceDate: result.maintenanceDate,
           maintenanceVendor: result.maintenanceVendor,
+          intakeType: result.intakeType,
+          historicalPhotoCandidateIds: result.historicalPhotoCandidateIds,
+          historicalPhotoEra: result.historicalPhotoEra,
+          historicalPhotoSetting: result.historicalPhotoSetting,
         }),
       });
 

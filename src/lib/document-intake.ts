@@ -15,6 +15,9 @@ export interface TypeSpecificAnalysisFields {
   receiptSubtotal?: number | null;
   receiptSalesTax?: number | null;
   receiptTotal?: number | null;
+  historicalPhotoCandidateIds?: string[];
+  historicalPhotoEra?: string | null;
+  historicalPhotoSetting?: string | null;
 }
 
 export function intakeDeepPassGuidance(type: IntakeDocumentType): string {
