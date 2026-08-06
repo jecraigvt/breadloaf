@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildFamilyTree,
   deriveBranches,
+  deriveLineageClasses,
   partnersOf,
   type FamilyGraph,
   type GraphMember,
@@ -103,6 +104,28 @@ test("a former spouse keeps the branch she married into", () => {
   const branches = deriveBranches(graph());
   assert.equal(branches.get("kirsten"), "Sandy's family");
   assert.equal(branches.get("andrea"), "Sandy's family");
+});
+
+test("lineage is derived from parent traversal rather than the branch cache", () => {
+  const lineage = deriveLineageClasses(graph());
+  assert.deepEqual(
+    Object.fromEntries(
+      Array.from(lineage.entries())
+        .map(([id, value]) => [id, value])
+        .sort(([a], [b]) => a.localeCompare(b))
+    ),
+    {
+      andrea: "affine",
+      derry: "affine",
+      greg: "descendant",
+      kid: "descendant",
+      kirsten: "affine",
+      mary: "descendant",
+      rama: "affine",
+      riley: "descendant",
+      sandy: "descendant",
+    }
+  );
 });
 
 test("re-running derivation on cached branches does not create new roots", () => {
@@ -233,10 +256,9 @@ test("a divorced forebear couple is not listed twice", () => {
   assert.deepEqual(forebearUnit!.childIds.sort(), ["greg", "sandy"]);
 });
 
-test("a remarried forebear pairs with the second spouse, not the first", () => {
-  // Bill divorced Lois and remarried. His unit must be Bill + the second wife, with
-  // Lois surfaced as a former partner — and Lois's own redundant unit still dropped
-  // even though Bill's unit is now a couple rather than a single person.
+test("the Forebears units contain ancestors but not an affine current spouse", () => {
+  // Bill divorced Lois and remarried. His affine current spouse stays out of the
+  // blood-ancestor section, while Lois's redundant unit is still dropped.
   const base = graphWithForebears();
   const remarried: FamilyGraph = {
     members: [...base.members, member("lorenza", { surname: null, sortOrder: 3 })],
@@ -247,14 +269,38 @@ test("a remarried forebear pairs with the second spouse, not the first", () => {
   assert.equal(tree.ancestorUnitIds.length, 1);
 
   const forebearUnit = tree.units.find((unit) => unit.id === tree.ancestorUnitIds[0]);
-  assert.deepEqual(forebearUnit!.memberIds, ["bill", "lorenza"]);
+  assert.deepEqual(forebearUnit!.memberIds, ["bill"]);
   assert.deepEqual(forebearUnit!.formerPartnerIds, ["lois"]);
+  assert.equal(tree.people.bill.lineage, "ancestor");
+  assert.equal(tree.people.lois.lineage, "ancestor");
+  assert.equal(tree.people.lorenza.lineage, "affine");
+  assert.ok(
+    !tree.ancestorUnitIds.some((unitId) =>
+      tree.units.find((unit) => unit.id === unitId)?.memberIds.includes("lorenza")
+    )
+  );
   // The second wife must not inherit the sons from the first marriage.
   assert.deepEqual(tree.people.lorenza.childIds, []);
   assert.deepEqual(forebearUnit!.childIds.sort(), ["greg", "sandy"]);
   // She married into a generation above the branch split, so she has no branch.
   assert.equal(tree.people.lorenza.branch, null);
   assert.equal(tree.people.lorenza.generation, 0);
+});
+
+test("an attached non-Craig parent remains affine and never enters Forebears", () => {
+  const base = graphWithForebears();
+  const attached: FamilyGraph = {
+    members: [...base.members, member("outside-parent", { surname: null })],
+    relationships: [...base.relationships, parent("outside-parent", "andrea")],
+  };
+
+  const tree = buildFamilyTree(attached, { includePrivateDetail: true });
+  assert.equal(tree.people["outside-parent"].lineage, "affine");
+  assert.ok(
+    !tree.ancestorUnitIds.some((unitId) =>
+      tree.units.find((unit) => unit.id === unitId)?.memberIds.includes("outside-parent")
+    )
+  );
 });
 
 test("the deceased cannot claim a profile", () => {

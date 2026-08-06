@@ -974,6 +974,13 @@ h3.chapter {
 .plate-rung { stroke: var(--ink); stroke-opacity: 0.32; stroke-width: 0.9; stroke-dasharray: 2 2.5; }
 .plate-bracket { stroke: var(--ink); stroke-opacity: 0.3; stroke-width: 0.9; }
 .plate-more { fill: var(--ember); fill-opacity: 0.65; }
+.plate-doorway {
+  fill: var(--paper); stroke: var(--ember-deep); stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+.plate-doorway-hit { cursor: pointer; }
+.plate-doorway-hit:focus { outline: none; }
+.plate-doorway-hit:focus .plate-doorway { stroke-width: 2.5; }
 
 .plate-slot { transition: opacity 180ms ease; }
 @media (prefers-reduced-motion: reduce) { .plate-slot { transition: none; } }

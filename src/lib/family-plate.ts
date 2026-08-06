@@ -22,6 +22,7 @@ import type { FamilyTree, TreePerson } from "@/lib/family-tree";
 
 /** No branch drops below this, however few descendants it has yet. */
 export const MIN_BRANCH_DEGREES = 52;
+export type PlateDirection = "descent" | "ascent";
 
 export interface PlatePartner {
   id: string;
@@ -53,6 +54,8 @@ export interface PlateLayout {
   branchSpans: number[];
   ringCount: number;
   headcount: number;
+  /** People with an opposite-direction edge to someone outside this plate. */
+  doorwayIds: string[];
 }
 
 /**
@@ -93,6 +96,31 @@ export function buildDescentPlate(tree: FamilyTree, rootId: string): PlateNode {
       id,
       partners: partnersFor(tree, id),
       children: descend ? (person?.childIds ?? []).map(build) : [],
+    };
+  };
+
+  return build(rootId);
+}
+
+/**
+ * The ancestors of one person, following parentIds rather than descendants.
+ *
+ * Unlike descent, there is no blood-parent/spouse ordering here: both parents are
+ * equally blood from the centre person's point of view. Each parent therefore gets
+ * an independent sibling node, an equal first-ring wedge, and its own spoke to the
+ * centre. Stable parentIds order decides only clockwise placement, never rank.
+ */
+export function buildAscentPlate(tree: FamilyTree, rootId: string): PlateNode {
+  const seen = new Set<string>();
+
+  const build = (id: string): PlateNode => {
+    const ascend = !seen.has(id);
+    seen.add(id);
+    const person = tree.people[id];
+    return {
+      id,
+      partners: [],
+      children: ascend ? (person?.parentIds ?? []).map(build) : [],
     };
   };
 
@@ -149,10 +177,10 @@ export function branchSpans(branches: PlateNode[]): number[] {
 }
 
 export interface LayoutOptions {
+  direction?: PlateDirection;
   /**
-   * Rings to draw below the centre. Inside the 440px shell there is only room for
-   * two before the bands get too thin to stack a couple in, so depth is traded for
-   * legibility and the rest is reached by re-centring instead.
+   * Rings to draw away from the centre. The 440px shell fits two descent rings but
+   * only one doubling ascent ring; the rest is reached by re-centring instead.
    */
   maxDepth?: number;
 }
@@ -174,7 +202,10 @@ export function layoutPlate(
   rootId: string,
   options: LayoutOptions = {}
 ): PlateLayout {
-  let root = buildDescentPlate(tree, rootId);
+  const direction = options.direction ?? "descent";
+  let root = direction === "ascent"
+    ? buildAscentPlate(tree, rootId)
+    : buildDescentPlate(tree, rootId);
   if (options.maxDepth && options.maxDepth > 0) {
     root = { ...root, children: root.children.map((c) => pruneDepth(c, options.maxDepth!)) };
   }
@@ -209,12 +240,29 @@ export function layoutPlate(
     cursor += spans[index];
   });
 
+  const visibleIds = new Set<string>([
+    root.id,
+    ...root.partners.map((partner) => partner.id),
+    ...slots.flatMap((slot) => [
+      slot.node.id,
+      ...slot.node.partners.map((partner) => partner.id),
+    ]),
+  ]);
+  const oppositeIds = (id: string) =>
+    direction === "descent"
+      ? tree.people[id]?.parentIds ?? []
+      : tree.people[id]?.childIds ?? [];
+  const doorwayIds = Array.from(visibleIds).filter((id) =>
+    oppositeIds(id).some((otherId) => !visibleIds.has(otherId))
+  );
+
   return {
     root,
     slots,
     branchSpans: spans,
     ringCount: branches.length ? Math.max(...branches.map(nodeDepth)) : 0,
     headcount: nodeHeadcount(root),
+    doorwayIds,
   };
 }
 

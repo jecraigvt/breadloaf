@@ -41,6 +41,7 @@ import {
   VOICE_MEMO_DISPOSITIONS,
   type VoiceMemoDisposition,
 } from "@/lib/voice-note";
+import { BUCKY_ACTION_BOUNDARY } from "@/lib/bucky-action-boundary";
 
 export { MODELS } from "@/lib/ai-models";
 
@@ -1709,6 +1710,8 @@ WHAT YOU CAN DO:
    - When information conflicts, a likely duplicate could lose history, or the right answer belongs to someone else, use ask_family so the issue survives this chat
    - Do not repeat an open question already listed above unless new evidence materially changes it
    - Vault access, permanent deletion, external communications, and security changes always require explicit human confirmation
+
+${BUCKY_ACTION_BOUNDARY}
 
 When someone asks what you can do or how you can help, explain these capabilities in a friendly way.
 When users ask you to add or manage items, use the appropriate tool. Confirm what you've done in your response.

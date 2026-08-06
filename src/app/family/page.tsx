@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { FamilyTree, TreePerson } from "@/lib/family-tree";
-import { ancestorPath, defaultPlateRoot } from "@/lib/family-plate";
+import {
+  ancestorPath,
+  defaultPlateRoot,
+  type PlateDirection,
+} from "@/lib/family-plate";
 import { FamilyPlate } from "@/components/family/family-plate";
 
 interface ActorSummary {
@@ -26,6 +30,7 @@ export default function FamilyPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Null until the tree loads; the default centre is a founder when one exists.
   const [plateRoot, setPlateRoot] = useState<string | null>(null);
+  const [plateDirection, setPlateDirection] = useState<PlateDirection>("descent");
 
   const load = useCallback(async () => {
     const res = await fetch("/api/family/tree");
@@ -55,9 +60,34 @@ export default function FamilyPage() {
   const jumpToMe = () => {
     if (!actor || !tree) return;
     const me = tree.people[actor.memberId];
-    if (me?.childIds.length) setPlateRoot(actor.memberId);
+    if (me?.childIds.length) {
+      setPlateDirection("descent");
+      setPlateRoot(actor.memberId);
+    } else if (me?.parentIds.length) {
+      setPlateDirection("ascent");
+      setPlateRoot(actor.memberId);
+    }
     setSelectedId(actor.memberId);
   };
+
+  const centrePlate = (id: string, direction: PlateDirection) => {
+    setPlateRoot(id);
+    setPlateDirection(direction);
+    setSelectedId(null);
+  };
+
+  const selectedPerson = selectedId && tree ? tree.people[selectedId] : undefined;
+  const selectedCentreDirection: PlateDirection | null = selectedPerson
+    ? plateDirection === "descent" && selectedPerson.childIds.length
+      ? "descent"
+      : plateDirection === "ascent" && selectedPerson.parentIds.length
+        ? "ascent"
+        : selectedPerson.childIds.length
+          ? "descent"
+          : selectedPerson.parentIds.length
+            ? "ascent"
+            : null
+    : null;
 
   return (
     <div>
@@ -130,10 +160,29 @@ export default function FamilyPage() {
         </div>
       </div>
 
+      {tree && plateRoot && (
+        <div className="view-toggle" aria-label="Family plate direction">
+          <button
+            type="button"
+            aria-pressed={plateDirection === "descent"}
+            onClick={() => setPlateDirection("descent")}
+          >
+            Descendants
+          </button>
+          <button
+            type="button"
+            aria-pressed={plateDirection === "ascent"}
+            onClick={() => setPlateDirection("ascent")}
+          >
+            Ancestors
+          </button>
+        </div>
+      )}
+
       {/* Navigation, not a form control. The trail is the blood line down to
           whoever is centred — tap back up it to widen out, tap a name on the plate
           to go down. */}
-      {tree && plateRoot && (
+      {tree && plateRoot && plateDirection === "descent" && (
         <div className="plate-trail">
           {ancestorPath(tree, plateRoot).map((id, index, all) => {
             const person = tree.people[id];
@@ -157,7 +206,15 @@ export default function FamilyPage() {
       )}
 
       {tree && plateRoot && (
-        <FamilyPlate tree={tree} rootId={plateRoot} onSelect={setSelectedId} />
+        <FamilyPlate
+          tree={tree}
+          rootId={plateRoot}
+          direction={plateDirection}
+          onSelect={setSelectedId}
+          onDoorway={(id) =>
+            centrePlate(id, plateDirection === "descent" ? "ascent" : "descent")
+          }
+        />
       )}
 
       {loading && <div className="tree-empty">Drawing the family plate…</div>}
@@ -170,7 +227,7 @@ export default function FamilyPage() {
 
       {selectedId && tree && (
         <PersonSheet
-          person={tree.people[selectedId]}
+          person={selectedPerson}
           people={tree.people}
           signedIn={Boolean(data?.signedIn)}
           isYou={actor?.memberId === selectedId}
@@ -181,11 +238,8 @@ export default function FamilyPage() {
             load();
           }}
           onCentre={
-            tree.people[selectedId]?.childIds.length
-              ? () => {
-                  setPlateRoot(selectedId);
-                  setSelectedId(null);
-                }
+            selectedCentreDirection
+              ? () => centrePlate(selectedId, selectedCentreDirection)
               : undefined
           }
         />
@@ -211,7 +265,7 @@ function PersonSheet({
   onClose: () => void;
   onSelect: (id: string) => void;
   onClaimed: () => void;
-  /** Only supplied on the plate, and only for someone who has descendants. */
+  /** Supplied when this person can anchor the active or opposite plate direction. */
   onCentre?: () => void;
 }) {
   const [claiming, setClaiming] = useState(false);
@@ -266,7 +320,11 @@ function PersonSheet({
             <div className="sub">
               {[
                 person.isFounder ? "founder" : null,
-                person.branch?.replace(/'s family$/, "'s side") ?? "Forebear",
+                person.lineage === "ancestor"
+                  ? "Forebear"
+                  : person.lineage === "affine"
+                    ? "Married in"
+                    : person.branch?.replace(/'s family$/, "'s side") ?? "Descendant",
                 person.deceased ? "in memory" : null,
                 person.isMinor ? "next generation" : null,
                 person.isCurator ? "curator" : null,

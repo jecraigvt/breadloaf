@@ -16,6 +16,7 @@ import { prisma } from "@/lib/prisma";
 
 export type RelationshipType = "parent" | "spouse";
 export type RelationshipStatus = "current" | "former";
+export type LineageClass = "descendant" | "ancestor" | "affine";
 
 export interface GraphMember {
   id: string;
@@ -64,6 +65,8 @@ export interface TreePerson {
   initials: string;
   photoUrl: string | null;
   branch: string | null;
+  /** Derived from graph edges relative to the branch roots; never stored. */
+  lineage: LineageClass;
   generation: number;
   isMinor: boolean;
   canClaim: boolean;
@@ -230,6 +233,61 @@ export function deriveBranches(graph: FamilyGraph): Map<string, string | null> {
 }
 
 /**
+ * Classify each person relative to the Craig branch roots without consulting the
+ * decorative branch cache. Descendants walk parent edges down from those roots;
+ * ancestors walk the same edges upward. Everyone outside those two blood sets is
+ * affine — their attached family enters the Craig graph through a spouse edge.
+ *
+ * Descendant wins if malformed cyclic data makes the traversals overlap. The
+ * classification is deliberately computed on every read: storing it would merely
+ * recreate the drift that made `branch: null` carry several meanings.
+ */
+export function deriveLineageClasses(graph: FamilyGraph): Map<string, LineageClass> {
+  const memberIds = new Set(graph.members.map((member) => member.id));
+  const childrenOf = new Map<string, string[]>();
+  const parentsOf = new Map<string, string[]>();
+
+  for (const rel of parentEdges(graph.relationships)) {
+    if (!memberIds.has(rel.fromMemberId) || !memberIds.has(rel.toMemberId)) continue;
+    if (!childrenOf.has(rel.fromMemberId)) childrenOf.set(rel.fromMemberId, []);
+    childrenOf.get(rel.fromMemberId)!.push(rel.toMemberId);
+    if (!parentsOf.has(rel.toMemberId)) parentsOf.set(rel.toMemberId, []);
+    parentsOf.get(rel.toMemberId)!.push(rel.fromMemberId);
+  }
+
+  const roots = graph.members.filter((member) => member.isBranchRoot).map((member) => member.id);
+  const walk = (starts: string[], edges: Map<string, string[]>): Set<string> => {
+    const reached = new Set<string>();
+    const queue = [...starts];
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      if (reached.has(id)) continue;
+      reached.add(id);
+      queue.push(...(edges.get(id) ?? []));
+    }
+    return reached;
+  };
+
+  const descendants = walk(roots, childrenOf);
+  const ancestorStarts = roots.flatMap((id) => parentsOf.get(id) ?? []);
+  const ancestors = walk(ancestorStarts, parentsOf);
+  const result = new Map<string, LineageClass>();
+
+  for (const member of graph.members) {
+    result.set(
+      member.id,
+      descendants.has(member.id)
+        ? "descendant"
+        : ancestors.has(member.id)
+          ? "ancestor"
+          : "affine"
+    );
+  }
+
+  return result;
+}
+
+/**
  * Depth from the top of the blood line. Spouses adopt their partner's generation so
  * a couple always sits on one band.
  */
@@ -301,6 +359,7 @@ export function buildFamilyTree(
 ): FamilyTree {
   const { members, relationships } = graph;
   const branchOf = deriveBranches(graph);
+  const lineageOf = deriveLineageClasses(graph);
   const generationOf = deriveGenerations(graph);
 
   const childrenOf = new Map<string, string[]>();
@@ -332,6 +391,7 @@ export function buildFamilyTree(
       initials: initialsFor(displayName, surname),
       photoUrl: member.photoUrl,
       branch: branchOf.get(member.id) ?? null,
+      lineage: lineageOf.get(member.id) ?? "affine",
       generation: generationOf.get(member.id) ?? 0,
       isMinor: member.isMinor,
       canClaim: member.canClaim && !member.isMinor && !member.deceased,
@@ -383,7 +443,16 @@ export function buildFamilyTree(
     if (placed.has(member.id)) continue;
 
     const person = people[member.id];
-    const partners = person.currentSpouseIds.filter((id) => !placed.has(id));
+    const partners = person.currentSpouseIds.filter((id) => {
+      if (placed.has(id)) return false;
+      // Forebears are a blood-line section, not a branch:null bucket. Keep an
+      // affine current spouse in their own unit so they cannot ride into it.
+      const partnerLineage = people[id]?.lineage;
+      return (
+        (person.lineage !== "ancestor" && partnerLineage !== "ancestor") ||
+        person.lineage === partnerLineage
+      );
+    });
     const memberIds = [member.id, ...partners];
     memberIds.forEach((id) => placed.add(id));
 
@@ -430,13 +499,13 @@ export function buildFamilyTree(
     (a, b) => branchOrder(a.key) - branchOrder(b.key)
   );
 
-  // Generations above the branch split derive to no branch, so they are collected
-  // separately. A divorced forebear leaves two units — one anchored on each partner —
+  // Blood ancestors above the branch split are collected by lineage, not branch:null.
+  // A divorced forebear leaves two units — one anchored on each partner —
   // and the former partner is already surfaced inside the other unit. Drop the
   // redundant one, but only when it adds nothing: a single person whose children are
   // all already accounted for. A former partner with children from elsewhere stays.
   const rawAncestorUnits = units
-    .filter((unit) => !unit.branch)
+    .filter((unit) => unit.memberIds.some((id) => people[id]?.lineage === "ancestor"))
     .sort((a, b) => a.generation - b.generation);
 
   // Only an EARLIER unit may absorb a later one. Both halves of a divorced couple
