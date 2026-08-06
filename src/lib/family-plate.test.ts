@@ -4,6 +4,7 @@ import {
   MIN_BRANCH_DEGREES,
   ancestorPath,
   branchSpans,
+  buildAscentPlate,
   buildDescentPlate,
   defaultPlateRoot,
   layoutPlate,
@@ -197,6 +198,61 @@ test("depth limiting trims the outer rings and flags what was hidden", () => {
   // Re-centring reaches what depth limiting hid.
   const deeper = layoutPlate(t, "jeremy", { maxDepth: 2 });
   assert.ok(deeper.slots.map((s) => s.node.id).includes("jack"));
+});
+
+test("today's descent plate has zero doorways", () => {
+  const layout = layoutPlate(tree(), "bill", { maxDepth: 2 });
+  assert.deepEqual(layout.doorwayIds, []);
+});
+
+test("a doorway stays distinct from depth truncation", () => {
+  const t = tree();
+  t.people.colleen = {
+    ...t.people.colleen,
+    parentIds: ["outside-parent-a", "outside-parent-b"],
+  };
+  t.people["outside-parent-a"] = person("outside-parent-a", {
+    childIds: ["colleen"],
+  });
+  t.people["outside-parent-b"] = person("outside-parent-b", {
+    childIds: ["colleen"],
+  });
+
+  const layout = layoutPlate(t, "bill", { maxDepth: 2 });
+  assert.deepEqual(layout.doorwayIds, ["colleen"]);
+  assert.equal(
+    layout.slots.find((slot) => slot.node.id === "jeremy")?.node.truncatedChildren,
+    2
+  );
+});
+
+test("ascent gives both parents equal first-ring standing and then stops", () => {
+  const t = tree();
+  const ascent = buildAscentPlate(t, "jeremy");
+  assert.deepEqual(ascent.children.map((parentNode) => parentNode.id), ["tom", "judy"]);
+  assert.deepEqual(ascent.children[0].children.map((parentNode) => parentNode.id), ["bill", "lois"]);
+  assert.ok(ascent.children.every((parentNode) => parentNode.partners.length === 0));
+
+  const layout = layoutPlate(t, "jeremy", { direction: "ascent", maxDepth: 1 });
+  assert.deepEqual(layout.slots.map((slot) => slot.node.id), ["tom", "judy"]);
+  assert.deepEqual(layout.branchSpans, [180, 180]);
+  assert.equal(layout.slots[0].node.truncatedChildren, 2);
+  assert.deepEqual(layout.doorwayIds, ["jeremy"]);
+});
+
+test("either plate direction can start from a family without a branch-root flag", () => {
+  const t = tree();
+  t.people["outside-parent"] = person("outside-parent", { childIds: ["outside-child"] });
+  t.people["outside-child"] = person("outside-child", { parentIds: ["outside-parent"] });
+
+  assert.deepEqual(
+    layoutPlate(t, "outside-parent").slots.map((slot) => slot.node.id),
+    ["outside-child"]
+  );
+  assert.deepEqual(
+    layoutPlate(t, "outside-child", { direction: "ascent" }).slots.map((slot) => slot.node.id),
+    ["outside-parent"]
+  );
 });
 
 test("the ancestor path reads oldest first and is the plate's way back up", () => {

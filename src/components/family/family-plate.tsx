@@ -2,12 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FamilyTree, TreePerson } from "@/lib/family-tree";
-import { layoutPlate, onSameLine, type PlateSlot } from "@/lib/family-plate";
+import {
+  layoutPlate,
+  onSameLine,
+  type PlateDirection,
+  type PlateSlot,
+} from "@/lib/family-plate";
 
 /**
- * The family as a cross-section: each generation a growth ring, each child nested
- * inside their own parent's slice of arc. Layout comes from `@/lib/family-plate`;
- * this file only draws it.
+ * The family as a cross-section: each generation is a growth ring, with the next
+ * generation nested inside its connecting person's arc. Layout and direction come
+ * from `@/lib/family-plate`; this file only draws them.
  *
  * The coordinate system tracks the rendered width so one SVG unit is always one CSS
  * pixel — a fixed viewBox squeezed into the 440px shell halves every label.
@@ -51,11 +56,15 @@ function tintOf(person: TreePerson | undefined, blood: boolean): string {
 export function FamilyPlate({
   tree,
   rootId,
+  direction,
   onSelect,
+  onDoorway,
 }: {
   tree: FamilyTree;
   rootId: string;
+  direction: PlateDirection;
   onSelect: (id: string) => void;
+  onDoorway: (id: string) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState(420);
@@ -74,13 +83,15 @@ export function FamilyPlate({
     return () => observer.disconnect();
   }, []);
 
-  // Two rings inside the shell, three when there is room. Depth traded for
-  // legibility; re-centring reaches whatever is trimmed.
-  const maxDepth = size < 520 ? 2 : 3;
+  // Descent gets two rings inside the shell (three when wide). Ascent gets one
+  // parent ring because it doubles outward; re-centring continues either line.
+  const maxDepth = direction === "ascent" ? 1 : size < 520 ? 2 : 3;
   const layout = useMemo(
-    () => layoutPlate(tree, rootId, { maxDepth }),
-    [tree, rootId, maxDepth]
+    () => layoutPlate(tree, rootId, { direction, maxDepth }),
+    [tree, rootId, direction, maxDepth]
   );
+  const doorwayIds = useMemo(() => new Set(layout.doorwayIds), [layout.doorwayIds]);
+  const isAscent = direction === "ascent";
 
   const cx = size / 2;
   const cy = size / 2;
@@ -94,12 +105,14 @@ export function FamilyPlate({
   const coParents = root.partners.filter((p) => p.coParent);
   const otherSpouses = root.partners.filter((p) => !p.coParent);
   const core = [rootPerson, ...coParents.map((p) => tree.people[p.id])].filter(Boolean);
-  const isFounders = core.some((p) => p?.isFounder);
+  const isFounders = !isAscent && core.some((p) => p?.isFounder);
 
   if (!rootPerson || !layout.slots.length) {
     return (
       <div ref={hostRef} className="plate-empty">
-        {rootPerson ? `${rootPerson.displayName} has no descendants recorded.` : "Nothing to draw yet."}
+        {rootPerson
+          ? `${rootPerson.displayName} has no ${isAscent ? "parents" : "descendants"} recorded.`
+          : "Nothing to draw yet."}
       </div>
     );
   }
@@ -112,6 +125,33 @@ export function FamilyPlate({
   const arcs: JSX.Element[] = [];
   const pushArc = (id: string, r: number, a0: number, a1: number) => {
     arcs.push(<path key={id} id={id} d={arcPath(cx, cy, r, a0, a1)} fill="none" />);
+  };
+
+  const doorwayMarker = (id: string, x: number, y: number) => {
+    if (!doorwayIds.has(id)) return null;
+    const name = tree.people[id]?.displayName ?? "this person";
+    return (
+      <g
+        className="plate-doorway-hit"
+        role="button"
+        tabIndex={0}
+        aria-label={`Follow ${name}'s ${isAscent ? "descendants" : "ancestors"}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          onDoorway(id);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          event.stopPropagation();
+          onDoorway(id);
+        }}
+      >
+        <circle cx={x} cy={y} r={9} fill="transparent" />
+        <circle cx={x} cy={y} r={3.25} className="plate-doorway" />
+        <title>{`Follow ${name}'s ${isAscent ? "descendants" : "ancestors"}`}</title>
+      </g>
+    );
   };
 
   const slotGroups = layout.slots.map((slot: PlateSlot) => {
@@ -157,27 +197,30 @@ export function FamilyPlate({
           const r = r0 + band * frac;
           const arcId = `plate-${slot.path}-${index}`;
           pushArc(arcId, r, a0, a1);
+          const [markerX, markerY] = polar(cx, cy, r, a1 - 2);
           return (
-            <text
-              key={id}
-              className="plate-name"
-              fontSize={slot.depth >= 2 ? 11.5 : 13.5}
-              fontStyle={person.deceased || !blood ? "italic" : "normal"}
-              fontWeight={person.isClaimed ? 700 : 400}
-              style={{ fill: tintOf(person, blood), cursor: "pointer" }}
-              onClick={() => {
-                setLit(slot.path);
-                onSelect(id);
-              }}
-            >
-              <textPath href={`#${arcId}`} startOffset="50%" textAnchor="middle">
-                {person.displayName}
-              </textPath>
-            </text>
+            <g key={id}>
+              <text
+                className="plate-name"
+                fontSize={slot.depth >= 2 ? 11.5 : 13.5}
+                fontStyle={person.deceased || !blood ? "italic" : "normal"}
+                fontWeight={person.isClaimed ? 700 : 400}
+                style={{ fill: tintOf(person, blood), cursor: "pointer" }}
+                onClick={() => {
+                  setLit(slot.path);
+                  onSelect(id);
+                }}
+              >
+                <textPath href={`#${arcId}`} startOffset="50%" textAnchor="middle">
+                  {person.displayName}
+                </textPath>
+              </text>
+              {doorwayMarker(id, markerX, markerY)}
+            </g>
           );
         })}
 
-        {/* Spoke inward from the blood relative — the line back to their parents. */}
+        {/* Every directional node gets its own spoke to the person one ring inward. */}
         <line
           x1={polar(cx, cy, r0 - gap + 2, slot.midAngle)[0]}
           y1={polar(cx, cy, r0 - gap + 2, slot.midAngle)[1]}
@@ -231,7 +274,7 @@ export function FamilyPlate({
         viewBox={`0 0 ${size} ${size}`}
         width="100%"
         role="img"
-        aria-label={`Descendants of ${rootPerson.displayName}`}
+        aria-label={`${isAscent ? "Ancestors" : "Descendants"} of ${rootPerson.displayName}`}
         onMouseLeave={() => setLit(null)}
       >
         <defs>
@@ -284,7 +327,7 @@ export function FamilyPlate({
           </text>
         ) : (
           <text x={cx} y={cy - coreR * 0.55} textAnchor="middle" className="plate-eyebrow">
-            DESCENDANTS OF
+            {isAscent ? "ANCESTORS OF" : "DESCENDANTS OF"}
           </text>
         )}
 
@@ -293,19 +336,21 @@ export function FamilyPlate({
           const lead = core.length > 1 ? 24 : 0;
           const top = cy - (core.length - 1) * (lead / 2) + (isFounders ? 2 : 4);
           return (
-            <text
-              key={person.id}
-              x={cx}
-              y={top + index * lead}
-              textAnchor="middle"
-              className="plate-core-name"
-              fontSize={core.length > 1 ? 15 : 18}
-              fontStyle={person.deceased ? "italic" : "normal"}
-              style={{ cursor: "pointer" }}
-              onClick={() => onSelect(person.id)}
-            >
-              {person.displayName}
-            </text>
+            <g key={person.id}>
+              <text
+                x={cx}
+                y={top + index * lead}
+                textAnchor="middle"
+                className="plate-core-name"
+                fontSize={core.length > 1 ? 15 : 18}
+                fontStyle={person.deceased ? "italic" : "normal"}
+                style={{ cursor: "pointer" }}
+                onClick={() => onSelect(person.id)}
+              >
+                {person.displayName}
+              </text>
+              {doorwayMarker(person.id, cx + coreR * 0.72, top + index * lead - 5)}
+            </g>
           );
         })}
 
@@ -319,12 +364,12 @@ export function FamilyPlate({
           <textPath href={`#${sealId}`} startOffset="50%" textAnchor="middle">
             {isFounders
               ? "THE CRAIG FAMILY · BREADLOAF HILL"
-              : `${rootPerson.displayName.toUpperCase()}'S DESCENDANTS`}
+              : `${rootPerson.displayName.toUpperCase()}'S ${isAscent ? "ANCESTORS" : "DESCENDANTS"}`}
           </textPath>
         </text>
 
         {/* Spouses outside the line of descent are stated at the rim, far from centre. */}
-        {otherSpouses.length > 0 && (
+        {!isAscent && otherSpouses.length > 0 && (
           <text className="plate-rimnote">
             <textPath href={`#${rimId}`} startOffset="50%" textAnchor="middle">
               {`${rootPerson.displayName.toUpperCase()} ALSO MARRIED ${otherSpouses
