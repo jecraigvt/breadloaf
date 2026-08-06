@@ -1017,9 +1017,22 @@ Current state is 47/50 and 22/25.
 
 ### Still open
 
-**17f — surface the health numbers** is not done. `analysisState != "ok"` counts
-and the latest pass rates are still invisible in the product. That was the whole
-reason this went unnoticed for a month, so it should not be dropped.
+**17i — the reported pass rates go stale silently.** 17f shipped 2026-08-05 with
+live `analysisState` counts but `LATEST_ARCHIVE_VERIFICATION` in
+`src/lib/archive-health.ts` as a **hardcoded constant**. Running fifty
+model-generated questions per page load is not an option, and the panel is
+honestly dated, so the shape is defensible — but a number that looks measured
+and is actually a literal is a quieter form of the placeholder summaries that
+fooled every health check for a month. Nothing forces a refresh after an upload.
+
+*Near-term:* compare `measuredAt` against the newest document's `createdAt` and
+show "measured before N documents were added" when it is behind. A stale number
+that announces its staleness is honest.
+
+*Proper:* a small `ArchiveVerification` table the harness writes on each run,
+with `getArchiveHealth()` reading the newest row. Then `npm run archive:verify`
+updates what everyone sees and the constant disappears. Fold this in whenever
+someone is next in that file.
 
 ## Task 17h — stop the golden harness passing on empty documents
 
