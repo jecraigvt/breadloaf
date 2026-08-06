@@ -91,7 +91,13 @@ export function FamilyPlate({
 
   // Descent gets two rings inside the shell (three when wide). Ascent gets one
   // parent ring because it doubles outward; re-centring continues either line.
-  const maxDepth = direction === "ascent" ? 1 : size < 520 ? 2 : 3;
+  // Ascent doubles per ring where descent narrows, so it caps lower — but two
+  // rings fit comfortably and one was too strict. Measured against the live
+  // tree: centring Jeremy at depth 2 puts Bill and Lois on the outer ring at
+  // 126° each, and the narrowest slice on the plate is 108°, against a 52°
+  // minimum. Depth 3 is the real wall: eight great-grandparents split evenly is
+  // 45°, under the minimum. The cap is angular, so a wider shell does not help.
+  const maxDepth = direction === "ascent" ? 2 : size < 520 ? 2 : 3;
   const layout = useMemo(
     () => layoutPlate(tree, rootId, { direction, maxDepth }),
     [tree, rootId, direction, maxDepth]
