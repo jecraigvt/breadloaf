@@ -22,6 +22,7 @@ import { getAuthCookieName, getFamilyFromAuthToken } from "@/lib/auth";
  */
 
 const IDENTITY_COOKIE_NAME = "breadloaf_identity";
+const IDENTITY_SKIP_COOKIE_NAME = "breadloaf_identity_skipped";
 const IDENTITY_LIFETIME_MS = 365 * 24 * 60 * 60 * 1000;
 
 export interface ActorContext {
@@ -36,6 +37,10 @@ export interface ActorContext {
 
 export function getIdentityCookieName(): string {
   return IDENTITY_COOKIE_NAME;
+}
+
+export function getIdentitySkipCookieName(): string {
+  return IDENTITY_SKIP_COOKIE_NAME;
 }
 
 export function getIdentityLifetimeMs(): number {

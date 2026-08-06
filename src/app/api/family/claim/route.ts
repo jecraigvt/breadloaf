@@ -5,9 +5,11 @@ import {
   getDoorFamily,
   getIdentityCookieName,
   getIdentityLifetimeMs,
+  getIdentitySkipCookieName,
   hashIdentityToken,
   revokeIdentitySession,
 } from "@/lib/actor";
+import { claimedViaForIdentityClaim } from "@/lib/identity-prompt";
 
 /**
  * Claim an identity by tapping a face. The shared-PIN door is the security boundary,
@@ -26,6 +28,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const memberId = typeof body?.memberId === "string" ? body.memberId : null;
   const pin = typeof body?.pin === "string" ? body.pin : null;
+  const claimContext = body?.claimContext === "door" ? "door" : "tree";
 
   if (!memberId) {
     return NextResponse.json({ error: "memberId is required" }, { status: 400 });
@@ -66,7 +69,7 @@ export async function POST(request: NextRequest) {
 
   const token = await createIdentitySession(member.id, {
     userAgent: request.headers.get("user-agent"),
-    claimedVia: member.credential ? "pin" : "tap",
+    claimedVia: claimedViaForIdentityClaim(claimContext, Boolean(member.credential)),
   });
 
   const response = NextResponse.json({
@@ -81,6 +84,13 @@ export async function POST(request: NextRequest) {
     path: "/",
     maxAge: Math.floor(getIdentityLifetimeMs() / 1000),
   });
+  response.cookies.set(getIdentitySkipCookieName(), "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0,
+  });
 
   return response;
 }
@@ -92,6 +102,15 @@ export async function DELETE(request: NextRequest) {
 
   const response = NextResponse.json({ ok: true });
   response.cookies.set(getIdentityCookieName(), "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0,
+  });
+  // "Not you?" is an explicit request to choose again, so an older skip must
+  // not suppress the picker after this identity is retired.
+  response.cookies.set(getIdentitySkipCookieName(), "", {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",

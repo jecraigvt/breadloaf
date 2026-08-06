@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { IdentityGate } from "@/components/layout/identity-gate";
 
 const navItems = [
   {
@@ -58,24 +59,27 @@ export function NavBar() {
   const pathname = usePathname();
 
   return (
-    <nav className="nav-bottom">
-      {navItems.map((item) => {
-        const isActive =
-          item.href === "/"
-            ? pathname === "/"
-            : pathname.startsWith(item.href);
+    <div className="nav-chrome">
+      <IdentityGate />
+      <nav className="nav-bottom">
+        {navItems.map((item) => {
+          const isActive =
+            item.href === "/"
+              ? pathname === "/"
+              : pathname.startsWith(item.href);
 
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`nav-item ${isActive ? "active" : ""}`}
-          >
-            {item.icon}
-            <span>{item.label}</span>
-          </Link>
-        );
-      })}
-    </nav>
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`nav-item ${isActive ? "active" : ""}`}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
+    </div>
   );
 }
