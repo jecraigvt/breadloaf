@@ -417,6 +417,7 @@ model JarvisMemory {
   sourceId       String?
   scope          String    @default("property") // property, family, user, entity
   subject        String?
+  location       String? // physical location, kept separate for exact "where is it" retrieval
   confidence     Float     @default(1.0)
   importance     Float     @default(0.5)
   validFrom      DateTime?

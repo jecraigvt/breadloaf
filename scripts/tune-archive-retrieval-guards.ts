@@ -10,6 +10,10 @@ import { meaningfulAnalysisContent } from "../src/lib/document-analysis";
 import { deriveArchiveQuestion } from "../src/lib/archive-roundtrip-question";
 import { ROUND_TRIP_NEGATIVE_CONTROLS } from "../src/lib/archive-verification";
 import { ARCHIVE_GOLDEN_QUESTIONS } from "../src/lib/archive-golden-questions";
+import {
+  describeGoldenDocumentFailure,
+  isGoldenDocumentReady,
+} from "../src/lib/archive-golden-verification";
 
 const TOP_N = 3;
 const CONCURRENCY = 4;
@@ -140,14 +144,26 @@ async function main() {
     buildRoundTripCases(),
     prisma.document.findMany({
       where: { deletedAt: null, accessScope: "family" },
-      select: { id: true },
+      select: {
+        id: true,
+        title: true,
+        analysisState: true,
+        aiSummary: true,
+        aiExtractedText: true,
+      },
     }),
   ]);
-  const documentIds = new Set(documents.map((document) => document.id));
+  const documentMap = new Map(documents.map((document) => [document.id, document]));
   const goldenCases: VerificationCase[] = ARCHIVE_GOLDEN_QUESTIONS.map((fixture) => {
     const missing = fixture.expectedDocuments.filter(
-      (expected) => !documentIds.has(expected.documentId)
+      (expected) => !documentMap.has(expected.documentId)
     );
+    const hollow = fixture.expectedDocuments.flatMap((expected) => {
+      const document = documentMap.get(expected.documentId);
+      return document && !isGoldenDocumentReady(document)
+        ? [`${expected.title} (${describeGoldenDocumentFailure(document)})`]
+        : [];
+    });
     return {
       suite: "golden",
       label: fixture.question,
@@ -158,7 +174,9 @@ async function main() {
       negativeControl: fixture.expectedDocuments.length === 0,
       preconditionFailure: missing.length
         ? `expected document missing: ${missing.map((item) => item.title).join(" | ")}`
-        : null,
+        : hollow.length
+          ? `expected document has no usable analysis: ${hollow.join(" | ")}`
+          : null,
     };
   });
   const allCases = [...roundTripCases, ...goldenCases];

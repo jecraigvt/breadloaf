@@ -25,6 +25,7 @@ function memory(overrides: Partial<JarvisMemory> = {}): JarvisMemory {
     sourceId: question.id,
     scope: "family",
     subject: question.sourceLabel,
+    location: null,
     confidence: 1,
     importance: 0.85,
     validFrom: null,

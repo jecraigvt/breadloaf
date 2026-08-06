@@ -11,6 +11,7 @@ import {
   type AnalysisState,
 } from "@/lib/document-analysis";
 import { resolveSupportedFileType } from "@/lib/document-file-types";
+import { createHistoricalPhotoQuestion } from "@/lib/historical-photo";
 
 // Shared server-side document filing: save to /uploads, categorize with AI,
 // apply category guardrails, create the Document row, cross-link maintenance
@@ -171,6 +172,18 @@ export async function fileDocumentFromBuffer(opts: {
   indexDocument(doc.id).catch((e) =>
     console.error("Document embedding failed:", e)
   );
+
+  if (result?.intakeType === "historical_photo") {
+    try {
+      await createHistoricalPhotoQuestion({
+        documentId: doc.id,
+        documentTitle: doc.title,
+        analysis: result,
+      });
+    } catch (error) {
+      console.error("Historical-photo question creation failed:", error);
+    }
+  }
 
   // If we couldn't confidently file it, raise a persistent question so the
   // uncertain case is surfaced actively (Questions tab + homepage badge)

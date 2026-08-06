@@ -170,9 +170,12 @@ const KEYWORD_CANDIDATES = 60;
 // so the spread is the only real lever. 1.28 was the minimum that recovered all
 // four controls; 1.30 is chosen for margin at identical measured cost:
 //
-//   spread 1.15         90% round-trip / 92% golden / 2 of 4 controls
-//   spread 1.18-1.25    86% round-trip / 92% golden / 2 of 4 controls
-//   spread 1.28-1.30    86% round-trip / 96% golden / 4 of 4 controls
+//   spread 1.15-1.20    92% round-trip / 84% golden / 2 of 4 controls
+//   spread 1.22         90% round-trip / 84% golden / 2 of 4 controls
+//   spread 1.25         88% round-trip / 84% golden / 2 of 4 controls
+//   spread 1.28-1.30    90% round-trip / 88% golden / 4 of 4 controls
+// The tuner applies the same analysis-health requirement as the golden harness,
+// so the two genuinely blank Word files can never earn a hollow title-only pass.
 //
 // Tune with scripts/tune-archive-retrieval-guards.ts, which fixes the generated
 // questions across the grid. Do NOT compare bare harness runs to each other:
@@ -415,6 +418,26 @@ export async function indexDocument(documentId: string, options: IndexOptions = 
   });
 }
 
+export function memoryIndexContent(memory: {
+  topic: string;
+  type: string;
+  subject: string | null;
+  location: string | null;
+  scope: string;
+  content: string;
+  source: string | null;
+}): string {
+  return [
+    `Memory: ${memory.topic}`,
+    `Type: ${memory.type}`,
+    memory.subject ? `Subject: ${memory.subject}` : "",
+    memory.location ? `Location: ${memory.location}` : "",
+    `Scope: ${memory.scope}`,
+    memory.content,
+    memory.source ? `Source: ${memory.source}` : "",
+  ].filter(Boolean).join("\n");
+}
+
 export async function indexMemory(memoryId: string, options: IndexOptions = {}) {
   return runIndexer(`memory:${memoryId}`, options, async () => {
     const memory = await prisma.jarvisMemory.findUnique({ where: { id: memoryId } });
@@ -432,14 +455,7 @@ export async function indexMemory(memoryId: string, options: IndexOptions = {}) 
     await embedAndStore(
       "memory",
       memory.id,
-      [
-        `Memory: ${memory.topic}`,
-        `Type: ${memory.type}`,
-        memory.subject ? `Subject: ${memory.subject}` : "",
-        `Scope: ${memory.scope}`,
-        memory.content,
-        memory.source ? `Source: ${memory.source}` : "",
-      ].filter(Boolean).join("\n"),
+      memoryIndexContent(memory),
       options
     );
   });

@@ -23,6 +23,7 @@ const DESTINATIONS: Destination[] = [
   { name: "Bulletin Board", sub: "Family notes", href: "/bulletin" },
   { name: "Maintenance", sub: "Property work and history", href: "/maintenance" },
   { name: "Add Documents", sub: "Scan, upload, or link a file", href: "/upload" },
+  { name: "Catalogue by Voice", sub: "Record boxes and objects item by item", href: "/narrate" },
 ];
 
 export default function MorePage() {

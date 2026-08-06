@@ -14,6 +14,7 @@ import { resolveDocumentTitle } from "@/lib/document-title";
 import { getOpenAIClient, withRetry } from "@/lib/openai-client";
 import { analyzeDocumentBuffer } from "@/lib/document-analysis";
 import { resolveSupportedFileType } from "@/lib/document-file-types";
+import { createHistoricalPhotoQuestion } from "@/lib/historical-photo";
 
 // ─── Guardrails ─────────────────────────────────────────────────
 // Email is an untrusted inlet: it can only ADD stays, documents, and
@@ -325,6 +326,16 @@ async function archiveBodyAsDocument(
 
     void indexDocument(doc.id);
 
+    if (result?.intakeType === "historical_photo") {
+      await createHistoricalPhotoQuestion({
+        documentId: doc.id,
+        documentTitle: doc.title,
+        analysis: result,
+      }).catch((error) =>
+        console.error("[Mail Room] historical-photo question creation failed:", error)
+      );
+    }
+
     if (resolution.needsReview) {
       try {
         await prisma.buckyQuestion.create({
@@ -438,6 +449,16 @@ async function fileAttachment(
   });
 
   void indexDocument(doc.id);
+
+  if (result?.intakeType === "historical_photo") {
+    await createHistoricalPhotoQuestion({
+      documentId: doc.id,
+      documentTitle: doc.title,
+      analysis: result,
+    }).catch((error) =>
+      console.error("[Mail Room] historical-photo question creation failed:", error)
+    );
+  }
 
   if (resolution.needsReview) {
     try {

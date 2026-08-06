@@ -4,6 +4,7 @@ import {
   filterSemanticCandidates,
   filterKeywordCandidates,
   fuseSearchResults,
+  memoryIndexContent,
   rankHybridSearchCandidates,
   splitContentIntoChunks,
   tokenizeSearchQuery,
@@ -34,6 +35,20 @@ test("keyword terms retain useful exact identifiers", () => {
 test("keyword terms discard short common words that caused substring noise", () => {
   assert.deepEqual(tokenizeSearchQuery("the heater will not ignite"), ["heater", "ignite"]);
   assert.deepEqual(tokenizeSearchQuery("who handles the insurance renewal?"), ["insurance", "renewal"]);
+});
+
+test("memory indexing preserves the dedicated physical location", () => {
+  const content = memoryIndexContent({
+    topic: "Box of Bestor photographs",
+    type: "semantic",
+    subject: "Bestor family",
+    location: "Attic, north wall, shelf 3",
+    scope: "family",
+    content: "A gray box of labeled photographs from the 1940s.",
+    source: "Bulk narration by Jim Craig",
+  });
+
+  assert.match(content, /Location: Attic, north wall, shelf 3/);
 });
 
 function result(sourceId: string, score: number): SearchResult {

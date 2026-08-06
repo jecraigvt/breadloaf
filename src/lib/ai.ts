@@ -22,6 +22,21 @@ import { parseToolArguments } from "@/lib/openai-json";
 import { getOpenAIClient, withRetry } from "@/lib/openai-client";
 import { MODELS } from "@/lib/ai-models";
 import { distillRetrievalQueries } from "@/lib/bucky-retrieval-query";
+import {
+  applyTypeSpecificExtraction,
+  INTAKE_DOCUMENT_TYPES,
+  intakeDeepPassGuidance,
+  type IntakeDocumentType,
+  type TypeSpecificAnalysisFields,
+} from "@/lib/document-intake";
+import {
+  formatHistoricalPhotoRoster,
+  type HistoricalPhotoRosterEntry,
+} from "@/lib/historical-photo";
+import {
+  NarratedMemoryItemsSchema,
+  type NarratedMemoryItem,
+} from "@/lib/bulk-narration";
 
 export { MODELS } from "@/lib/ai-models";
 
@@ -33,7 +48,7 @@ export interface CategoryOption {
   description?: string | null;
 }
 
-interface CategorizationResult {
+export interface CategorizationResult extends TypeSpecificAnalysisFields {
   suggestedCategory: string;
   // Set when no existing category fits — server-side guardrails decide
   // whether it actually becomes a new category (see document-categories.ts)
@@ -63,7 +78,29 @@ const CategorizationResultSchema = z.object({
   maintenanceCost: z.number().nullable(),
   maintenanceDate: z.string().nullable(),
   maintenanceVendor: z.string().nullable(),
+  receiptSubtotal: z.number().nullable(),
+  receiptSalesTax: z.number().nullable(),
+  receiptTotal: z.number().nullable(),
+  historicalPhotoCandidateIds: z.array(z.string()),
+  historicalPhotoEra: z.string().nullable(),
+  historicalPhotoSetting: z.string().nullable(),
 });
+
+const HistoricalPhotoCategorizationSchema = CategorizationResultSchema.extend({
+  historicalPhotoCandidateIds: z.array(z.string()).min(1).max(4),
+});
+
+const IntakeTriageSchema = z.object({
+  documentType: z.enum(INTAKE_DOCUMENT_TYPES),
+  confidence: z.number().min(0).max(1),
+  reason: z.string(),
+});
+
+export interface IntakeTriage {
+  documentType: IntakeDocumentType;
+  confidence: number;
+  reason: string;
+}
 
 function requireParsed<T>(value: T | null): T {
   if (value === null) throw new Error("OpenAI returned no structured output");
@@ -91,15 +128,23 @@ const DOCUMENT_TITLE_RULES = `Title rules:
 
 function finalizeCategorizationTitle(
   result: CategorizationResult,
-  input: { fileName?: string; fileType: string }
+  input: {
+    fileName?: string;
+    fileType: string;
+    intakeType?: IntakeDocumentType;
+  }
 ): CategorizationResult {
+  const enriched = applyTypeSpecificExtraction(
+    result,
+    input.intakeType || "other"
+  );
   return {
-    ...result,
+    ...enriched,
     title: resolveDocumentTitle({
-      suggestedTitle: result.title,
+      suggestedTitle: enriched.title,
       fileName: input.fileName,
-      summary: result.summary,
-      extractedText: result.extractedText,
+      summary: enriched.summary,
+      extractedText: enriched.extractedText,
       fileType: input.fileType,
       createdAt: new Date(),
     }),
@@ -107,31 +152,80 @@ function finalizeCategorizationTitle(
 }
 
 // Process audio/video files — extract transcript, summary, key facts
+const INTAKE_TRIAGE_PROMPT = `Classify this upload for the Breadloaf Hill family archive into exactly one intake type:
+- receipt_invoice: a receipt, invoice, bill, estimate, or purchase record
+- corporate_record: minutes, bylaws, resolutions, shareholder records, legal filings, or governance documents
+- historical_photo: an older family or property photograph whose people, era, and setting are the primary value
+- property_condition_photo: a current photo documenting a room, building, equipment, damage, repair, or physical condition
+- voice_memo: a spoken note, meeting recording, narrated walkthrough, or dictated record
+- manual_guide: operating instructions, reference manuals, procedures, directories, or how-to guides
+- other: anything that does not fit the six specific types
+
+Choose from the closed set. Classify by content, not merely by filename.`;
+
+export async function triageInlineDocument(
+  fileBase64: string,
+  fileType: string,
+  fileName?: string
+): Promise<IntakeTriage> {
+  const prompt = `${INTAKE_TRIAGE_PROMPT}\n\nSource filename (weak provenance only): ${fileName || "unknown"}`;
+  const content = fileType === "application/pdf"
+    ? [
+        { type: "input_file" as const, filename: fileName || "document.pdf", file_data: `data:application/pdf;base64,${fileBase64}` },
+        { type: "input_text" as const, text: prompt },
+      ]
+    : [
+        { type: "input_image" as const, image_url: `data:${fileType};base64,${fileBase64}`, detail: "low" as const },
+        { type: "input_text" as const, text: prompt },
+      ];
+  const response = await withRetry(() => getOpenAIClient().responses.parse({
+    model: MODELS.flash,
+    input: [{ role: "user", content }],
+    text: { format: zodTextFormat(IntakeTriageSchema, "document_intake_triage") },
+  }));
+  return requireParsed(response.output_parsed);
+}
+
+export async function triageTextDocument(
+  documentText: string,
+  fileName: string
+): Promise<IntakeTriage> {
+  const response = await withRetry(() => getOpenAIClient().responses.parse({
+    model: MODELS.flash,
+    input: `${INTAKE_TRIAGE_PROMPT}\n\nSource filename (weak provenance only): ${fileName}\n\nContent:\n${documentText}`,
+    text: { format: zodTextFormat(IntakeTriageSchema, "text_intake_triage") },
+  }));
+  return requireParsed(response.output_parsed);
+}
+
 export async function processMediaFile(
   base64Data: string,
   mimeType: string,
   existingCategories: CategoryOption[],
   fileName?: string
 ): Promise<CategorizationResult> {
-  const mediaFile = await toFile(
+  const transcript = await transcribeMediaBuffer(
     Buffer.from(base64Data, "base64"),
-    fileName || "media",
-    { type: mimeType }
+    mimeType,
+    fileName || "media"
   );
-  const transcription = await withRetry(() =>
-    getOpenAIClient().audio.transcriptions.create({
-      model: MODELS.transcription,
-      file: mediaFile,
-    })
-  );
-  const transcript = transcription.text.trim();
-  if (!transcript) throw new Error("OpenAI returned an empty media transcript");
+
+  let intakeType: IntakeDocumentType = "voice_memo";
+  try {
+    intakeType = (await triageTextDocument(transcript, fileName || "media")).documentType;
+  } catch (error) {
+    // Triage improves routing but must not become a new single point of failure.
+    console.warn(`[Archive] media triage failed for ${fileName || "media"}; using voice-memo deep pass`, error);
+  }
 
   const categorization = await categorizeText(
     transcript,
     fileName || "media",
     existingCategories,
-    { mediaKind: mimeType.startsWith("video/") ? "video" : "audio recording" }
+    {
+      mediaKind: mimeType.startsWith("video/") ? "video" : "audio recording",
+      intakeType,
+    }
   );
   return {
     ...categorization,
@@ -141,6 +235,49 @@ export async function processMediaFile(
   };
 }
 
+export async function transcribeMediaBuffer(
+  buffer: Buffer,
+  mimeType: string,
+  fileName = "recording"
+): Promise<string> {
+  const mediaFile = await toFile(buffer, fileName, { type: mimeType });
+  const transcription = await withRetry(() =>
+    getOpenAIClient().audio.transcriptions.create({
+      model: MODELS.transcription,
+      file: mediaFile,
+    })
+  );
+  const transcript = transcription.text.trim();
+  if (!transcript) throw new Error("OpenAI returned an empty media transcript");
+  return transcript;
+}
+
+export async function segmentBulkNarration(
+  transcript: string
+): Promise<NarratedMemoryItem[]> {
+  const response = await withRetry(() => getOpenAIClient().responses.parse({
+    model: MODELS.flash,
+    input: `You catalogue narrated physical items for the Breadloaf Hill family property archive.
+
+Segment this transcript into one independently retrievable memory per distinct item being described. An item may be a box and its contents, a loose object, a document group, or another catalogued unit.
+
+Rules:
+- Preserve concrete names, dates, labels, condition, contents, provenance, identifiers, and relationships. Do not replace detail with a general summary.
+- Do not merge separate items merely because they were narrated next to each other.
+- Carry a stated shelf, room, building, or other physical location forward only while the speaker clearly means it still applies. Put that value in location, not only in content.
+- Make topic a short label, content a self-contained factual description, and subject the person/object/group the item is about when one is clear.
+- Use semantic for durable facts, episodic for an event or dated recollection, and procedural only for instructions.
+- Use property for things about Breadloaf Hill, family for family-history material, and entity for a specific outside organization or entity.
+- Return null for subject or location when the narration does not support one. Never invent missing details.
+- If the speaker corrects themself, use the corrected version.
+
+TRANSCRIPT:
+${transcript}`,
+    text: { format: zodTextFormat(NarratedMemoryItemsSchema, "bulk_narration_items") },
+  }));
+  return requireParsed(response.output_parsed).items;
+}
+
 export async function categorizeDocument(
   fileBase64: string,
   fileType: string,
@@ -148,6 +285,8 @@ export async function categorizeDocument(
   fileName?: string,
   options: {
     pdfSample?: { sourcePageCount: number; sampledPageNumbers: number[] };
+    intakeType?: IntakeDocumentType;
+    historicalPhotoRoster?: HistoricalPhotoRosterEntry[];
   } = {}
 ): Promise<CategorizationResult> {
   const sampleInstruction = options.pdfSample
@@ -155,6 +294,19 @@ export async function categorizeDocument(
 - Base the summary and extractedText only on the supplied pages and state that the analysis is sampled, not exhaustive.
 - For a photo collection, put concise searchable descriptions of visible people, likely eras, settings, objects, and any legible names or captions into extractedText; do not limit extractedText to OCR.`
     : "";
+  const deepPassGuidance = intakeDeepPassGuidance(options.intakeType || "other");
+  const historicalPhotoInstruction =
+    options.intakeType === "historical_photo" && options.historicalPhotoRoster?.length
+      ? `FAMILY ROSTER FOR IDENTIFICATION PROPOSALS:
+${formatHistoricalPhotoRoster(options.historicalPhotoRoster)}
+
+- You MUST propose one to four likely people by returning ONLY their exact roster member IDs in historicalPhotoCandidateIds, ordered most likely first.
+- Use visible age, apparent era, family generation, relationships, setting, and captions as evidence. A proposal may be tentative, but it must be concrete enough for a tap-to-confirm question.
+- If identity evidence is weak, still choose the most plausible roster candidate or candidates and state the uncertainty in the summary. This creates a question for a human; it does not record the proposal as fact.
+- Never return a name or ID absent from the roster. Never ask an open-ended \"Who is this?\" question.
+- Put a short setting with no leading preposition in historicalPhotoSetting and a concise approximate date/era in historicalPhotoEra.
+- Current minors appear only by their public first-name label. Do not infer, restore, or output a surname for them.`
+      : "";
   const prompt = `You are a document categorization assistant for the Breadloaf Hill family property archive in Vermont.
 
 Existing categories:
@@ -166,6 +318,8 @@ ${DOCUMENT_TITLE_RULES}
 
 Source filename (provenance only; do not use it as the title): ${fileName || "unknown"}
 ${sampleInstruction}
+${deepPassGuidance}
+${historicalPhotoInstruction}
 
 Analyze this document and return ONLY valid JSON (no markdown fences, no extra text) with these fields:
 {
@@ -178,7 +332,13 @@ Analyze this document and return ONLY valid JSON (no markdown fences, no extra t
   "confidence": 0.0 to 1.0,
   "maintenanceCost": null or dollar amount as number if this is a maintenance receipt/invoice (e.g. 150.00),
   "maintenanceDate": null or date in YYYY-MM-DD format if this is a maintenance receipt/invoice,
-  "maintenanceVendor": null or vendor/contractor name if this is a maintenance receipt/invoice
+  "maintenanceVendor": null or vendor/contractor name if this is a maintenance receipt/invoice,
+  "receiptSubtotal": null or receipt/invoice subtotal as a number,
+  "receiptSalesTax": null or receipt/invoice sales tax as a number,
+  "receiptTotal": null or receipt/invoice final total as a number,
+  "historicalPhotoCandidateIds": [] or exact roster member IDs proposed for a historical photo,
+  "historicalPhotoEra": null or the likely era/date of a historical photo,
+  "historicalPhotoSetting": null or a short setting for a historical photo, without a leading preposition
 }
 
 Be specific with the title. Extract dates, names, amounts, and other key details in the summary.
@@ -204,9 +364,20 @@ This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Gre
   const response = await withRetry(() => getOpenAIClient().responses.parse({
     model: MODELS.flash,
     input: [{ role: "user", content }],
-    text: { format: zodTextFormat(CategorizationResultSchema, "document_categorization") },
+    text: {
+      format: zodTextFormat(
+        options.intakeType === "historical_photo" && options.historicalPhotoRoster?.length
+          ? HistoricalPhotoCategorizationSchema
+          : CategorizationResultSchema,
+        "document_categorization"
+      ),
+    },
   }));
-  return finalizeCategorizationTitle(requireParsed(response.output_parsed), { fileName, fileType });
+  return finalizeCategorizationTitle(requireParsed(response.output_parsed), {
+    fileName,
+    fileType,
+    intakeType: options.intakeType,
+  });
 }
 
 // Categorize a document from extracted text (Word/Excel/CSV/TXT — types
@@ -219,6 +390,7 @@ export interface CategorizeTextOptions {
   // categorize dropped them, which thinned board-meeting and walkthrough
   // summaries down to the document prompt's "2-3 sentences".
   mediaKind?: "audio recording" | "video";
+  intakeType?: IntakeDocumentType;
 }
 
 export async function categorizeText(
@@ -227,7 +399,7 @@ export async function categorizeText(
   existingCategories: CategoryOption[],
   options: CategorizeTextOptions = {}
 ): Promise<CategorizationResult> {
-  const { mediaKind } = options;
+  const { mediaKind, intakeType = "other" } = options;
 
   const intro = mediaKind
     ? `You are processing a ${mediaKind} for the Craig family property archive at Breadloaf Hill, Vermont. The property is owned as an S-Corp by four Craig brothers (Tom, Jim, Sandy, Greg), with Ethan (Jim's son) now on the board.`
@@ -248,6 +420,7 @@ For board meetings: capture all votes, motions, decisions, assignments, deadline
 For property walkthroughs: note condition of structures, items needing attention, any damage or improvements.
 Be extremely thorough — extract every useful detail.`
     : "";
+  const deepPassGuidance = intakeDeepPassGuidance(intakeType);
 
   const prompt = `${intro}
 
@@ -257,6 +430,8 @@ ${describeCategories(existingCategories)}
 ${NEW_CATEGORY_RULES}
 
 ${DOCUMENT_TITLE_RULES}
+
+${deepPassGuidance}
 
 ${sourceLabel}. Analyze it and return ONLY valid JSON (no markdown fences, no extra text) with these fields:
 {
@@ -269,7 +444,13 @@ ${sourceLabel}. Analyze it and return ONLY valid JSON (no markdown fences, no ex
   "confidence": 0.0 to 1.0,
   "maintenanceCost": null or dollar amount as number if this is a maintenance receipt/invoice,
   "maintenanceDate": null or date in YYYY-MM-DD format if this is a maintenance receipt/invoice,
-  "maintenanceVendor": null or vendor/contractor name if this is a maintenance receipt/invoice
+  "maintenanceVendor": null or vendor/contractor name if this is a maintenance receipt/invoice,
+  "receiptSubtotal": null or receipt/invoice subtotal as a number,
+  "receiptSalesTax": null or receipt/invoice sales tax as a number,
+  "receiptTotal": null or receipt/invoice final total as a number,
+  "historicalPhotoCandidateIds": [],
+  "historicalPhotoEra": null,
+  "historicalPhotoSetting": null
 }
 
 This property is owned by an S-Corp with four shareholders (Tom, Jim, Sandy, Greg Craig). Categorization hints:
@@ -291,6 +472,7 @@ ${documentText}`;
   return finalizeCategorizationTitle(requireParsed(response.output_parsed), {
     fileName,
     fileType: "text/plain",
+    intakeType,
   });
 }
 
