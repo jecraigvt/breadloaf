@@ -2,8 +2,11 @@ import {
   categorizeDocument,
   categorizeText,
   processMediaFile,
+  triageInlineDocument,
+  triageTextDocument,
   type CategoryOption,
 } from "@/lib/ai";
+import type { IntakeDocumentType } from "@/lib/document-intake";
 import { extractTextFromFile, isExtractableType } from "@/lib/extract-text";
 import { PdfSampleTooLargeError, samplePdfPages } from "@/lib/pdf-sampling";
 
@@ -65,6 +68,20 @@ function readableInlineType(fileType: string): boolean {
 function cleanError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.replace(/\s+/g, " ").trim().slice(0, 500) || "Unknown analysis error";
+}
+
+async function triageWithFallback(
+  fileName: string,
+  triage: () => Promise<{ documentType: IntakeDocumentType }>
+): Promise<IntakeDocumentType> {
+  try {
+    return (await triage()).documentType;
+  } catch (error) {
+    // The deep pass is still useful without triage, and intake durability must
+    // not become worse because a cheap routing call failed.
+    console.warn(`[Archive] intake triage failed for ${fileName}; using generic deep pass`, error);
+    return "other";
+  }
 }
 
 export function isHistoricalAnalysisPlaceholder(value?: string | null): boolean {
@@ -190,12 +207,17 @@ export async function analyzeDocumentBuffer(input: {
       result = await processMediaFile(buffer.toString("base64"), type, categories, fileName);
     } else if (type === "application/pdf" && buffer.length > AI_SIZE_LIMIT) {
       const sample = await samplePdfPages(buffer, AI_SIZE_LIMIT);
+      const sampleBase64 = sample.buffer.toString("base64");
+      const intakeType = await triageWithFallback(fileName, () =>
+        triageInlineDocument(sampleBase64, type, fileName)
+      );
       result = await categorizeDocument(
-        sample.buffer.toString("base64"),
+        sampleBase64,
         type,
         categories,
         fileName,
         {
+          intakeType,
           pdfSample: {
             sourcePageCount: sample.sourcePageCount,
             sampledPageNumbers: sample.sampledPageNumbers,
@@ -203,7 +225,13 @@ export async function analyzeDocumentBuffer(input: {
         }
       );
     } else if (type.startsWith("image/") || type === "application/pdf") {
-      result = await categorizeDocument(buffer.toString("base64"), type, categories, fileName);
+      const base64 = buffer.toString("base64");
+      const intakeType = await triageWithFallback(fileName, () =>
+        triageInlineDocument(base64, type, fileName)
+      );
+      result = await categorizeDocument(base64, type, categories, fileName, {
+        intakeType,
+      });
     } else if (isExtractableType(type)) {
       const extracted = await extractTextFromFile(buffer, type);
       if (!extracted?.trim()) {
@@ -213,7 +241,10 @@ export async function analyzeDocumentBuffer(input: {
           result: null,
         };
       }
-      result = await categorizeText(extracted, fileName, categories);
+      const intakeType = await triageWithFallback(fileName, () =>
+        triageTextDocument(extracted, fileName)
+      );
+      result = await categorizeText(extracted, fileName, categories, { intakeType });
     } else {
       return {
         state: "unsupported_type",
