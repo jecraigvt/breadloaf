@@ -6,9 +6,14 @@ import { resolveDocumentTitle } from "@/lib/document-title";
 import {
   normalizeStoredAnalysis,
 } from "@/lib/document-analysis";
+import { getArchiveHealth } from "@/lib/archive-health";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
+
+  if (searchParams.get("healthOnly") === "true") {
+    return NextResponse.json(await getArchiveHealth());
+  }
 
   // Return categories with counts if requested
   if (searchParams.get("categoriesOnly") === "true") {

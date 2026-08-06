@@ -1,5 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { hybridSearch, tokenizeSearchQuery, type SearchResult } from "@/lib/embeddings";
+import {
+  formatArchiveHealthForBucky,
+  getArchiveHealth,
+} from "@/lib/archive-health";
 
 const KNOWLEDGE_SOURCE_TYPES = ["document", "memory", "asset", "maintenance", "expense"];
 const MAX_RETRIEVED_CHARS = 18000;
@@ -143,6 +147,7 @@ export async function buildBuckyContext(
     directFamily,
     memoryDirectory,
     documentDirectory,
+    archiveHealth,
   ] = await Promise.all([
     prisma.stay.findMany({
       where: { checkOut: { gte: stayStart }, checkIn: { lt: stayEnd } },
@@ -274,6 +279,7 @@ export async function buildBuckyContext(
           take: 31,
         })
       : Promise.resolve([]),
+    getArchiveHealth(),
   ]);
 
   const retrievedDocumentIds = uniqueSourceIds(retrieved, "document");
@@ -393,6 +399,7 @@ export async function buildBuckyContext(
       `- ${counts[2]} active property systems`,
       `- ${counts[3]} maintenance records`,
       `- ${counts[4]} expenses`,
+      formatArchiveHealthForBucky(archiveHealth),
       `ARCHIVE CATEGORIES (exact names; family-access document counts):\n${formatArchiveCategoryDirectory(archiveCategories, counts[5])}`,
       "Only records relevant to this request are expanded below. A count above zero means more knowledge exists even when no detail was loaded.",
     ].join("\n"),
