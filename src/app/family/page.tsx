@@ -266,7 +266,11 @@ function PersonSheet({
             <div className="sub">
               {[
                 person.isFounder ? "founder" : null,
-                person.branch?.replace(/'s family$/, "'s side") ?? "Forebear",
+                person.lineage === "ancestor"
+                  ? "Forebear"
+                  : person.lineage === "affine"
+                    ? "Married in"
+                    : person.branch?.replace(/'s family$/, "'s side") ?? "Descendant",
                 person.deceased ? "in memory" : null,
                 person.isMinor ? "next generation" : null,
                 person.isCurator ? "curator" : null,

@@ -24,6 +24,7 @@ function person(id: string, overrides: Partial<TreePerson> = {}): TreePerson {
     initials: id.slice(0, 1).toUpperCase(),
     photoUrl: null,
     branch: null,
+    lineage: "affine",
     generation: 0,
     isMinor: false,
     canClaim: true,
