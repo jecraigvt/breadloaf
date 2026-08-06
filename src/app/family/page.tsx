@@ -51,11 +51,6 @@ export default function FamilyPage() {
     if (tree && !plateRoot) setPlateRoot(defaultPlateRoot(tree));
   }, [tree, plateRoot]);
 
-  const signOutIdentity = async () => {
-    await fetch("/api/family/claim", { method: "DELETE" });
-    load();
-  };
-
   // "Find me" re-centres the plate on the signed-in member and opens their sheet.
   const jumpToMe = () => {
     if (!actor || !tree) return;
@@ -98,35 +93,24 @@ export default function FamilyPage() {
         <div className="ctr">The Family</div>
       </div>
 
-      {/* Identity strip. The tree is readable signed out, so this is also the
-          prompt that tells a first-time relative what to do. */}
+      {/* Identity is claimed at the door now, so this strip only reports who
+          the device belongs to and helps you find yourself on the plate. It no
+          longer invites claiming — asking twice, in two different shapes, was
+          how claiming ended up reaching one person out of twenty-five. */}
       <div className="tree-status">
         {actor ? (
           <>
             <div className="who">
               Signed in as <em>{actor.displayName}</em>
             </div>
-            <div style={{ display: "flex", gap: 14 }}>
-              <button className="act" onClick={jumpToMe}>
-                Find me
-              </button>
-              <button className="act" onClick={signOutIdentity}>
-                Not you?
-              </button>
-            </div>
+            <button className="act" onClick={jumpToMe}>
+              Find me
+            </button>
           </>
         ) : (
           <>
             <div className="who">
-              {data?.signedIn ? (
-                <>
-                  Tap your name to <em>claim it</em>
-                </>
-              ) : (
-                <>
-                  Find yourself in <em>the tree</em>
-                </>
-              )}
+              The Craig family, <em>four generations</em>
             </div>
             {!data?.signedIn && (
               <Link href="/login" className="act">
@@ -233,10 +217,6 @@ export default function FamilyPage() {
           isYou={actor?.memberId === selectedId}
           onClose={() => setSelectedId(null)}
           onSelect={setSelectedId}
-          onClaimed={() => {
-            setSelectedId(null);
-            load();
-          }}
           onCentre={
             selectedCentreDirection
               ? () => centrePlate(selectedId, selectedCentreDirection)
@@ -255,7 +235,6 @@ function PersonSheet({
   isYou,
   onClose,
   onSelect,
-  onClaimed,
   onCentre,
 }: {
   person: TreePerson | undefined;
@@ -264,44 +243,13 @@ function PersonSheet({
   isYou: boolean;
   onClose: () => void;
   onSelect: (id: string) => void;
-  onClaimed: () => void;
   /** Supplied when this person can anchor the active or opposite plate direction. */
   onCentre?: () => void;
 }) {
-  const [claiming, setClaiming] = useState(false);
-  const [pinRequired, setPinRequired] = useState(false);
-  const [pin, setPin] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setPinRequired(false);
-    setPin("");
-    setError(null);
-  }, [person?.id]);
-
   if (!person) return null;
 
   const nameOf = (id: string) => people[id]?.displayName ?? "—";
   const relation = (ids: string[]) => ids.map(nameOf).join(", ");
-
-  const claim = async () => {
-    setClaiming(true);
-    setError(null);
-    const res = await fetch("/api/family/claim", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ memberId: person.id, pin: pin || undefined }),
-    });
-    const body = await res.json().catch(() => ({}));
-    setClaiming(false);
-
-    if (res.ok) {
-      onClaimed();
-      return;
-    }
-    if (body?.pinRequired) setPinRequired(true);
-    setError(body?.error ?? "That didn't work. Try again.");
-  };
 
   return (
     <div
@@ -433,54 +381,16 @@ function PersonSheet({
           </button>
         )}
 
-        {error && <div className="sheet-error">{error}</div>}
-
-        {isYou ? (
+        {/* No claiming here. A device says who it belongs to once, at the door,
+            where the branch is already known and the list is a handful of names.
+            The sheet is for reading a person and navigating to them. */}
+        {isYou && (
           <div className="sheet-claim">
             <div className="pitch">
-              This is <em>you</em>. This device will stay signed in as {person.displayName}.
+              This is <em>you</em>.
             </div>
           </div>
-        ) : person.canClaim && signedIn ? (
-          <div className="sheet-claim">
-            <div className="pitch">
-              {person.isClaimed ? (
-                <>
-                  Someone has used this profile before. Is it <em>you</em>?
-                </>
-              ) : (
-                <>
-                  Is this <em>you</em>?
-                </>
-              )}
-            </div>
-            {pinRequired && (
-              <input
-                className="w-full px-3 py-3 mb-2 border border-[var(--rule)] bg-[var(--paper)] font-mono text-sm tracking-widest"
-                value={pin}
-                onChange={(event) => setPin(event.target.value)}
-                placeholder="PIN"
-                inputMode="numeric"
-                autoFocus
-              />
-            )}
-            <button className="btn-ember" onClick={claim} disabled={claiming}>
-              {claiming ? "One moment…" : `Yes — I'm ${person.displayName}`}
-            </button>
-            <button className="btn-quiet" onClick={onClose}>
-              Not me
-            </button>
-          </div>
-        ) : person.canClaim && !signedIn ? (
-          <div className="sheet-claim">
-            <div className="pitch">
-              Sign in with your family PIN to <em>claim this profile</em>.
-            </div>
-            <Link href="/login" className="btn-ember block text-center">
-              Sign in
-            </Link>
-          </div>
-        ) : null}
+        )}
       </div>
     </div>
   );
