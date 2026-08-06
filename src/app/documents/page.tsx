@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { Header } from "@/components/layout/header";
-import { Search, Grid, List, FolderOpen, Tag, Calendar, Sparkles, Loader2, X, ArrowRight, Trash2, ArchiveRestore } from "lucide-react";
+import { Search, Grid, List, FolderOpen, Tag, Calendar, Sparkles, Loader2, X, ArrowRight, Trash2, ArchiveRestore, CircleCheck, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import type { DocumentWithCategory } from "@/types";
 import { formatDate } from "@/lib/utils";
+import type { ArchiveHealth } from "@/lib/archive-health";
 
 const CATEGORY_COLORS: Record<string, string> = {
   blue: "bg-blue-100 text-blue-800",
@@ -52,11 +53,13 @@ export default function DocumentsPage() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [showDeleted, setShowDeleted] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [archiveHealth, setArchiveHealth] = useState<ArchiveHealth | null>(null);
 
   useEffect(() => {
     fetchDocuments();
     fetchCategories();
     fetchUncategorizedCount();
+    fetchArchiveHealth();
   }, []);
 
   useEffect(() => {
@@ -164,6 +167,13 @@ export default function DocumentsPage() {
     }
   };
 
+  const fetchArchiveHealth = async () => {
+    const res = await fetch("/api/documents?healthOnly=true");
+    if (res.ok) {
+      setArchiveHealth(await res.json());
+    }
+  };
+
   const restoreDocument = async (docId: string) => {
     const response = await fetch(`/api/documents/${docId}`, {
       method: "PATCH",
@@ -182,6 +192,42 @@ export default function DocumentsPage() {
       <Header title="Document Archive" subtitle="Browse and search all property documents" />
 
       <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
+        {archiveHealth && (
+          <section
+            aria-label="Archive health"
+            className={`rounded-xl border p-3 ${
+              archiveHealth.issueDocuments === 0
+                ? "border-green-200 bg-green-50"
+                : "border-amber-200 bg-amber-50"
+            }`}
+          >
+            <div className="flex items-start gap-2.5">
+              {archiveHealth.issueDocuments === 0 ? (
+                <CircleCheck size={18} className="mt-0.5 shrink-0 text-green-700" />
+              ) : (
+                <TriangleAlert size={18} className="mt-0.5 shrink-0 text-amber-700" />
+              )}
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                  <h2 className="text-sm font-semibold text-stone-800">Archive health</h2>
+                  <span className="text-xs text-stone-600">
+                    {archiveHealth.readyDocuments}/{archiveHealth.totalDocuments} analyzed
+                  </span>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-stone-600">
+                  {archiveHealth.issueDocuments === 0
+                    ? "Every active document has usable analysis. "
+                    : `${archiveHealth.issueDocuments} active document${archiveHealth.issueDocuments === 1 ? "" : "s"} cannot be analyzed. `}
+                  Latest retrieval checks: {archiveHealth.verification.roundTrip.rate.toFixed(1)}% round-trip, {archiveHealth.verification.golden.rate.toFixed(1)}% golden, {archiveHealth.verification.negativeControls.passed}/{archiveHealth.verification.negativeControls.total} safety controls.
+                </p>
+                <p className="mt-0.5 text-[11px] text-stone-500">
+                  Measured {archiveHealth.verification.measuredAt}
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Search Bar */}
         <div className="relative">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
