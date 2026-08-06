@@ -8,7 +8,7 @@ Family hub website for the Craig family property at 3995 Vermont Route 125, Ript
 - **Styling:** Tailwind CSS 3.4 + editorial design system (see Design System below)
 - **Fonts:** Instrument Serif (italic display), Instrument Sans (body), JetBrains Mono (labels) via `next/font/google`
 - **Database:** PostgreSQL (Railway), Prisma ORM
-- **AI:** Google Gemini (document categorization, property assistant). Model IDs centralized in the exported `MODELS` const in `src/lib/ai.ts` — never hardcode a model ID elsewhere. Stable models preferred (as of July 2026: gemini-3.5-flash, gemini-3.1-flash-lite, gemini-embedding-2; pro is still preview-only). If the embedding model ever changes again, run `railway run npx tsx scripts/re-embed.ts` to rebuild vectors in the new space.
+- **AI:** OpenAI (migrated from Gemini, August 2026 — the Google key was stuck on a free tier capped at 5 requests/minute and no more billing-enabled Google projects were available). Model IDs centralized in the exported `MODELS` const in `src/lib/ai.ts` — never hardcode a model ID elsewhere. `gpt-5.6-luna` for categorization and chat, `gpt-5.6-terra` for heavy analysis, `text-embedding-3-small` (1536-dim) for retrieval, `gpt-4o-mini-transcribe` for audio. Structured Outputs (`json_schema`) is used throughout — **never parse model output with a regex and a JSON.parse fallback**; that pattern silently degraded bad output into confident "Other" filings for a month. If the embedding model changes, run `railway run npx tsx scripts/re-embed.ts` to rebuild vectors in the new space.
 - **Calendar:** Two-way sync with Google Calendar via service account
 - **Weather:** Open-Meteo API (free, no key needed)
 - **Hosting:** Railway (hobby plan)
@@ -42,14 +42,32 @@ The app uses a "family magazine" editorial style — warm paper tones, italic se
 - Deploys: GitHub auto-deploy is enabled (push to `main` deploys); `railway up` also works for deploying without pushing. `.railwayignore` excludes Photos/ dir
 - ESLint ignored during builds (`next.config.mjs`) to prevent agent-generated lint issues from blocking deploys
 
-## Identity: the door and the tap (July 2026)
+## Identity: the door and the claim (August 2026)
 Two independent layers. Do not merge them.
 
 - **The door** = the existing shared `FAMILY_PINS` cookie. This is the only security
   boundary and it is unchanged. It is what keeps strangers out.
-- **Identity** = which family member a device belongs to, claimed by tapping a face in
-  the tree. Inside the family this is a convenience claim, **not a secret** — v1 has no
-  per-person credential at all, which is what makes claiming a single tap.
+- **Identity** = which family member a device belongs to. Inside the family this is a
+  convenience claim, **not a secret** — there is no per-person credential yet, which is
+  what makes claiming a single tap.
+
+**Claiming happens at the door, not by discovery.** A device with a valid door cookie and
+no identity is asked once, with a dropdown pre-filtered to the branch its PIN belongs to
+(4–8 names, with "someone else" expanding to all). Tapping a face on the plate still works
+and is now the *change who I am* path rather than the acquisition path — discovery-based
+claiming had reached one person out of twenty-five.
+
+The prompt triggers on **state** (door cookie present, identity absent, skip not recorded),
+never on the PIN-submit event: door cookies last 30 days, so an event trigger silently
+skips every device already logged in. Skipping is remembered for the identity lifetime,
+because a prompt that returns every visit makes people pick any name to silence it, and
+confidently wrong attribution is worse than none. It never gates access —
+`getCurrentActor()` returning null is a supported state.
+
+`AUTH_SECRET` **must stay set.** It is unset by default, in which case `FAMILY_PINS`
+silently becomes the HMAC key for door cookies, identity session hashes, *and* calendar
+feed tokens — so rotating the PINs would permanently orphan every `FamilySession`, whose
+`tokenHash` values cannot be re-derived.
 
 Because the door already stops outsiders, identity could be frictionless now and hardened
 later per person: writing a `FamilyCredential` locks that one profile so re-tapping it
@@ -71,26 +89,58 @@ The relationship graph is the source of truth; `FamilyMember.branch` is a derive
   model reparents her onto Andrea. Couples are grouped at render time instead.
 - **Spouse edges** are stored one-directional with `status` (`current` | `former`) and read
   symmetrically via `partnersOf()`.
-- **Branch derivation** seeds from `isBranchRoot` (the four brothers) — NOT from "has a
-  branch and no parents", because the derived branch is cached back onto every row and an
-  inferred rule promotes married-in spouses to roots on the second run. Blood descent
-  propagates down parent edges first, then marriage fills in the rest.
+- **Lineage is derived and three-valued**, never a stored label: `descendant` (reachable
+  descending from a branch root), `ancestor` (reachable ascending), `affine` (attached only
+  through a spouse edge — every in-law family). `deriveLineageClasses()` computes it from
+  the edges. **Do not add a column for it** — that is exactly how `branch: null` came to
+  mean three different things at once (Bill and Lois as forebears, Lorenza as a childless
+  second wife, and any in-law parent), which would have rendered Colleen's parents as Craig
+  forebears.
+- **`branch` is decorative.** It answers "whose territory" for Craig descendants and simply
+  does not apply to anyone else. It is a cached derived value, so **any write that adds
+  edges must re-derive and write it back** or the plate tints people wrong with nothing to
+  indicate why. Derivation seeds from `isBranchRoot` (the four brothers) — NOT from "has a
+  branch and no parents", because an inferred rule promotes married-in spouses to roots on
+  the second run.
+- **`isBranchRoot` and `isFounder` are honours, not traversal seeds.** They earn the branch
+  tints and the founders' mark. The plate viewport must follow edges from wherever it is
+  centred and never consult them, or a family that does not descend from the four brothers
+  has nowhere to render.
 - **Minors** (`isMinor`) are reduced to a first name and cannot claim, since `/family` is a
-  public route. Adults keep their surname. `deceased` also blocks claiming.
-- **Generations above the branch split** (Bill and Lois, the brothers' parents) derive to
-  `branch: null` and render in the "Forebears" section without descending — their children
-  each head a branch below. The brothers keep `isBranchRoot` even though they now have
-  parents. Adding further generations upward needs no schema or layout change.
+  public route. Adults keep their surname. `deceased` also blocks claiming. Minor status is
+  **never inferred** — a proposed change touching a possible minor stops and asks.
+- **Generations above the branch split** (Bill and Lois) classify as `ancestor` and render
+  in "Forebears" without descending. Adding further generations upward needs no schema or
+  layout change.
 - A **divorced couple** produces two units, one anchored on each partner. `ancestorUnitIds`
   drops the redundant one, and the rule is asymmetric on purpose — only an earlier unit may
   absorb a later one, or both halves eliminate each other.
 
 ## The plate — the only `/family` view
-A circular descent chart: generations as growth rings, children nested inside their own
-parent's slice of arc. Layout lives in `src/lib/family-plate.ts`, drawing in
+A circular chart: generations as growth rings, relatives nested inside their own slice of
+arc. Layout lives in `src/lib/family-plate.ts`, drawing in
 `src/components/family/family-plate.tsx`. The scrolling roster it replaced was removed
 July 2026 — everyone stays reachable because the person sheet lists parents and children
 as links, and the trail re-centres.
+
+**The plate is a viewport, not a model.** It stores nothing: `buildDescentPlate` /
+`buildAscentPlate` take any person as centre and `layoutPlate` prunes what will not fit.
+The graph is the web; the plate is a magnifying glass slid across it. Anything that writes
+to `FamilyMember` / `FamilyRelationship` changes what it draws, with no plate work at all.
+
+**Two directions.** Descent walks children; ascent walks parents. Ascent **doubles** every
+ring where descent narrows, so the 440px shell holds two descent rings but only one ascent
+ring — the rest is reached by re-centring, which *is* the branch chooser. In ascent both
+parents are equally blood from the viewer's position, so **neither is ranked**: each gets
+an equal wedge and its own spoke, and `parentIds` order decides only clockwise placement.
+
+**In-law families are unreachable in descent.** From Bill and Lois looking down, Colleen's
+parents never appear at any depth. Ascent is the only way to see them, which is why it is
+not optional once the graph holds more than one family.
+
+**Two pruning rules bound the view at any graph size:** depth (N rings), and never
+auto-crossing into a lineage the centre does not belong to. The binding constraint is
+visual, not computational — `MIN_BRANCH_DEGREES = 52` fits roughly seven branches per ring.
 
 **Navigation is spatial, not a form control.** The `.plate-trail` above the plate is the
 blood line down to whoever is centred; tapping back up it widens the view. Tapping a name
@@ -108,21 +158,78 @@ Three rules carry the meaning:
   (Lorenza, Andrea) are stated at the rim instead. One rule, no special cases.
 - **Bloodline is position, not colour.** Surnames can't carry descent (Vanessa is blood but
   reads "Devlin"; Colleen married in but reads "Craig"), so the blood relative sits on the
-  inner radius with the only spoke to the centre. Branch tints mark territory at the top
-  level and are deliberately NOT shaded down the generations — the steps stop being
+  inner radius with the only spoke to the centre — and that is the *whole* signal.
+  `tintOf()` must not mute the non-blood half of a couple. That only looked deliberate
+  while every centre was a Craig; once any person can be centred it greys the viewer on his
+  own family's plate. **Muted means deceased.** Branch tints mark territory at the top level
+  and are deliberately NOT shaded down the generations — the steps stop being
   distinguishable by the third ring and it would mis-colour everyone married in.
 
-Depth is limited to 2 rings inside the 440px shell (3 when wider); re-centring reaches what
-gets trimmed, and a small ember dot marks a node whose children are hidden.
+**Two markers, two meanings — do not merge them.** `truncatedChildren` means more of the
+*same* lineage cut by the depth limit. `doorwayIds` means a *different* lineage this view
+never traverses — someone whose own parents are not shown. Tapping a doorway re-centres
+and flips direction rather than expanding in place, because a ring means a generation and
+drawing two unrelated trees at once destroys that. Doorways render zero against a
+single-family graph; they light up only once in-law parents exist.
 
-Roster changes go through `npx tsx scripts/seed-family-tree.ts` (dry run by default,
-`--apply` to commit). It is idempotent: it matches existing rows by `displayName` first,
-then by full name, and refuses to guess on ambiguity rather than merging two people —
-"William Craig" is both Sandy's legal name and Greg's son Will.
+Roster changes have two paths, both funnelling through the same matcher in
+`src/lib/family-member-matcher.ts`:
+
+- `npx tsx scripts/seed-family-tree.ts` (dry run by default, `--apply` to commit)
+- Bucky's `propose_family_change` tool → a reviewable proposal → human confirmation →
+  `confirmFamilyChangeProposal()` applies people, edges, and re-derived branches in one
+  transaction
+
+**Bucky proposes; he never writes the graph directly.** The reason is a real recording: one
+voice note said "Corey" and the next corrected it to "Korey". A direct-write tool would
+have created two people. The matcher refuses to guess on ambiguity rather than merging —
+"William Craig" is both Sandy's legal name and Greg's son Will — and groups ambiguities
+into connected components so a confidently matched neighbour can settle its neighbours.
+
+## Archive health and retrieval (August 2026)
+Eight of forty-eight documents were once unfindable — the Corporation Bylaws, the
+succession clause, the Vision document among them — and every health check reported
+success for a month, because failed intake wrote a *friendly placeholder* into `aiSummary`
+and a truthy string is indistinguishable from a real summary. **Never write a synthesized
+value on failure.** Leave the field null and record `analysisState`
+(`ok` | `unsupported_type` | `too_large` | `provider_error`) plus `analysisError`.
+
+**Two harnesses turn "is the archive findable" into a number.** Run them against production
+(`DATABASE_PUBLIC_URL` + `OPENAI_API_KEY`); they need a real index, so they are scripts, not
+unit tests.
+
+```bash
+npm run archive:verify:roundtrip   # a question derived from each document's own content
+npm run archive:verify:golden      # ~25 real questions with expected documents
+```
+
+- **Golden is the reliable signal** — fixed questions, deterministic. Currently 88.0%.
+- **Round-trip is stochastic** — its questions are model-generated fresh each run, so it
+  drifts several points between runs on identical code. **Never compare two bare runs.**
+  To compare settings use `scripts/tune-archive-retrieval-guards.ts`, which fixes the
+  questions across a grid.
+- **Negative controls count toward the rate.** A system that returns something for every
+  query is guessing, and confident guessing is what once sent someone looking for a
+  "Genealogy" category that did not exist. **A change that raises the pass rate while
+  breaking a control is a regression.**
+- The ceiling is 48/50 and 23/25, not 100% — two `.docx` files are genuinely blank (721KB
+  each, almost entirely embedded fonts, zero `<w:t>` elements). No pipeline can extract
+  text that was never typed.
+
+**Retrieval guards are properties of the corpus, not of the code.** `RELATIVE_SEMANTIC_FLOOR`
+and `UNCORROBORATED_TOP_SPREAD` in `embeddings.ts` must be **re-tuned after any archive-wide
+change** — re-analysis once flipped controls from 4/4 to 2/4 without a line of retrieval
+logic changing. The floor has measured as inert across 0.65–0.80; the spread is the lever.
+
+Re-analysis runs through `scripts/backfill-document-analysis.ts` (dry run by default).
+Two operational traps: `railway ssh` drops long sessions and `nohup` does not survive it,
+so run in chunks with `--offset=/--limit=`; and the journal makes a second pass a silent
+no-op, so a deliberate re-run needs a fresh `BACKFILL_JOURNAL_PATH` inside the upload root.
 
 ## Environment Variables (Railway)
-- `DATABASE_URL` — PostgreSQL connection (references Postgres service)
-- `GOOGLE_AI_API_KEY` — Gemini API key
+- `DATABASE_URL` — PostgreSQL connection (references Postgres service). `railway run` executes **locally**, so it reaches the database but NOT the uploads volume; use `DATABASE_PUBLIC_URL` from the Postgres service for scripts run off a laptop.
+- `OPENAI_API_KEY` — OpenAI key (500 RPM / 200k TPM as of August 2026)
+- `AUTH_SECRET` — HMAC key for door cookies and identity sessions. **Must stay set** — see Identity above for what breaks if it is not.
 - `GOOGLE_SERVICE_ACCOUNT_KEY` — Full JSON key for calendar service account
 - `GOOGLE_CALENDAR_ID` — Google Calendar ID (Breadloaf Hill Stays calendar on breadloafhillsite@gmail.com)
 - `FAMILY_PINS` — Per-family auth PINs (format: `Tom:1234,Jim:5678,Sandy:9012,Greg:3456`)
@@ -134,7 +241,7 @@ then by full name, and refuses to guess on ambiguity rather than merging two peo
 ```bash
 npm install
 # Set DATABASE_URL="file:./dev.db" in .env for SQLite locally
-# Set GOOGLE_AI_API_KEY in .env
+# Set OPENAI_API_KEY in .env
 npm run dev
 ```
 
@@ -172,7 +279,7 @@ src/app/
   expenses/             # S-Corp expense tracker with financial dashboard and family splits
   checklists/           # Opening/closing checklists for seasonal use
   bulletin/             # Family message board
-  assistant/            # AI property assistant (Gemini, function-calling for actions; paperclip attachments file docs into the archive via /api/assistant multipart + lib/file-document.ts)
+  assistant/            # AI property assistant (OpenAI, function-calling for actions; paperclip attachments file docs into the archive via /api/assistant multipart + lib/file-document.ts)
   documents/            # Document archive: AI categorization, Needs Review bucket, AI "librarian" reorganization (Tidy Up button)
   upload/               # Document intake: camera, single or BATCH file upload (drop many files, they auto-file), link by URL. No longer a hub tile (July 2026) — main intake is now Bucky chat attachments + Mail Room email; page still works at /upload
   maintenance/          # Maintenance log (timeline) + Property Systems "notebook" (Asset registry — Bucky creates/updates assets via save_asset as he learns about equipment from chat/docs/voice-memo walkthroughs; records and documents link to assets via assetId)
@@ -200,7 +307,7 @@ src/lib/
                         # branch spans, depth limiting). NO prisma import — it ships to the
                         # client bundle. Tests in family-plate.test.ts
   actor.ts              # ActorContext — who is acting, resolved server-side (see Identity below)
-  ai.ts                 # Gemini AI (categorization incl. PDFs + extracted text, assistant with function-calling, pantry scanning)
+  ai.ts                 # AI: two-stage intake triage + type-specific analysis, Bucky chat w/ 13 tools, pantry scanning
   document-categories.ts # Category resolution guardrails (fuzzy dedupe, AI-proposed categories, Needs Review)
   extract-text.ts       # Text extraction: docx (mammoth), xlsx (exceljs), csv/txt
   librarian.ts          # AI filing-system review: generates + applies merge/rename/refile plans (user-approved)
