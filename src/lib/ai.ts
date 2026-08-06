@@ -33,6 +33,10 @@ import {
   formatHistoricalPhotoRoster,
   type HistoricalPhotoRosterEntry,
 } from "@/lib/historical-photo";
+import {
+  NarratedMemoryItemsSchema,
+  type NarratedMemoryItem,
+} from "@/lib/bulk-narration";
 
 export { MODELS } from "@/lib/ai-models";
 
@@ -200,19 +204,11 @@ export async function processMediaFile(
   existingCategories: CategoryOption[],
   fileName?: string
 ): Promise<CategorizationResult> {
-  const mediaFile = await toFile(
+  const transcript = await transcribeMediaBuffer(
     Buffer.from(base64Data, "base64"),
-    fileName || "media",
-    { type: mimeType }
+    mimeType,
+    fileName || "media"
   );
-  const transcription = await withRetry(() =>
-    getOpenAIClient().audio.transcriptions.create({
-      model: MODELS.transcription,
-      file: mediaFile,
-    })
-  );
-  const transcript = transcription.text.trim();
-  if (!transcript) throw new Error("OpenAI returned an empty media transcript");
 
   let intakeType: IntakeDocumentType = "voice_memo";
   try {
@@ -237,6 +233,49 @@ export async function processMediaFile(
     // extraction so the recording remains fully searchable.
     extractedText: transcript,
   };
+}
+
+export async function transcribeMediaBuffer(
+  buffer: Buffer,
+  mimeType: string,
+  fileName = "recording"
+): Promise<string> {
+  const mediaFile = await toFile(buffer, fileName, { type: mimeType });
+  const transcription = await withRetry(() =>
+    getOpenAIClient().audio.transcriptions.create({
+      model: MODELS.transcription,
+      file: mediaFile,
+    })
+  );
+  const transcript = transcription.text.trim();
+  if (!transcript) throw new Error("OpenAI returned an empty media transcript");
+  return transcript;
+}
+
+export async function segmentBulkNarration(
+  transcript: string
+): Promise<NarratedMemoryItem[]> {
+  const response = await withRetry(() => getOpenAIClient().responses.parse({
+    model: MODELS.flash,
+    input: `You catalogue narrated physical items for the Breadloaf Hill family property archive.
+
+Segment this transcript into one independently retrievable memory per distinct item being described. An item may be a box and its contents, a loose object, a document group, or another catalogued unit.
+
+Rules:
+- Preserve concrete names, dates, labels, condition, contents, provenance, identifiers, and relationships. Do not replace detail with a general summary.
+- Do not merge separate items merely because they were narrated next to each other.
+- Carry a stated shelf, room, building, or other physical location forward only while the speaker clearly means it still applies. Put that value in location, not only in content.
+- Make topic a short label, content a self-contained factual description, and subject the person/object/group the item is about when one is clear.
+- Use semantic for durable facts, episodic for an event or dated recollection, and procedural only for instructions.
+- Use property for things about Breadloaf Hill, family for family-history material, and entity for a specific outside organization or entity.
+- Return null for subject or location when the narration does not support one. Never invent missing details.
+- If the speaker corrects themself, use the corrected version.
+
+TRANSCRIPT:
+${transcript}`,
+    text: { format: zodTextFormat(NarratedMemoryItemsSchema, "bulk_narration_items") },
+  }));
+  return requireParsed(response.output_parsed).items;
 }
 
 export async function categorizeDocument(

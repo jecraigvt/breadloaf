@@ -418,6 +418,26 @@ export async function indexDocument(documentId: string, options: IndexOptions = 
   });
 }
 
+export function memoryIndexContent(memory: {
+  topic: string;
+  type: string;
+  subject: string | null;
+  location: string | null;
+  scope: string;
+  content: string;
+  source: string | null;
+}): string {
+  return [
+    `Memory: ${memory.topic}`,
+    `Type: ${memory.type}`,
+    memory.subject ? `Subject: ${memory.subject}` : "",
+    memory.location ? `Location: ${memory.location}` : "",
+    `Scope: ${memory.scope}`,
+    memory.content,
+    memory.source ? `Source: ${memory.source}` : "",
+  ].filter(Boolean).join("\n");
+}
+
 export async function indexMemory(memoryId: string, options: IndexOptions = {}) {
   return runIndexer(`memory:${memoryId}`, options, async () => {
     const memory = await prisma.jarvisMemory.findUnique({ where: { id: memoryId } });
@@ -435,14 +455,7 @@ export async function indexMemory(memoryId: string, options: IndexOptions = {}) 
     await embedAndStore(
       "memory",
       memory.id,
-      [
-        `Memory: ${memory.topic}`,
-        `Type: ${memory.type}`,
-        memory.subject ? `Subject: ${memory.subject}` : "",
-        `Scope: ${memory.scope}`,
-        memory.content,
-        memory.source ? `Source: ${memory.source}` : "",
-      ].filter(Boolean).join("\n"),
+      memoryIndexContent(memory),
       options
     );
   });
