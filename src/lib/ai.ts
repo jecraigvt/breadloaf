@@ -37,6 +37,10 @@ import {
   NarratedMemoryItemsSchema,
   type NarratedMemoryItem,
 } from "@/lib/bulk-narration";
+import {
+  VOICE_MEMO_DISPOSITIONS,
+  type VoiceMemoDisposition,
+} from "@/lib/voice-note";
 
 export { MODELS } from "@/lib/ai-models";
 
@@ -92,12 +96,14 @@ const HistoricalPhotoCategorizationSchema = CategorizationResultSchema.extend({
 
 const IntakeTriageSchema = z.object({
   documentType: z.enum(INTAKE_DOCUMENT_TYPES),
+  voiceMemoDisposition: z.enum(VOICE_MEMO_DISPOSITIONS).nullable(),
   confidence: z.number().min(0).max(1),
   reason: z.string(),
 });
 
 export interface IntakeTriage {
   documentType: IntakeDocumentType;
+  voiceMemoDisposition: VoiceMemoDisposition | null;
   confidence: number;
   reason: string;
 }
@@ -161,7 +167,14 @@ const INTAKE_TRIAGE_PROMPT = `Classify this upload for the Breadloaf Hill family
 - manual_guide: operating instructions, reference manuals, procedures, directories, or how-to guides
 - other: anything that does not fit the six specific types
 
-Choose from the closed set. Classify by content, not merely by filename.`;
+Choose from the closed set. Classify by content, not merely by filename.
+
+Also return voiceMemoDisposition:
+- For voice_memo only, use quick_note for a short, single-purpose fact, reminder, observation, request, or question that belongs in chat or memory rather than the permanent document archive.
+- For voice_memo only, use archive_document for a meeting, interview, oral history, narrated property walkthrough, detailed dictation, or multi-topic recording whose recording/transcript is itself a lasting primary-source document.
+- For every non-voice_memo type, return null.
+
+Length is evidence, not the rule: classify by whether the recording itself is an archival record. "Gate code is 4821" and "we're out of propane" are quick_note. A five-minute furnace walkthrough or board meeting is archive_document.`;
 
 export async function triageInlineDocument(
   fileBase64: string,
@@ -1601,8 +1614,11 @@ export async function chatWithAssistant(
 ): Promise<string> {
   const lastUserMessage = messages.filter((m) => m.role === "user").pop();
   if (!lastUserMessage) return "What would you like help with?";
-  const retrievalQueries = await distillRetrievalQueries(lastUserMessage.content);
-  const context = await buildBuckyContext(lastUserMessage.content, retrievalQueries);
+  const requestContent = attachmentContext
+    ? lastUserMessage.content + attachmentContext
+    : lastUserMessage.content;
+  const retrievalQueries = await distillRetrievalQueries(requestContent);
+  const context = await buildBuckyContext(requestContent, retrievalQueries);
 
   const selectedModel = MODELS[selectAssistantModelTier(lastUserMessage.content)];
 
@@ -1628,7 +1644,7 @@ MEMORY STORAGE RULES:
 - Use native operational records for stays, groceries, pantry, dinners, maintenance, and expenses; do not duplicate those records into memory.
 - Use save_asset for facts, quirks, warnings, and procedures tied to a physical property system.
 - Use save_memory for durable preferences, decisions, relationships, and reusable procedures that do not belong to one physical system.
-- A file remains an archive document. Save a separate memory only for a durable conclusion or decision worth recalling without reopening the file, and preserve its source.
+- A permanent archive file remains a document. A quick voice note may already be saved as a memory by intake routing; never duplicate it when the system note says it is saved.
 - Treat retrieved summaries as navigation. For consequential answers, name the underlying document, record, or source supplied in the context.
 
 PROPERTY OWNERSHIP:
@@ -1657,7 +1673,8 @@ WHAT YOU CAN DO:
 
 3. FILE DOCUMENTS sent in chat:
    - Family members can attach files (photos of receipts, PDFs, Word/Excel docs, audio, video) directly in this chat using the paperclip button
-   - Attachments are automatically categorized and filed into the document archive BEFORE you see them — you'll get a system note describing what was filed and where
+   - Non-audio attachments and substantive recordings are categorized and filed into the document archive — you'll get a system note describing what was filed and where
+   - Quick recordings are routed by intake triage to an attributed memory instead, keeping five-second notes out of the permanent archive
    - When that happens: confirm where each document landed and summarize it. Save a memory only for a durable decision, preference, or reusable procedure that should be recalled independently; expenses and maintenance belong in their native records
    - If something lands in the Needs Review bucket, tell them they can fix the category on the Documents page
    - If someone ASKS how to add a document, tell them: attach it right here in chat, email it to breadloafhillsite@gmail.com, or use the upload page at /upload

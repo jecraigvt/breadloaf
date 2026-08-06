@@ -1,19 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Loader2, Mic, Plus, RotateCcw, Square, Trash2 } from "lucide-react";
 import type { EditableNarratedMemoryItem } from "@/lib/bulk-narration";
-
-const RECORDING_MIME_TYPES = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"];
-const RECORDING_WARN_SECONDS = 25 * 60;
+import {
+  formatRecordingClock,
+  RECORDING_WARN_SECONDS,
+  useVoiceRecorder,
+} from "@/components/voice/use-voice-recorder";
 
 type Stage = "ready" | "recording" | "processing" | "review" | "saving" | "done";
-
-function formatClock(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60);
-  return `${minutes}:${String(totalSeconds % 60).padStart(2, "0")}`;
-}
 
 function freshCaptureId(): string {
   return typeof crypto.randomUUID === "function"
@@ -29,28 +26,12 @@ function freshItemId(): string {
 
 export default function NarratePage() {
   const [stage, setStage] = useState<Stage>("ready");
-  const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [recordingFile, setRecordingFile] = useState<File | null>(null);
   const [captureId, setCaptureId] = useState("");
   const [transcript, setTranscript] = useState("");
   const [items, setItems] = useState<EditableNarratedMemoryItem[]>([]);
   const [savedCount, setSavedCount] = useState(0);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const discardRef = useRef(false);
-  const startingRef = useRef(false);
-
-  const releaseRecording = () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = null;
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    recorderRef.current = null;
-    setSeconds(0);
-  };
 
   const processRecording = async (file: File) => {
     setRecordingFile(file);
@@ -79,72 +60,21 @@ export default function NarratePage() {
     }
   };
 
+  const recorder = useVoiceRecorder({
+    fileName: (extension) =>
+      `Attic catalogue ${new Date().toISOString().slice(0, 10)}.${extension}`,
+    onComplete: (file) => void processRecording(file),
+  });
+
   const startRecording = async () => {
-    if (startingRef.current || recorderRef.current) return;
-    startingRef.current = true;
     setError(null);
-    try {
-      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-        throw new Error("This browser does not support audio recording.");
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      const mimeType = RECORDING_MIME_TYPES.find((type) => MediaRecorder.isTypeSupported(type));
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      recorderRef.current = recorder;
-      chunksRef.current = [];
-      discardRef.current = false;
-
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
-      };
-      recorder.onstop = () => {
-        const discarded = discardRef.current;
-        const chunks = chunksRef.current;
-        const type = recorder.mimeType || "audio/webm";
-        releaseRecording();
-        if (discarded || chunks.length === 0) {
-          setStage("ready");
-          return;
-        }
-        const extension = type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm";
-        const file = new File(
-          [new Blob(chunks, { type })],
-          `Attic catalogue ${new Date().toISOString().slice(0, 10)}.${extension}`,
-          { type }
-        );
-        void processRecording(file);
-      };
-
-      recorder.start(1000);
-      startingRef.current = false;
-      setStage("recording");
-      setSeconds(0);
-      timerRef.current = setInterval(() => setSeconds((value) => value + 1), 1000);
-    } catch (recordingError) {
-      startingRef.current = false;
-      releaseRecording();
-      setStage("ready");
-      setError(recordingError instanceof Error
-        ? recordingError.message
-        : "Could not access the microphone. Check this site's microphone permission.");
-    }
+    if (await recorder.startRecording()) setStage("recording");
   };
 
   const stopRecording = (discard: boolean) => {
-    discardRef.current = discard;
-    const recorder = recorderRef.current;
-    if (recorder && recorder.state !== "inactive") recorder.stop();
-    else {
-      releaseRecording();
-      setStage("ready");
-    }
+    recorder.stopRecording(discard);
+    if (discard) setStage("ready");
   };
-
-  useEffect(() => () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-  }, []);
 
   const updateItem = (index: number, changes: Partial<EditableNarratedMemoryItem>) => {
     setItems((current) => current.map((item, itemIndex) =>
@@ -190,6 +120,7 @@ export default function NarratePage() {
   const reset = () => {
     setStage("ready");
     setError(null);
+    recorder.clearError();
     setRecordingFile(null);
     setCaptureId("");
     setTranscript("");
@@ -210,9 +141,9 @@ export default function NarratePage() {
         <div className="lede">Tell the story of a shelf or box. <em>Check every item before it becomes family memory.</em></div>
       </div>
 
-      {error && (
+      {(error || recorder.error) && (
         <div className="mx-5 mb-4 border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
-          {error}
+          {error || recorder.error}
         </div>
       )}
 
@@ -241,9 +172,9 @@ export default function NarratePage() {
               <>
                 <span className="mx-auto mb-4 block h-3 w-3 animate-pulse rounded-full bg-red-600" />
                 <div className="font-mono text-sm uppercase tracking-[0.18em] text-red-700">
-                  Recording {formatClock(seconds)}
+                  Recording {formatRecordingClock(recorder.seconds)}
                 </div>
-                {seconds >= RECORDING_WARN_SECONDS && (
+                {recorder.seconds >= RECORDING_WARN_SECONDS && (
                   <p className="mt-3 text-sm text-amber-800">Wrap up soon so the recording stays within the transcription limit.</p>
                 )}
                 <div className="mt-6 grid grid-cols-2 gap-2">

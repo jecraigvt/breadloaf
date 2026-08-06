@@ -3,6 +3,7 @@ import { syncFromGoogleCalendar } from "@/lib/google-calendar";
 import { pollInboxInBackground } from "@/lib/email-processor";
 import Link from "next/link";
 import { Masthead } from "@/components/layout/masthead";
+import { HubLeadTile } from "@/components/home/hub-lead-tile";
 import { formatDate } from "@/lib/utils";
 import type { ReactNode } from "react";
 
@@ -53,9 +54,8 @@ type TextTile = {
 
 // Bucky leads the index — he is the way most things get done now (asking, filing,
 // logging), so he takes section I and the top-left tile.
-const HUB_LEAD: TextTile = {
+const HUB_LEAD = {
   lbl: "AI · I",
-  big: <><em>Bucky</em><br/>Dragon</>,
   sub: "Ask · act · file documents",
   href: "/assistant",
 };
@@ -205,24 +205,7 @@ export default async function HomePage() {
       </div>
 
       <div className="tiles tiles-hub">
-        <Link href={HUB_LEAD.href} className="tile-text tile-lead">
-          <div className="lbl">Sec. {HUB_LEAD.lbl}</div>
-          <div>
-            <div className="big">{HUB_LEAD.big}</div>
-            <div
-              style={{
-                marginTop: 6,
-                fontFamily: "var(--mono)",
-                fontSize: 10,
-                letterSpacing: "0.14em",
-                textTransform: "uppercase",
-                color: "var(--muted)",
-              }}
-            >
-              {HUB_LEAD.sub}
-            </div>
-          </div>
-        </Link>
+        <HubLeadTile {...HUB_LEAD} />
         {HUB_PHOTO.map((t) => (
           <TileLink key={t.no} tile={t} />
         ))}
