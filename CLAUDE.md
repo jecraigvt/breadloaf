@@ -53,9 +53,15 @@ Two independent layers. Do not merge them.
 
 **Claiming happens at the door, not by discovery.** A device with a valid door cookie and
 no identity is asked once, with a dropdown pre-filtered to the branch its PIN belongs to
-(4–8 names, with "someone else" expanding to all). Tapping a face on the plate still works
-and is now the *change who I am* path rather than the acquisition path — discovery-based
-claiming had reached one person out of twenty-five.
+(4–8 names, with "someone else" expanding to all). Discovery-based claiming had reached
+one person out of twenty-five.
+
+**The plate does no claiming at all** (removed August 2026). It reports who the device
+belongs to, offers "Find me", and says "this is you" on your own sheet — but it never
+invites a claim, because meeting the same question twice in two different shapes muddies
+which one is the real path. Correcting a wrong identity is the "not you?" affordance in
+the chrome (`identity-gate.tsx`), which clears the claim and re-triggers the door prompt.
+`/api/family/claim` still exists; the identity gate is what calls it.
 
 The prompt triggers on **state** (door cookie present, identity absent, skip not recorded),
 never on the PIN-submit event: door cookies last 30 days, so an event trigger silently
