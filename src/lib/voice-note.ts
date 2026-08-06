@@ -22,6 +22,7 @@ export function quickVoiceNoteTopic(transcript: string): string {
 export interface VoiceMemoryRecord {
   id: string;
   topic: string;
+  filePath: string | null;
 }
 
 export interface VoiceMemoryData {
@@ -31,6 +32,7 @@ export interface VoiceMemoryData {
   source: string;
   sourceType: "voice_note";
   sourceId: string;
+  filePath: string;
   scope: "property";
   confidence: number;
   importance: number;
@@ -40,17 +42,26 @@ export interface VoiceMemoryData {
 interface VoiceNoteDependencies {
   findExisting: (sourceId: string) => Promise<VoiceMemoryRecord | null>;
   createMemory: (data: VoiceMemoryData) => Promise<VoiceMemoryRecord>;
+  attachFile: (id: string, filePath: string) => Promise<VoiceMemoryRecord>;
   indexMemory: (id: string) => Promise<unknown>;
 }
 
 export async function captureQuickVoiceNote(
   dependencies: VoiceNoteDependencies,
-  input: { transcript: string; checksum: string; actorName: string | null }
+  input: {
+    transcript: string;
+    checksum: string;
+    actorName: string | null;
+    filePath: string;
+  }
 ): Promise<VoiceMemoryRecord & { created: boolean }> {
   const existing = await dependencies.findExisting(input.checksum);
   if (existing) {
-    await dependencies.indexMemory(existing.id);
-    return { ...existing, created: false };
+    const linked = existing.filePath
+      ? existing
+      : await dependencies.attachFile(existing.id, input.filePath);
+    await dependencies.indexMemory(linked.id);
+    return { ...linked, created: false };
   }
 
   const memory = await dependencies.createMemory({
@@ -62,6 +73,7 @@ export async function captureQuickVoiceNote(
       : "Voice note from an unidentified family member",
     sourceType: "voice_note",
     sourceId: input.checksum,
+    filePath: input.filePath,
     scope: "property",
     confidence: 1,
     importance: 0.6,

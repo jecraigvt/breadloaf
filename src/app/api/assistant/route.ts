@@ -5,13 +5,14 @@ import {
   triageTextDocument,
 } from "@/lib/ai";
 import { getCurrentActor } from "@/lib/actor";
-import { sha256 } from "@/lib/archive-integrity";
 import { recordBuckyLedgerEntry } from "@/lib/bucky-ledger";
 import { indexMemory } from "@/lib/embeddings";
 import { fileDocumentFromBuffer, type FiledDocument } from "@/lib/file-document";
+import { storeFileBuffer } from "@/lib/file-storage";
 import { syncFromGoogleCalendar } from "@/lib/google-calendar";
 import { prisma } from "@/lib/prisma";
-import { captureQuickVoiceNote, isQuickVoiceNote } from "@/lib/voice-note";
+import { captureQuickVoiceNote } from "@/lib/voice-note";
+import { processVoiceUpload } from "@/lib/voice-upload";
 
 interface ChatMessage {
   role: "user" | "model";
@@ -78,30 +79,62 @@ export async function POST(request: NextRequest) {
           const buffer = Buffer.from(await file.arrayBuffer());
 
           if (isAudio) {
-            // One Task 9 triage call decides routing. A quick note never enters
-            // fileDocumentFromBuffer and therefore cannot create a Document.
-            const transcript = await transcribeMediaBuffer(
-              buffer,
-              file.type || "audio/webm",
-              file.name
-            );
-            const triage = await triageTextDocument(transcript, file.name);
-            if (isQuickVoiceNote(triage)) {
-              const memory = await captureQuickVoiceNote({
+            // Retention is unconditional and happens before either AI call. Task 9
+            // triage still decides memory vs Document, never whether bytes survive.
+            const processed = await processVoiceUpload({
+              findRetainedFile: async (checksum) => {
+                try {
+                  const [memory, document] = await Promise.all([
+                    prisma.jarvisMemory.findFirst({
+                      where: {
+                        sourceType: "voice_note",
+                        sourceId: checksum,
+                        filePath: { not: null },
+                      },
+                      select: { filePath: true },
+                    }),
+                    prisma.document.findFirst({
+                      where: { checksum, deletedAt: null },
+                      select: { filePath: true },
+                    }),
+                  ]);
+                  return memory?.filePath ?? document?.filePath ?? null;
+                } catch (error) {
+                  // A lookup outage must not put irreplaceable bytes behind the DB.
+                  // Save a checksum-addressed copy and let later persistence retry.
+                  console.error("Audio dedupe lookup failed; retaining a new copy:", error);
+                  return null;
+                }
+              },
+              storeFile: storeFileBuffer,
+              transcribe: transcribeMediaBuffer,
+              triage: triageTextDocument,
+              captureQuickNote: (input) => captureQuickVoiceNote({
                 findExisting: (sourceId) => prisma.jarvisMemory.findFirst({
                   where: { sourceType: "voice_note", sourceId, status: "active" },
-                  select: { id: true, topic: true },
+                  select: { id: true, topic: true, filePath: true },
                 }),
                 createMemory: (data) => prisma.jarvisMemory.create({
                   data,
-                  select: { id: true, topic: true },
+                  select: { id: true, topic: true, filePath: true },
+                }),
+                attachFile: (id, filePath) => prisma.jarvisMemory.update({
+                  where: { id },
+                  data: { filePath },
+                  select: { id: true, topic: true, filePath: true },
                 }),
                 indexMemory: (id) => indexMemory(id, { throwOnError: true }),
-              }, {
-                transcript,
-                checksum: sha256(buffer),
-                actorName,
-              });
+              }, input),
+              fileDocument: fileDocumentFromBuffer,
+            }, {
+              buffer,
+              fileName: file.name,
+              contentType: file.type || "audio/webm",
+              actorName,
+            });
+
+            if (processed.route === "quick_note") {
+              const { memory, transcript, storedFile } = processed;
 
               voiceNotes.push({ id: memory.id, topic: memory.topic, transcript, actorName });
               if (memory.created) {
@@ -113,9 +146,14 @@ export async function POST(request: NextRequest) {
                     entityType: "memory",
                     entityId: memory.id,
                     sourceType: "voice_note",
-                    sourceId: sha256(buffer),
+                    sourceId: storedFile.checksum,
                     sourceLabel: file.name,
-                    afterState: { memoryId: memory.id, topic: memory.topic, actorName },
+                    afterState: {
+                      memoryId: memory.id,
+                      topic: memory.topic,
+                      actorName,
+                      filePath: storedFile.filePath,
+                    },
                   });
                 } catch (auditError) {
                   console.error("Voice-note audit failed after the memory was saved:", auditError);
@@ -123,6 +161,9 @@ export async function POST(request: NextRequest) {
               }
               continue;
             }
+
+            filed.push(processed.document);
+            continue;
           }
 
           filed.push(await fileDocumentFromBuffer({

@@ -1,9 +1,6 @@
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
 import { prisma } from "@/lib/prisma";
 import { indexDocument, indexMaintenance } from "@/lib/embeddings";
 import { resolveDocumentCategory } from "@/lib/document-categories";
-import { generateId } from "@/lib/utils";
 import { sha256 } from "@/lib/archive-integrity";
 import { resolveDocumentTitle } from "@/lib/document-title";
 import {
@@ -12,14 +9,17 @@ import {
 } from "@/lib/document-analysis";
 import { resolveSupportedFileType } from "@/lib/document-file-types";
 import { createHistoricalPhotoQuestion } from "@/lib/historical-photo";
+import {
+  STORED_FILE_SIZE_LIMIT,
+  storeFileBuffer,
+  type StoredFile,
+} from "@/lib/file-storage";
 
 // Shared server-side document filing: save to /uploads, categorize with AI,
 // apply category guardrails, create the Document row, cross-link maintenance
 // receipts, and embed for semantic search. Used by the Bucky chat attachment
 // flow; same pipeline shape as the Mail Room's fileAttachment and the /upload
 // page's batch mode.
-
-const SAVE_SIZE_LIMIT = 100 * 1024 * 1024; // matches lib/upload.ts MAX_SIZE
 
 export interface FiledDocument {
   id: string;
@@ -36,12 +36,18 @@ export interface FiledDocument {
   alreadyExisted: boolean;
 }
 
-export async function fileDocumentFromBuffer(opts: {
+export interface FileDocumentBufferOptions {
   buffer: Buffer;
   fileName: string;
   contentType: string;
   uploadedBy?: string;
-}): Promise<FiledDocument> {
+  /** Audio is retained before transcription/triage and handed through here. */
+  storedFile?: StoredFile;
+}
+
+export async function fileDocumentFromBuffer(
+  opts: FileDocumentBufferOptions
+): Promise<FiledDocument> {
   const { buffer, fileName, uploadedBy } = opts;
   const type = resolveSupportedFileType(opts.contentType, fileName);
   if (!type) {
@@ -50,7 +56,7 @@ export async function fileDocumentFromBuffer(opts: {
     );
   }
 
-  if (buffer.length > SAVE_SIZE_LIMIT) {
+  if (buffer.length > STORED_FILE_SIZE_LIMIT) {
     throw new Error(`File too large (${Math.round(buffer.length / 1024 / 1024)}MB, max 100MB)`);
   }
 
@@ -78,12 +84,16 @@ export async function fileDocumentFromBuffer(opts: {
     };
   }
 
-  // Save to the uploads volume first — never lose a family document
-  const uploadDir = path.join(process.cwd(), "public", "uploads");
-  await mkdir(uploadDir, { recursive: true });
-  const ext = fileName.split(".").pop() || "bin";
-  const uniqueName = `${generateId()}.${ext}`;
-  await writeFile(path.join(uploadDir, uniqueName), buffer);
+  // Save to the uploads volume first — never lose a family file. Audio may have
+  // been retained even earlier, before its transcription and routing calls.
+  const storedFile = opts.storedFile ?? await storeFileBuffer({
+    buffer,
+    fileName,
+    contentType: type,
+  });
+  if (storedFile.checksum !== checksum || storedFile.fileSize !== buffer.length) {
+    throw new Error("Stored file does not match the document buffer");
+  }
 
   // Categorize — oversized or unreadable formats skip AI and land in Needs Review
   const categories = await prisma.category.findMany({
@@ -132,7 +142,7 @@ export async function fileDocumentFromBuffer(opts: {
       }),
       description: result?.summary || null,
       fileName,
-      filePath: `/uploads/${uniqueName}`,
+      filePath: storedFile.filePath,
       fileType: type,
       fileSize: buffer.length,
       categoryId: resolution.categoryId,
