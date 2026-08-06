@@ -106,6 +106,16 @@ export default function DocumentDetailPage() {
           Back to Archive
         </Link>
 
+        {/* A story belongs to whoever told it. A fact is true regardless of who
+            recorded it, so for everything else the uploader stays down in the
+            metadata rows — but on a recording the teller is the point, and
+            burying the name treats a voice like provenance. */}
+        {doc.fileType.startsWith("audio/") && doc.uploadedBy && (
+          <p className="text-sm text-stone-600">
+            Recorded by <span className="font-medium text-stone-900">{doc.uploadedBy}</span>
+          </p>
+        )}
+
         {/* Document Preview */}
         {doc.fileType === "link" ? (
           <a

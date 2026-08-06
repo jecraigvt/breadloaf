@@ -433,7 +433,12 @@ export async function categorizeText(
 
 For board meetings: capture all votes, motions, decisions, assignments, deadlines, and financial discussions.
 For property walkthroughs: note condition of structures, items needing attention, any damage or improvements.
-Be extremely thorough — extract every useful detail.`
+Be extremely thorough — extract every useful detail.
+
+Category note for recordings: a remembered story, family history, interview, or narrated
+walkthrough belongs in "Family Recordings" — these are kept together as a collection
+because the recording itself is the record. A recording whose subject is squarely another
+category (board minutes, a receipt read aloud) still goes to that category instead.`
     : "";
   const deepPassGuidance = intakeDeepPassGuidance(intakeType);
 

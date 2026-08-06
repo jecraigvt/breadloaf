@@ -2,6 +2,7 @@ import "dotenv/config";
 import { prisma } from "../src/lib/prisma";
 import { hybridSearch } from "../src/lib/embeddings";
 import { verificationPassRate } from "../src/lib/archive-verification";
+import { recordVerificationRun } from "../src/lib/archive-verification-record";
 import {
   ARCHIVE_GOLDEN_QUESTIONS,
   type GoldenQuestion,
@@ -134,6 +135,22 @@ async function main() {
   const failures = results.filter((result) => !result.passed);
 
   console.log(`${verificationPassRate(results).toFixed(1)}%`);
+  // A control is a fixture with no expected documents; results come back in
+  // fixture order, so the index is what pairs them.
+  const controls = results.filter(
+    (_result, index) => ARCHIVE_GOLDEN_QUESTIONS[index].expectedDocuments.length === 0
+  );
+  await recordVerificationRun({
+    suite: "golden",
+    passed: results.filter((result) => result.passed).length,
+    total: results.length,
+    rate: verificationPassRate(results),
+    controlsPassed: controls.filter((result) => result.passed).length,
+    controlsTotal: controls.length,
+    failures: failures.map((failure) => `${failure.label}: ${failure.reason}`),
+  }).catch((error) => {
+    console.error(`(could not record this run: ${String(error)})`);
+  });
   for (const failure of failures) {
     console.log(`FAIL ${failure.label}: ${failure.reason}`);
   }

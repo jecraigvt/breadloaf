@@ -20,6 +20,9 @@ const categories = [
   { name: "K-1 Forms", slug: "k1-forms", icon: "FileSpreadsheet", color: "violet", description: "Schedule K-1 shareholder tax forms" },
   { name: "Bank Statements", slug: "bank-statements", icon: "Landmark", color: "cyan", description: "Bank and account statements for the S-Corp" },
   { name: "Capital Accounts", slug: "capital-accounts", icon: "PiggyBank", color: "amber", description: "Shareholder capital account statements and equity records" },
+  // Recordings are a collection, not scattered filing. A story's value is the
+  // voice, so these stay browsable together rather than mixed among receipts.
+  { name: "Family Recordings", slug: "family-recordings", icon: "Mic", color: "rose", description: "Recorded family stories, oral history, interviews, and narrated walkthroughs — the recording itself is the record" },
   { name: "Other", slug: "other", icon: "Folder", color: "gray", description: "Documents that don't fit any other category" },
 ];
 

@@ -3,6 +3,7 @@ import { prisma } from "../src/lib/prisma";
 import { hybridSearch } from "../src/lib/embeddings";
 import { meaningfulAnalysisContent } from "../src/lib/document-analysis";
 import { deriveArchiveQuestion } from "../src/lib/archive-roundtrip-question";
+import { recordVerificationRun } from "../src/lib/archive-verification-record";
 import {
   ROUND_TRIP_NEGATIVE_CONTROLS,
   verificationPassRate,
@@ -167,6 +168,19 @@ async function main() {
   const failures = results.filter((result) => !result.passed);
 
   console.log(`${verificationPassRate(results).toFixed(1)}%`);
+  await recordVerificationRun({
+    suite: "round-trip",
+    passed: results.filter((result) => result.passed).length,
+    total: results.length,
+    rate: verificationPassRate(results),
+    controlsPassed: negativeResults.filter((result) => result.passed).length,
+    controlsTotal: negativeResults.length,
+    failures: failures.map((failure) => `${failure.label}: ${failure.reason}`),
+  }).catch((error) => {
+    // Recording is bookkeeping; a write failure must not mask the measurement,
+    // which is the only thing anyone ran this for.
+    console.error(`(could not record this run: ${String(error)})`);
+  });
   for (const failure of failures) {
     console.log(
       `FAIL ${failure.label}: ${failure.reason}${failure.question ? `; question: ${failure.question}` : ""}`

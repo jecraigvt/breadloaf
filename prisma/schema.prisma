@@ -470,3 +470,21 @@ model PantryItem {
 
   @@index([category])
 }
+
+// A recorded harness run. Written by scripts/verify-archive-*.ts so the health
+// panel reports what was actually measured rather than a constant someone has
+// to remember to edit — a literal that reads as a measurement is the same
+// species as the placeholder summaries that hid eight unfindable documents.
+model ArchiveVerification {
+  id             String   @id @default(cuid())
+  suite          String // round-trip | golden
+  passed         Int
+  total          Int
+  rate           Float
+  controlsPassed Int
+  controlsTotal  Int
+  failures       Json?
+  measuredAt     DateTime @default(now())
+
+  @@index([suite, measuredAt])
+}
