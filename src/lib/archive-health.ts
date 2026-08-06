@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { archiveVerificationStalenessMessage } from "@/lib/archive-health-shared";
+export { archiveVerificationStalenessMessage } from "@/lib/archive-health-shared";
 
 export const LATEST_ARCHIVE_VERIFICATION = {
   measuredAt: "2026-08-05",
@@ -15,16 +17,25 @@ export interface ArchiveHealth {
   totalDocuments: number;
   readyDocuments: number;
   issueDocuments: number;
+  documentsAddedAfterMeasurement: number;
   analysisStates: Record<string, number>;
   verification: typeof LATEST_ARCHIVE_VERIFICATION;
 }
 
 export async function getArchiveHealth(): Promise<ArchiveHealth> {
-  const stateGroups = await prisma.document.groupBy({
-    by: ["analysisState"],
-    where: { deletedAt: null },
-    _count: { _all: true },
-  });
+  const measuredThrough = new Date(
+    `${LATEST_ARCHIVE_VERIFICATION.measuredAt}T23:59:59.999Z`
+  );
+  const [stateGroups, documentsAddedAfterMeasurement] = await Promise.all([
+    prisma.document.groupBy({
+      by: ["analysisState"],
+      where: { deletedAt: null },
+      _count: { _all: true },
+    }),
+    prisma.document.count({
+      where: { deletedAt: null, createdAt: { gt: measuredThrough } },
+    }),
+  ]);
 
   const analysisStates = Object.fromEntries(
     stateGroups.map((group) => [group.analysisState, group._count._all])
@@ -39,6 +50,7 @@ export async function getArchiveHealth(): Promise<ArchiveHealth> {
     totalDocuments,
     readyDocuments,
     issueDocuments: totalDocuments - readyDocuments,
+    documentsAddedAfterMeasurement,
     analysisStates,
     verification: LATEST_ARCHIVE_VERIFICATION,
   };
@@ -50,6 +62,9 @@ export function formatArchiveHealthForBucky(health: ArchiveHealth): string {
     .map(([state, count]) => `${state} ${count}`)
     .join(" / ");
   const verification = health.verification;
+  const staleness = archiveVerificationStalenessMessage(
+    health.documentsAddedAfterMeasurement
+  );
 
   return [
     `ARCHIVE HEALTH (latest measured ${verification.measuredAt}):`,
@@ -59,5 +74,6 @@ export function formatArchiveHealthForBucky(health: ArchiveHealth): string {
     `- Golden questions: ${verification.golden.rate.toFixed(1)}% (${verification.golden.passed}/${verification.golden.total})`,
     `- Negative controls: ${verification.negativeControls.passed}/${verification.negativeControls.total}`,
     `- Known ceiling with the two blank source files: round-trip ${verification.knownCeiling.roundTrip.passed}/${verification.knownCeiling.roundTrip.total}; golden ${verification.knownCeiling.golden.passed}/${verification.knownCeiling.golden.total}`,
+    ...(staleness ? [`- STALE VERIFICATION: ${staleness}`] : []),
   ].join("\n");
 }
