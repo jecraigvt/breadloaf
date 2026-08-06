@@ -46,10 +46,16 @@ function wedgePath(
   return `M ${ix0} ${iy0} L ${ox0} ${oy0} A ${r1} ${r1} 0 ${large} 1 ${ox1} ${oy1} L ${ix1} ${iy1} A ${r0} ${r0} 0 ${large} 0 ${ix0} ${iy0} Z`;
 }
 
-function tintOf(person: TreePerson | undefined, blood: boolean): string {
+// Bloodline is position, not colour: the inner radius and the spoke to the
+// centre already say who carries the line, so descent must not also be painted.
+// Muting the non-blood half of a couple only looked deliberate while every
+// centre was a Craig and the muted person was always the one who married in.
+// Once any person can be centred, that rule greys the viewer on their own
+// family's plate — centre Colleen's parents and Jeremy fades out beside her.
+// Muted now means deceased, which is the one case where absence is the point.
+function tintOf(person: TreePerson | undefined): string {
   if (!person) return "var(--muted)";
   if (person.isClaimed) return "var(--ember-deep)";
-  if (!blood) return "var(--muted)";
   return person.deceased ? "var(--muted)" : "var(--ink)";
 }
 
@@ -191,7 +197,6 @@ export function FamilyPlate({
         {people.map((id, index) => {
           const person = tree.people[id];
           if (!person) return null;
-          const blood = index === 0;
           const frac =
             people.length === 1 ? 0.44 : 0.24 + index * (0.56 / (people.length - 1));
           const r = r0 + band * frac;
@@ -203,9 +208,9 @@ export function FamilyPlate({
               <text
                 className="plate-name"
                 fontSize={slot.depth >= 2 ? 11.5 : 13.5}
-                fontStyle={person.deceased || !blood ? "italic" : "normal"}
+                fontStyle={person.deceased ? "italic" : "normal"}
                 fontWeight={person.isClaimed ? 700 : 400}
-                style={{ fill: tintOf(person, blood), cursor: "pointer" }}
+                style={{ fill: tintOf(person), cursor: "pointer" }}
                 onClick={() => {
                   setLit(slot.path);
                   onSelect(id);
