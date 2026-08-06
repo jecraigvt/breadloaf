@@ -415,6 +415,7 @@ model JarvisMemory {
   source         String? // human-readable provenance: "conversation with Jim", "board meeting"
   sourceType     String?
   sourceId       String?
+  filePath       String? // retained source artifact, currently used by attributed voice notes
   scope          String    @default("property") // property, family, user, entity
   subject        String?
   location       String? // physical location, kept separate for exact "where is it" retrieval
