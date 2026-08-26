@@ -46,13 +46,6 @@ export default function AssistantPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const entryHandledRef = useRef(false);
 
-  // The finished recording becomes a normal attachment; server-side triage
-  // decides whether it is a quick memory or a permanent archive document.
-  const recorder = useVoiceRecorder({
-    fileName: voiceMemoName,
-    onComplete: (file) => setAttachments((current) => [...current, file]),
-  });
-
   useEffect(() => {
     scrollRef.current?.scrollTo({
       top: scrollRef.current.scrollHeight,
@@ -169,6 +162,13 @@ export default function AssistantPage() {
       setLoading(false);
     }
   };
+
+  // Submit immediately when recording stops. This matches the homepage mic and
+  // avoids leaving an irreplaceable recording in an unsent attachment chip.
+  const recorder = useVoiceRecorder({
+    fileName: voiceMemoName,
+    onComplete: (file) => void sendMessage({ files: [file], text: input }),
+  });
 
   useEffect(() => {
     if (entryHandledRef.current) return;

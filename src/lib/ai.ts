@@ -43,6 +43,7 @@ import {
 } from "@/lib/voice-note";
 import { BUCKY_ACTION_BOUNDARY } from "@/lib/bucky-action-boundary";
 import { createFamilyChangeProposal } from "@/lib/family-change";
+import { transcribeAudioBufferWithGemini } from "@/lib/gemini-transcription";
 
 export { MODELS } from "@/lib/ai-models";
 
@@ -255,15 +256,19 @@ export async function transcribeMediaBuffer(
   mimeType: string,
   fileName = "recording"
 ): Promise<string> {
+  if (!mimeType.toLowerCase().startsWith("video/")) {
+    return transcribeAudioBufferWithGemini(buffer, mimeType, fileName);
+  }
+
   const mediaFile = await toFile(buffer, fileName, { type: mimeType });
   const transcription = await withRetry(() =>
     getOpenAIClient().audio.transcriptions.create({
-      model: MODELS.transcription,
+      model: MODELS.videoTranscription,
       file: mediaFile,
     })
   );
   const transcript = transcription.text.trim();
-  if (!transcript) throw new Error("OpenAI returned an empty media transcript");
+  if (!transcript) throw new Error("OpenAI returned an empty video transcript");
   return transcript;
 }
 

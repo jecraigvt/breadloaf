@@ -90,7 +90,7 @@ prisma migrate deploy && prisma db seed && next start
 ## Environment Variables
 
 - `DATABASE_URL`: Prisma database connection string
-- `GOOGLE_AI_API_KEY`: Gemini API key
+- `GOOGLE_AI_API_KEY`: Gemini API key used for Bucky audio transcription
 - `GOOGLE_SERVICE_ACCOUNT_KEY`: full JSON service account key for Google Calendar
 - `GOOGLE_CALENDAR_ID`: Breadloaf Hill Stays calendar ID
 - `FAMILY_PINS`: comma-separated `Name:PIN` pairs used for login

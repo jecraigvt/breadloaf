@@ -17,6 +17,11 @@ import {
   ChevronUp,
   Pencil,
 } from "lucide-react";
+import {
+  formatMaintenanceDate,
+  isMaintenanceOverdue,
+  toMaintenanceInputDate,
+} from "@/lib/maintenance-dates";
 
 interface MaintenanceRecord {
   id: string;
@@ -81,24 +86,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   General: "bg-stone-100 text-stone-700",
 };
 
-function formatDate(date: string) {
-  return new Date(date).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function isOverdue(nextDueAt: string | null): boolean {
-  if (!nextDueAt) return false;
-  return new Date(nextDueAt) < new Date();
-}
-
-function toInputDate(date: string | null): string {
-  if (!date) return "";
-  return new Date(date).toISOString().split("T")[0];
-}
-
 export default function MaintenancePage() {
   const [records, setRecords] = useState<MaintenanceRecord[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -159,8 +146,8 @@ export default function MaintenancePage() {
     setFormDescription(record.description || "");
     setFormCategory(record.category);
     setFormPerformedBy(record.performedBy || "");
-    setFormPerformedAt(toInputDate(record.performedAt));
-    setFormNextDueAt(toInputDate(record.nextDueAt));
+    setFormPerformedAt(toMaintenanceInputDate(record.performedAt));
+    setFormNextDueAt(toMaintenanceInputDate(record.nextDueAt));
     setFormCost(record.cost?.toString() || "");
     setEditingId(record.id);
     setShowForm(true);
@@ -205,7 +192,7 @@ export default function MaintenancePage() {
     setRecords((prev) => prev.filter((r) => r.id !== id));
   };
 
-  const overdueRecords = records.filter((r) => isOverdue(r.nextDueAt));
+  const overdueRecords = records.filter((r) => isMaintenanceOverdue(r.nextDueAt));
 
   return (
     <div>
@@ -233,7 +220,7 @@ export default function MaintenancePage() {
                 >
                   <span className="font-medium">{r.title}</span>
                   <span className="text-red-500">
-                    — due {formatDate(r.nextDueAt!)}
+                    — due {formatMaintenanceDate(r.nextDueAt!)}
                   </span>
                 </div>
               ))}
@@ -297,7 +284,7 @@ export default function MaintenancePage() {
                             </p>
                             {asset.records.map((r) => (
                               <p key={r.id} className="text-xs text-stone-500">
-                                • {r.title} — {formatDate(r.performedAt)}
+                                • {r.title} — {formatMaintenanceDate(r.performedAt)}
                                 {r.cost != null ? ` ($${r.cost.toFixed(2)})` : ""}
                               </p>
                             ))}
@@ -519,7 +506,7 @@ export default function MaintenancePage() {
 
             <div className="space-y-3">
               {records.map((record) => {
-                const overdue = isOverdue(record.nextDueAt);
+                const overdue = isMaintenanceOverdue(record.nextDueAt);
                 const isExpanded = expandedId === record.id;
 
                 return (
@@ -563,7 +550,7 @@ export default function MaintenancePage() {
                         <div className="flex items-center gap-3 text-xs text-stone-400 flex-wrap">
                           <span className="flex items-center gap-1">
                             <Calendar size={11} />
-                            {formatDate(record.performedAt)}
+                            {formatMaintenanceDate(record.performedAt)}
                           </span>
                           {record.performedBy && (
                             <span className="flex items-center gap-1">
@@ -583,7 +570,7 @@ export default function MaintenancePage() {
                               }`}
                             >
                               <Calendar size={11} />
-                              Next: {formatDate(record.nextDueAt)}
+                              Next: {formatMaintenanceDate(record.nextDueAt)}
                             </span>
                           )}
                         </div>

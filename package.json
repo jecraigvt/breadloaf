@@ -22,6 +22,7 @@
     "postinstall": "npx prisma generate"
   },
   "dependencies": {
+    "@google/genai": "^2.19.0",
     "@prisma/client": "^6.19.2",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
