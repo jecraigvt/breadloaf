@@ -601,15 +601,19 @@ export default function MaintenancePage() {
                       <div className="flex gap-1 flex-shrink-0">
                         <button
                           onClick={() => startEdit(record)}
-                          className="p-1.5 rounded-lg text-stone-300 hover:text-green-600 hover:bg-green-50 transition-colors"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-green-200 bg-green-50 text-green-700 transition-colors hover:border-green-300 hover:bg-green-100 hover:text-green-800 focus:outline-none focus:ring-2 focus:ring-green-600 focus:ring-offset-2"
+                          aria-label={`Edit ${record.title}`}
+                          title="Edit record"
                         >
-                          <Pencil size={14} />
+                          <Pencil size={16} strokeWidth={2.25} />
                         </button>
                         <button
                           onClick={() => deleteRecord(record.id)}
-                          className="p-1.5 rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-700 transition-colors hover:border-red-300 hover:bg-red-100 hover:text-red-800 focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2"
+                          aria-label={`Delete ${record.title}`}
+                          title="Delete record"
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={16} strokeWidth={2.25} />
                         </button>
                       </div>
                     </div>

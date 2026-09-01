@@ -252,10 +252,14 @@ export default function DocumentsPage() {
 
         {/* Category Filters */}
         {!showDeleted && (
-        <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
+        <div
+          className="flex flex-wrap gap-2"
+          role="group"
+          aria-label="Filter documents by category"
+        >
           <button
             onClick={() => setSelectedCategory(null)}
-            className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
               !selectedCategory
                 ? "bg-green-700 text-white"
                 : "bg-stone-100 text-stone-600 hover:bg-stone-200"
@@ -270,7 +274,7 @@ export default function DocumentsPage() {
                   selectedCategory === "uncategorized" ? null : "uncategorized"
                 )
               }
-              className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
                 selectedCategory === "uncategorized"
                   ? "bg-amber-600 text-white"
                   : "bg-amber-100 text-amber-800 hover:bg-amber-200"
@@ -287,7 +291,7 @@ export default function DocumentsPage() {
                 onClick={() =>
                   setSelectedCategory(selectedCategory === cat.slug ? null : cat.slug)
                 }
-                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                className={`max-w-full px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
                   selectedCategory === cat.slug
                     ? "bg-green-700 text-white"
                     : "bg-stone-100 text-stone-600 hover:bg-stone-200"
