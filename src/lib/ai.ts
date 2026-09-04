@@ -1,4 +1,5 @@
 import OpenAI, { toFile } from "openai";
+import type { Prisma } from "@prisma/client";
 import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -628,7 +629,7 @@ const assistantToolDeclarations: Array<{
             },
             description: {
               type: "string",
-              description: "Detailed description of the work",
+              description: "Concise high-level summary of the work and its important details",
             },
             category: {
               type: "string",
@@ -1101,7 +1102,8 @@ function boundedNumber(value: unknown, fallback: number): number {
 async function executeToolFunction(
   name: string,
   args: Record<string, unknown>,
-  username?: string
+  username?: string,
+  toolContext?: AssistantToolContext
 ): Promise<Record<string, unknown>> {
   switch (name) {
     case "add_grocery_item": {
@@ -1180,6 +1182,9 @@ async function executeToolFunction(
           performedBy: (args.performedBy as string) || username || undefined,
           performedAt: new Date(),
           cost: args.cost ? parseFloat(String(args.cost)) : undefined,
+          sourceRecordings: toolContext?.voiceRecordings?.length
+            ? toolContext.voiceRecordings as unknown as Prisma.InputJsonValue
+            : undefined,
           assetId: asset?.id,
         },
       });
@@ -1711,12 +1716,23 @@ async function executeToolFunction(
   }
 }
 
+export interface AssistantVoiceRecording {
+  fileName: string;
+  filePath: string;
+  transcript: string;
+}
+
+export interface AssistantToolContext {
+  voiceRecordings?: AssistantVoiceRecording[];
+}
+
 export async function chatWithAssistant(
   messages: { role: "user" | "model"; content: string }[],
   username?: string,
   // Server-injected note describing attachments already filed this turn
   // (see /api/assistant) — appended to the user's message, never shown in UI
-  attachmentContext?: string
+  attachmentContext?: string,
+  toolContext?: AssistantToolContext
 ): Promise<string> {
   const lastUserMessage = messages.filter((m) => m.role === "user").pop();
   if (!lastUserMessage) return "What would you like help with?";
@@ -1878,7 +1894,8 @@ Guidelines:
         const response = await executeToolFunction(
           fc.name,
           args,
-          username
+          username,
+          toolContext
         );
         try {
           await recordBuckyToolResult(

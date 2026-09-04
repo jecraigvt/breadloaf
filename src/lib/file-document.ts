@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import { indexDocument, indexMaintenance } from "@/lib/embeddings";
 import { resolveDocumentCategory } from "@/lib/document-categories";
 import { sha256 } from "@/lib/archive-integrity";
@@ -170,6 +171,13 @@ export async function fileDocumentFromBuffer(
           performedBy: result?.maintenanceVendor || undefined,
           performedAt: result?.maintenanceDate ? new Date(result.maintenanceDate) : new Date(),
           cost: result?.maintenanceCost ? parseFloat(String(result.maintenanceCost)) : undefined,
+          sourceRecordings: type.startsWith("audio/") && result?.extractedText
+            ? [{
+                fileName,
+                filePath: storedFile.filePath,
+                transcript: result.extractedText,
+              }] as Prisma.InputJsonValue
+            : undefined,
         },
       });
       void indexMaintenance(maintenance.id);

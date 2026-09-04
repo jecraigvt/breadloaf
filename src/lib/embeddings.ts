@@ -512,6 +512,9 @@ export async function indexMaintenance(recordId: string, options: IndexOptions =
         `Category: ${record.category}`,
         record.asset ? `Property system: ${record.asset.name}` : "",
         record.description || "",
+        record.sourceRecordings
+          ? `Original dictated transcript: ${JSON.stringify(record.sourceRecordings)}`
+          : "",
         record.performedBy ? `Performed by: ${record.performedBy}` : "",
         record.cost != null ? `Cost: $${record.cost.toFixed(2)}` : "",
       ].filter(Boolean).join("\n"),

@@ -3,6 +3,7 @@ import {
   chatWithAssistant,
   transcribeMediaBuffer,
   triageTextDocument,
+  type AssistantVoiceRecording,
 } from "@/lib/ai";
 import { getCurrentActor } from "@/lib/actor";
 import { recordBuckyLedgerEntry } from "@/lib/bucky-ledger";
@@ -58,6 +59,7 @@ export async function POST(request: NextRequest) {
     const actorName = actor?.fullName || null;
     let messages: ChatMessage[];
     let attachmentContext = "";
+    const maintenanceVoiceRecordings: AssistantVoiceRecording[] = [];
 
     const contentType = request.headers.get("content-type") || "";
     if (contentType.includes("multipart/form-data")) {
@@ -133,6 +135,15 @@ export async function POST(request: NextRequest) {
               actorName,
             });
 
+            // This request-scoped evidence is attached directly by the server to
+            // every maintenance record Bucky creates from this turn. Bucky never
+            // has to reproduce or edit the transcript through a tool argument.
+            maintenanceVoiceRecordings.push({
+              fileName: file.name,
+              filePath: processed.storedFile.filePath,
+              transcript: processed.transcript,
+            });
+
             if (processed.route === "quick_note") {
               const { memory, transcript, storedFile } = processed;
 
@@ -204,7 +215,14 @@ Respond to what the person said and take any appropriate native action. Do not c
     }
 
     await syncFromGoogleCalendar().catch(() => {});
-    const responseText = await chatWithAssistant(messages, actorName || undefined, attachmentContext);
+    const responseText = await chatWithAssistant(
+      messages,
+      actorName || undefined,
+      attachmentContext,
+      maintenanceVoiceRecordings.length
+        ? { voiceRecordings: maintenanceVoiceRecordings }
+        : undefined
+    );
     return new Response(responseText, {
       headers: { "Content-Type": "text/plain; charset=utf-8" },
     });

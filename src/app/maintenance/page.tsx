@@ -16,6 +16,7 @@ import {
   ChevronDown,
   ChevronUp,
   Pencil,
+  Mic,
 } from "lucide-react";
 import {
   formatMaintenanceDate,
@@ -32,6 +33,11 @@ interface MaintenanceRecord {
   performedAt: string;
   nextDueAt: string | null;
   cost: number | null;
+  sourceRecordings: {
+    fileName: string;
+    filePath: string;
+    transcript: string;
+  }[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -575,8 +581,8 @@ export default function MaintenancePage() {
                           )}
                         </div>
 
-                        {/* Expandable description */}
-                        {record.description && (
+                        {/* Bucky's summary plus immutable voice-source evidence. */}
+                        {(record.description || record.sourceRecordings?.length) && (
                           <button
                             onClick={() =>
                               setExpandedId(isExpanded ? null : record.id)
@@ -591,10 +597,38 @@ export default function MaintenancePage() {
                             {isExpanded ? "Hide details" : "Show details"}
                           </button>
                         )}
-                        {isExpanded && record.description && (
-                          <p className="text-sm text-stone-600 mt-2 bg-stone-50 rounded-lg p-3">
-                            {record.description}
-                          </p>
+                        {isExpanded && (
+                          <div className="mt-2 space-y-3">
+                            {record.description && (
+                              <div className="rounded-lg bg-stone-50 p-3">
+                                <p className="mb-1 font-mono text-[10px] uppercase tracking-wider text-stone-400">
+                                  Bucky&apos;s summary
+                                </p>
+                                <p className="text-sm text-stone-600">{record.description}</p>
+                              </div>
+                            )}
+                            {record.sourceRecordings?.map((source, index) => (
+                              <div key={`${source.filePath}-${index}`} className="rounded-lg border border-amber-200 bg-amber-50/50 p-3">
+                                <p className="mb-2 flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-amber-800">
+                                  <Mic size={11} /> Original recording {record.sourceRecordings!.length > 1 ? index + 1 : ""}
+                                </p>
+                                <audio controls preload="metadata" className="mb-3 w-full" src={source.filePath}>
+                                  Your browser does not support audio playback.
+                                </audio>
+                                <details>
+                                  <summary className="cursor-pointer text-xs font-medium text-green-800">
+                                    View complete unedited transcript
+                                  </summary>
+                                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-stone-700">
+                                    {source.transcript}
+                                  </p>
+                                  <p className="mt-2 text-[11px] leading-4 text-stone-500">
+                                    This is the full automated transcript with no Bucky rewriting. The recording above is the definitive source if speech recognition missed a word.
+                                  </p>
+                                </details>
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </div>
 

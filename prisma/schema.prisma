@@ -151,6 +151,10 @@ model MaintenanceRecord {
   performedAt DateTime
   nextDueAt   DateTime?
   cost        Float?
+  // Immutable source evidence for maintenance dictated to Bucky. The normal
+  // description is Bucky's concise summary; these retain the unedited machine
+  // transcript and playable recording together.
+  sourceRecordings Json?
   assetId     String?
   asset       Asset?    @relation(fields: [assetId], references: [id])
   createdAt   DateTime  @default(now())
