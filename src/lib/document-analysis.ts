@@ -14,6 +14,7 @@ import { PdfSampleTooLargeError, samplePdfPages } from "@/lib/pdf-sampling";
 export const AI_SIZE_LIMIT = 15 * 1024 * 1024;
 
 export const ANALYSIS_STATES = [
+  "pending",
   "ok",
   "unsupported_type",
   "too_large",
@@ -139,6 +140,8 @@ export function normalizeStoredAnalysis(input: {
       aiExtractedText: extractedText,
     };
   }
+
+  if (analysisState === "pending") return { analysisState, analysisError: null, aiSummary: null, aiExtractedText: null };
 
   const analysisError =
     typeof input.analysisError === "string" && input.analysisError.trim()

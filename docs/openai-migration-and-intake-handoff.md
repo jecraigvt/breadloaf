@@ -1,5 +1,10 @@
 # OpenAI Migration and Bucky Intake Handoff
 
+**Current work:** This is the historical August migration plan. For the September
+hybrid background execution implementation and activation steps, see
+[Bucky hybrid work](bucky-hybrid-implementation.md). Check current code and that
+runbook before treating the original status below as current.
+
 **Written:** 2026-08-05
 **For:** the implementing agent (Codex)
 **Reviewed by:** Claude, after implementation

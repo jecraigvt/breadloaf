@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Header } from "@/components/layout/header";
-import { Search, Grid, List, FolderOpen, Tag, Calendar, Sparkles, Loader2, X, ArrowRight, Trash2, ArchiveRestore, CircleCheck, TriangleAlert } from "lucide-react";
+import { Search, Grid, List, FolderOpen, Tag, Calendar, Sparkles, Loader2, X, ArrowRight, Trash2, ArchiveRestore, CircleCheck, TriangleAlert, Clock3 } from "lucide-react";
 import Link from "next/link";
 import type { DocumentWithCategory } from "@/types";
 import { formatDate } from "@/lib/utils";
@@ -239,6 +239,9 @@ export default function DocumentsPage() {
         )}
 
         {/* Search Bar */}
+        <Link href="/bucky/jobs" className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-green-800 underline underline-offset-4">
+          <Clock3 size={16} aria-hidden="true" /> Bucky’s background tasks
+        </Link>
         <div className="relative">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
           <input

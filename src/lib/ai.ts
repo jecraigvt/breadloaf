@@ -45,6 +45,8 @@ import {
 import { BUCKY_ACTION_BOUNDARY } from "@/lib/bucky-action-boundary";
 import { createFamilyChangeProposal } from "@/lib/family-change";
 import { transcribeAudioBufferWithGemini } from "@/lib/gemini-transcription";
+import type { ActorContext } from "@/lib/actor";
+import { getAssistantBackgroundWorkStatus, queueAssistantBackgroundWork } from "@/lib/bucky-background-assistant";
 
 export { MODELS } from "@/lib/ai-models";
 
@@ -1026,6 +1028,30 @@ const assistantToolDeclarations: Array<{
         },
       },
       {
+        name: "queue_background_work",
+        description:
+          "Save an explicitly requested background task and return promptly. Use only when the user asks to queue/delegate a document analysis, archive review, or website improvement; never silently postpone an ordinary question, conversation, attachment, or standard upload. Document analysis requires the exact existing archive documentId; do not invent it. Archive review produces findings only. Website requests require the server-verified curator or board identity and go through independent publication checks. Returned queued status is not a completed result.",
+        parameters: {
+          type: "object",
+          properties: {
+            kind: { type: "string", enum: ["document_analysis", "archive_review", "site_improvement"] },
+            documentId: { type: "string", description: "Required for document_analysis: exact existing family archive document ID." },
+            instructions: { type: "string", description: "Required for archive_review or site_improvement: the user's specific requested work." },
+            sourceDocumentIds: { type: "array", items: { type: "string" }, description: "Optional archive_review scope: up to 50 exact family document IDs. Omit to review up to 50 recent archive records." },
+          },
+          required: ["kind"],
+        },
+      },
+      {
+        name: "get_background_work_status",
+        description: "Read the current status and task-page links for a background task. Omit jobId to list the 10 most recent available tasks. This does not start, retry, cancel, or expedite work.",
+        parameters: {
+          type: "object",
+          properties: { jobId: { type: "string", description: "Exact job ID returned when a background task was saved." } },
+          required: [],
+        },
+      },
+      {
         name: "update_position",
         description:
           "Record a current family or corporate position and preserve the prior holder in history. Use when a direct instruction or authoritative approved record clearly appoints someone. If the source is a draft, discussion, nomination, or unclear, use ask_family instead.",
@@ -1106,6 +1132,10 @@ async function executeToolFunction(
   toolContext?: AssistantToolContext
 ): Promise<Record<string, unknown>> {
   switch (name) {
+    case "queue_background_work":
+      return queueAssistantBackgroundWork(args, toolContext?.actor ?? null);
+    case "get_background_work_status":
+      return getAssistantBackgroundWorkStatus(args);
     case "add_grocery_item": {
       const item = await prisma.groceryItem.create({
         data: {
@@ -1724,6 +1754,8 @@ export interface AssistantVoiceRecording {
 
 export interface AssistantToolContext {
   voiceRecordings?: AssistantVoiceRecording[];
+  // Resolved from authenticated server cookies; never accepted from a model tool argument.
+  actor?: ActorContext | null;
 }
 
 export async function chatWithAssistant(

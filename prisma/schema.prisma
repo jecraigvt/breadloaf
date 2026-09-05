@@ -492,3 +492,76 @@ model ArchiveVerification {
 
   @@index([suite, measuredAt])
 }
+
+// Durable work stays here; computers, API runners, and their sessions are replaceable.
+model BuckyJob {
+  id                String   @id @default(cuid())
+  kind              String
+  status            String   @default("queued")
+  request           Json
+  sourceDocumentId  String?
+  sourceVersion     String?
+  checkpoint        Json?
+  result            Json?
+  initiatedById     String?
+  initiatedByName   String?
+  priority          Int      @default(0)
+  fallbackAfter     DateTime
+  apiNotBefore      DateTime?
+  nextAttemptAt     DateTime @default(now())
+  generation        Int      @default(0)
+  dedupeKey         String?  @unique
+  lastError         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  attempts          BuckyJobAttempt[]
+
+  @@index([status, priority, nextAttemptAt])
+  @@index([sourceDocumentId, createdAt])
+  @@index([fallbackAfter])
+}
+
+model BuckyWorker {
+  id             String   @id
+  label          String
+  tokenHash      String   @unique
+  provider       String
+  capabilities   Json
+  paused         Boolean  @default(false)
+  lastSeenAt     DateTime?
+  quotaRemaining Float?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  attempts       BuckyJobAttempt[]
+}
+
+model BuckyJobAttempt {
+  id             String   @id @default(cuid())
+  jobId          String
+  workerId       String
+  generation     Int
+  leaseToken     String   @unique
+  leaseExpiresAt DateTime
+  status         String   @default("running")
+  reservedCents  Int      @default(0)
+  costCents      Int?
+  budgetMonth    String?
+  usage          Json?
+  error          String?
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+  job            BuckyJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  worker         BuckyWorker @relation(fields: [workerId], references: [id])
+
+  @@unique([jobId, generation])
+  @@index([workerId, status, leaseExpiresAt])
+  @@index([status, leaseExpiresAt])
+}
+
+// A row lock serializes reservations, including claims by different API runners.
+model BuckyApiBudget {
+  month         String   @id
+  spentCents    Int      @default(0)
+  reservedCents Int      @default(0)
+  updatedAt     DateTime @updatedAt
+}

@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { indexDocument } from "@/lib/embeddings";
 import { isUndoSupportedAction } from "@/lib/bucky-ledger";
+import { z } from "zod";
 
 type JsonObject = Record<string, unknown>;
 
@@ -71,6 +72,58 @@ function filingQuestionSnapshots(value: unknown): FilingQuestionSnapshot[] {
       answeredAt: nullableString(candidate.answeredAt),
     }];
   });
+}
+
+const backgroundQuestionSchema = z.object({
+  id: z.string().min(1), status: z.string(), answer: z.string().nullable(),
+  answeredBy: z.string().nullable(), answeredAt: z.string().datetime().nullable(),
+});
+const backgroundSnapshotSchema = z.object({
+  documentId: z.string().min(1), title: z.string(), categoryId: z.string().nullable(), tags: z.string().nullable(),
+  aiSummary: z.string().nullable(), aiExtractedText: z.string().nullable(), analysisState: z.string(), analysisError: z.string().nullable(),
+  updatedAt: z.string().datetime(), questions: z.array(backgroundQuestionSchema),
+});
+
+async function undoBackgroundDocumentAnalysis(tx: Prisma.TransactionClient, beforeValue: JsonObject, afterValue: JsonObject, jobId: string | null) {
+  const parsedBefore = backgroundSnapshotSchema.safeParse(beforeValue);
+  const parsedAfter = backgroundSnapshotSchema.safeParse(afterValue);
+  if (!parsedBefore.success || !parsedAfter.success || !jobId) throw new BuckyUndoError("The background analysis undo snapshot is incomplete.", 409);
+  const before = parsedBefore.data, after = parsedAfter.data;
+  if (before.documentId !== after.documentId) throw new BuckyUndoError("The background analysis snapshots refer to different documents.", 409);
+  const questionIds = after.questions.map((question) => question.id).sort();
+  if (new Set(questionIds).size !== questionIds.length || JSON.stringify(questionIds) !== JSON.stringify(before.questions.map((question) => question.id).sort())) {
+    throw new BuckyUndoError("The background analysis question snapshots are incomplete.", 409);
+  }
+  // Same lock order as completion: job before document. The job's result is the
+  // durable indexing outbox; undo must not depend on an in-request provider call.
+  await tx.$queryRaw`SELECT "id" FROM "BuckyJob" WHERE "id" = ${jobId} FOR UPDATE`;
+  const job = await tx.buckyJob.findUnique({ where: { id: jobId } });
+  if (!job || job.sourceDocumentId !== after.documentId) throw new BuckyUndoError("The original background job is unavailable.", 409);
+  await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${after.documentId} FOR UPDATE`;
+  const document = await tx.document.findUnique({ where: { id: after.documentId } });
+  if (!document || document.deletedAt || document.accessScope !== "family") throw new BuckyUndoError("The document is no longer available for this undo.", 409);
+  const changed = document.updatedAt.toISOString() !== after.updatedAt ||
+    (Object.keys(after).filter((key) => !["documentId", "updatedAt", "questions"].includes(key)) as Array<keyof typeof document>)
+      .some((field) => document[field] !== after[field as keyof typeof after]);
+  if (changed) throw new BuckyUndoError("The document was changed again after this analysis, so it was not overwritten.", 409);
+
+  for (const expected of [...after.questions].sort((a, b) => a.id.localeCompare(b.id))) {
+    await tx.$queryRaw`SELECT "id" FROM "BuckyQuestion" WHERE "id" = ${expected.id} FOR UPDATE`;
+    const question = await tx.buckyQuestion.findUnique({ where: { id: expected.id } });
+    if (!question || question.sourceId !== document.id || question.sourceType !== "document" ||
+      question.status !== expected.status || question.answer !== expected.answer ||
+      question.answeredBy !== expected.answeredBy || !datesMatch(question.answeredAt, expected.answeredAt)) {
+      throw new BuckyUndoError("The related filing question changed after this analysis, so it was not overwritten.", 409);
+    }
+  }
+  const { documentId: _id, updatedAt: _updatedAt, questions, ...restore } = before;
+  await tx.document.update({ where: { id: document.id }, data: restore });
+  for (const question of questions) {
+    const { id, answeredAt, ...data } = question;
+    await tx.buckyQuestion.update({ where: { id }, data: { ...data, answeredAt: answeredAt ? new Date(answeredAt) : null } });
+  }
+  const result = job.result && typeof job.result === "object" && !Array.isArray(job.result) ? job.result as Prisma.JsonObject : {};
+  await tx.buckyJob.update({ where: { id: job.id }, data: { result: { ...result, documentId: document.id, indexPending: true, analysisUndone: true } } });
 }
 
 async function undoDocumentCategory(
@@ -181,6 +234,7 @@ async function undoPosition(
 export async function undoBuckyLedgerEntry(entryId: string, revertedBy: string) {
   let documentId: string | undefined;
   const result = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "BuckyLedgerEntry" WHERE "id" = ${entryId} FOR UPDATE`;
     const entry = await tx.buckyLedgerEntry.findUnique({ where: { id: entryId } });
     if (!entry) throw new BuckyUndoError("Ledger entry not found.", 404);
     if (entry.revertedAt) throw new BuckyUndoError("This action has already been undone.", 409);
@@ -194,6 +248,8 @@ export async function undoBuckyLedgerEntry(entryId: string, revertedBy: string) 
       ({ documentId } = await undoDocumentCategory(tx, before, after));
     } else if (entry.actionType === "update_position") {
       await undoPosition(tx, before, after);
+    } else if (entry.actionType === "background_document_analysis") {
+      await undoBackgroundDocumentAnalysis(tx, before, after, entry.sourceType === "background_job" ? entry.sourceId : null);
     }
 
     const revertedAt = new Date();

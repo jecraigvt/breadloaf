@@ -16,10 +16,12 @@ import {
   Mic,
   Video,
   ShieldAlert,
+  Clock3,
 } from "lucide-react";
 import Link from "next/link";
+import { resolveSupportedFileType } from "@/lib/document-file-types";
 
-type UploadStep = "select" | "preview" | "uploading" | "categorizing" | "review" | "done" | "link" | "batch";
+type UploadStep = "select" | "preview" | "uploading" | "categorizing" | "review" | "done" | "link" | "batch" | "background-saving" | "background-done";
 
 interface BatchItem {
   file: File;
@@ -52,6 +54,16 @@ interface CategorizationResult {
   historicalPhotoSetting?: string | null;
 }
 
+function backgroundUploadIssue(files: File[]): string | null {
+  if (files.some((file) => {
+    const type = resolveSupportedFileType(file.type, file.name);
+    return !type || type === "image/heic" || type.startsWith("audio/") || type.startsWith("video/");
+  })) return "Background analysis supports documents and JPG, PNG or WebP images. Choose Upload & Analyze for recordings or HEIC photos.";
+  if (files.length > 20) return "Background analysis accepts up to 20 files at a time.";
+  if (files.reduce((size, file) => size + file.size, 0) > 100 * 1024 * 1024) return "For background analysis, choose files totalling no more than 100 MB.";
+  return null;
+}
+
 export default function UploadPage() {
   const [step, setStep] = useState<UploadStep>("select");
   const [file, setFile] = useState<File | null>(null);
@@ -65,6 +77,8 @@ export default function UploadPage() {
   const [editTitle, setEditTitle] = useState("");
   const [savedDocId, setSavedDocId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [backgroundSavedCount, setBackgroundSavedCount] = useState(0);
+  const [backgroundJobId, setBackgroundJobId] = useState<string | null>(null);
 
   // Link form state
   const [linkUrl, setLinkUrl] = useState("");
@@ -232,6 +246,7 @@ export default function UploadPage() {
   // ─── Batch mode: dump many files, they file themselves ─────────
   const [batchItems, setBatchItems] = useState<BatchItem[]>([]);
   const [batchRunning, setBatchRunning] = useState(false);
+  const [batchStarted, setBatchStarted] = useState(false);
 
   const handleFiles = (files: File[]) => {
     if (uploadedBy) localStorage.setItem("breadloaf-username", uploadedBy);
@@ -239,7 +254,32 @@ export default function UploadPage() {
     setBatchItems(items);
     setStep("batch");
     setError(null);
-    processBatch(items);
+    setBatchStarted(false);
+  };
+
+  const handleBackgroundUpload = async (files: File[]) => {
+    if (!files.length) return;
+    const issue = backgroundUploadIssue(files);
+    if (issue) { setError(issue); return; }
+    setError(null);
+    const previousStep = step;
+    setStep("background-saving");
+    try {
+      const formData = new FormData();
+      formData.append("kind", "document_analysis");
+      files.forEach((selectedFile) => formData.append("files", selectedFile));
+      const response = await fetch("/api/bucky/jobs", { method: "POST", body: formData });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !Array.isArray(data?.jobs) || !data.jobs.length) {
+        throw new Error("We could not confirm the files were saved. Check Bucky’s tasks before trying again.");
+      }
+      setBackgroundSavedCount(data.jobs.length);
+      setBackgroundJobId(data.jobs.length === 1 ? data.jobs[0].id : null);
+      setStep("background-done");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "We could not confirm the files were saved. Check Bucky’s tasks before trying again.");
+      setStep(previousStep);
+    }
   };
 
   const updateBatchItem = (index: number, patch: Partial<BatchItem>) => {
@@ -249,6 +289,7 @@ export default function UploadPage() {
   };
 
   const processBatch = async (items: BatchItem[]) => {
+    setBatchStarted(true);
     setBatchRunning(true);
     // Sequential to keep the AI happy and progress legible
     for (let i = 0; i < items.length; i++) {
@@ -384,6 +425,9 @@ export default function UploadPage() {
     setError(null);
     setBatchItems([]);
     setBatchRunning(false);
+    setBatchStarted(false);
+    setBackgroundSavedCount(0);
+    setBackgroundJobId(null);
     setLinkUrl("");
     setLinkTitle("");
     setLinkCategory("");
@@ -401,6 +445,9 @@ export default function UploadPage() {
       />
 
       <div className="max-w-lg mx-auto px-4 py-6 space-y-6">
+        <Link href="/bucky/jobs" className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-green-800 underline underline-offset-4">
+          <Clock3 size={16} aria-hidden="true" /> Bucky’s background tasks
+        </Link>
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm flex items-start gap-2">
             <X size={16} className="mt-0.5 flex-shrink-0" />
@@ -445,12 +492,16 @@ export default function UploadPage() {
               <h3 className="font-semibold text-stone-800 flex items-center gap-2">
                 {batchRunning ? (
                   <Loader2 size={18} className="animate-spin text-green-600" />
+                ) : !batchStarted ? (
+                  <FileText size={18} className="text-stone-500" />
                 ) : (
                   <CheckCircle2 size={18} className="text-green-600" />
                 )}
                 {batchRunning
                   ? `Processing ${batchItems.filter((b) => b.status === "filed" || b.status === "needs-review" || b.status === "error").length} of ${batchItems.length}...`
-                  : `Done — ${batchItems.filter((b) => b.status === "filed").length} filed, ${batchItems.filter((b) => b.status === "needs-review").length} need review, ${batchItems.filter((b) => b.status === "error").length} failed`}
+                  : !batchStarted
+                    ? `${batchItems.length} files ready to upload`
+                    : `Done — ${batchItems.filter((b) => b.status === "filed").length} filed, ${batchItems.filter((b) => b.status === "needs-review").length} need review, ${batchItems.filter((b) => b.status === "error").length} failed`}
               </h3>
               {!batchRunning && batchItems.some((b) => b.status === "needs-review") && (
                 <p className="text-sm text-stone-500 mt-1">
@@ -502,7 +553,19 @@ export default function UploadPage() {
               ))}
             </div>
 
-            {!batchRunning && (
+            {!batchStarted && (
+              <div className="space-y-3">
+                <div className="flex gap-3">
+                  <button onClick={reset} className="flex-1 min-h-11 rounded-xl border-2 border-stone-300 py-3 font-medium text-stone-600 hover:bg-stone-50">Cancel</button>
+                  <button onClick={() => void processBatch(batchItems)} className="flex-1 min-h-11 rounded-xl bg-green-700 py-3 font-medium text-white hover:bg-green-800">Upload &amp; Analyze</button>
+                </div>
+                <button disabled={!!backgroundUploadIssue(batchItems.map((item) => item.file))} onClick={() => void handleBackgroundUpload(batchItems.map((item) => item.file))} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-green-700 px-3 py-3 font-medium text-green-800 hover:bg-green-50 disabled:opacity-50">
+                  <Clock3 size={18} aria-hidden="true" /> Analyze in background
+                </button>
+                <p className="text-sm text-stone-500">{backgroundUploadIssue(batchItems.map((item) => item.file)) || "Save the originals now and let Bucky analyze them later. You can leave once the upload finishes. Up to 20 files, totalling 100 MB."}</p>
+              </div>
+            )}
+            {!batchRunning && batchStarted && (
               <div className="flex gap-3">
                 <button
                   onClick={reset}
@@ -672,6 +735,32 @@ export default function UploadPage() {
                 Upload & Analyze
               </button>
             </div>
+            {!backgroundUploadIssue([file]) && (
+              <>
+                <button onClick={() => void handleBackgroundUpload([file])} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-green-700 px-3 py-3 font-medium text-green-800 hover:bg-green-50">
+                  <Clock3 size={18} aria-hidden="true" /> Analyze in background
+                </button>
+                <p className="text-sm text-stone-500">Save the original now and let Bucky analyze it later. You can leave once the upload finishes.</p>
+              </>
+            )}
+          </div>
+        )}
+
+        {step === "background-saving" && (
+          <div className="py-12 text-center" role="status">
+            <Loader2 size={48} className="mx-auto mb-4 animate-spin text-green-700" aria-hidden="true" />
+            <h2 className="font-semibold text-stone-800">Saving your files…</h2>
+            <p className="mt-2 text-sm text-stone-600">Keep this page open until the upload finishes. Bucky will analyze them afterward.</p>
+          </div>
+        )}
+
+        {step === "background-done" && (
+          <div className="space-y-4 py-8 text-center" role="status">
+            <CheckCircle2 size={56} className="mx-auto text-green-700" aria-hidden="true" />
+            <h2 className="text-xl font-semibold text-stone-800">{backgroundSavedCount === 1 ? "Original saved" : `${backgroundSavedCount} originals saved`}</h2>
+            <p className="text-sm text-stone-600">Analysis is pending. You can leave now and check Bucky’s tasks for progress or choose Process now if you need it sooner.</p>
+            <Link href={`/bucky/jobs${backgroundJobId ? `#job-${encodeURIComponent(backgroundJobId)}` : ""}`} className="block min-h-11 rounded-xl bg-green-700 px-4 py-3 font-medium text-white hover:bg-green-800">View Bucky’s tasks</Link>
+            <button onClick={reset} className="min-h-11 w-full rounded-xl border-2 border-stone-300 px-4 py-3 font-medium text-stone-700 hover:bg-stone-50">Add more files</button>
           </div>
         )}
 

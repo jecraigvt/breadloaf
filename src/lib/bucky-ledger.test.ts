@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildLedgerInput, stripToolAuditMetadata } from "./bucky-ledger";
+import { buildLedgerInput, stripToolAuditMetadata, isUndoSupportedAction } from "./bucky-ledger";
 
 test("logs a successful future tool even without a custom summary", () => {
   const entry = buildLedgerInput(
@@ -18,6 +18,7 @@ test("does not log failed tool calls", () => {
 });
 
 test("only advertises undo for actions with implemented handlers", () => {
+  assert.equal(isUndoSupportedAction("background_document_analysis"), true);
   const unsupported = buildLedgerInput("save_asset", {}, {
     success: true,
     _audit: { reversible: true, beforeState: { name: "Old" }, afterState: { name: "New" } },

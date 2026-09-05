@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 
 // Guardrails for the evolving document categorization scheme.
 // The AI may propose new categories; this module decides whether a
@@ -78,10 +79,11 @@ interface ResolveInput {
 // Resolve an AI categorization result to a real Category row.
 // Order: exact match → fuzzy match → create from proposal (guarded) → Needs Review.
 export async function resolveDocumentCategory(
-  input: ResolveInput
+  input: ResolveInput,
+  database: Pick<Prisma.TransactionClient, "category"> = prisma
 ): Promise<CategoryResolution> {
   const confidence = input.confidence ?? 0;
-  const categories = await prisma.category.findMany({
+  const categories = await database.category.findMany({
     select: { id: true, name: true, slug: true },
   });
 
@@ -135,7 +137,7 @@ export async function resolveDocumentCategory(
     const slug = slugifyCategory(name);
     if (slug) {
       try {
-        const created = await prisma.category.create({
+        const created = await database.category.create({
           data: {
             name,
             slug,
@@ -148,7 +150,7 @@ export async function resolveDocumentCategory(
         return asResolution(created, true);
       } catch {
         // Unique collision (concurrent create) — re-match instead.
-        const again = await prisma.category.findFirst({
+        const again = await database.category.findFirst({
           where: { OR: [{ slug }, { name }] },
           select: { id: true, name: true, slug: true },
         });

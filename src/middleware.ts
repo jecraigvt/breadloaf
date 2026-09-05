@@ -8,6 +8,12 @@ import {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // These exact routes use per-worker bearer credentials in their Node handlers.
+  // Never make the family job management routes public through this exception.
+  if (/^\/api\/bucky\/worker\/(claim|heartbeat|complete|fail|source|yield|run-api|artifact)$/.test(pathname)) {
+    return NextResponse.next();
+  }
+
   // Local development may run without family auth. Production must fail closed.
   if (!process.env.FAMILY_PINS) {
     if (process.env.NODE_ENV !== "production") return NextResponse.next();

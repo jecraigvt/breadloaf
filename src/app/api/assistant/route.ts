@@ -219,9 +219,7 @@ Respond to what the person said and take any appropriate native action. Do not c
       messages,
       actorName || undefined,
       attachmentContext,
-      maintenanceVoiceRecordings.length
-        ? { voiceRecordings: maintenanceVoiceRecordings }
-        : undefined
+      { actor, ...(maintenanceVoiceRecordings.length ? { voiceRecordings: maintenanceVoiceRecordings } : {}) }
     );
     return new Response(responseText, {
       headers: { "Content-Type": "text/plain; charset=utf-8" },

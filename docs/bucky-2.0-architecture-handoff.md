@@ -1,5 +1,11 @@
 # Bucky 2.0 — architecture handoff (August 2026)
 
+**September 5 implementation update:** The hybrid queue, local Codex worker,
+budgeted API fallback, task UI, and guarded website proposal pipeline now have a
+working implementation. See [current implementation and rollout](bucky-hybrid-implementation.md).
+The text below records the original brainstorming; its “not yet built” statements
+describe August, not current implementation or deployment status.
+
 Design session, not yet built. Nothing in this document has been implemented. It records
 what was decided, what was *diagnosed in the existing code*, and what is still open, so the
 next session can resume on the shape rather than re-deriving it.

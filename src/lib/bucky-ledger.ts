@@ -26,7 +26,7 @@ export interface ToolAuditMetadata {
   reversible?: boolean;
 }
 
-const REVERSIBLE_ACTIONS = new Set(["set_document_category", "update_position"]);
+const REVERSIBLE_ACTIONS = new Set(["set_document_category", "update_position", "background_document_analysis"]);
 
 export function isUndoSupportedAction(actionType: string): boolean {
   return REVERSIBLE_ACTIONS.has(actionType);

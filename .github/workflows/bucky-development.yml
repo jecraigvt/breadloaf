@@ -1,0 +1,180 @@
+name: Bucky background work
+on:
+  workflow_dispatch:
+    inputs:
+      jobId:
+        description: Optional completed local development job to verify
+        required: false
+        type: string
+  schedule:
+    - cron: '17 * * * *'
+
+# A single dispatcher/publisher prevents duplicate proposals for a local result.
+concurrency:
+  group: bucky-background-work
+  cancel-in-progress: false
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    if: vars.BUCKY_BACKGROUND_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      found: ${{ steps.artifact.outputs.found }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Run one due API fallback pass
+        if: inputs.jobId == ''
+        continue-on-error: true
+        run: npm run worker -- --once
+        env:
+          BUCKY_WORKER_MODE: api
+          BUCKY_CHECKOUT_READY: 'true'
+          BUCKY_WORKER_SITE_URL: ${{ vars.BUCKY_WORKER_SITE_URL }}
+          BUCKY_WORKER_ID: ${{ vars.BUCKY_API_WORKER_ID }}
+          BUCKY_WORKER_TOKEN: ${{ secrets.BUCKY_API_WORKER_TOKEN }}
+          BUCKY_WORKER_CAPABILITIES: document_analysis,archive_review,site_improvement
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      - name: Fetch completed local or API proposal
+        id: artifact
+        run: npx tsx scripts/bucky-publish.ts fetch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUCKY_WORKER_SITE_URL: ${{ vars.BUCKY_WORKER_SITE_URL }}
+          BUCKY_WORKER_TOKEN: ${{ secrets.BUCKY_API_WORKER_TOKEN }}
+          BUCKY_JOB_ID: ${{ inputs.jobId }}
+          BUCKY_RESULT_PATH: ${{ runner.temp }}/bucky-result.json
+      - uses: actions/upload-artifact@v4
+        if: steps.artifact.outputs.found == 'true'
+        with:
+          name: bucky-proposal
+          path: ${{ runner.temp }}/bucky-result.json
+          retention-days: 14
+
+  verify:
+    needs: collect
+    if: needs.collect.outputs.found == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: breadloaf_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:test@localhost:5432/breadloaf_test
+      FAMILY_PINS: Test:2468
+      NEXT_TELEMETRY_DISABLED: '1'
+      BUCKY_RESULT_PATH: ${{ runner.temp }}/bucky-result.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: bucky-proposal
+          path: ${{ runner.temp }}
+      # This gate and every workflow step come from main, outside allowed edits.
+      - run: npx tsx scripts/bucky-publish.ts prepare
+      - run: psql "$DATABASE_URL" -c 'CREATE EXTENSION IF NOT EXISTS vector'
+      - run: npx prisma db push
+      - run: npx prisma db seed
+      - run: npm test
+      - run: npx tsc --noEmit
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Browser checks against disposable data
+        run: |
+          node node_modules/next/dist/bin/next start > "$RUNNER_TEMP/bucky-next.log" 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://localhost:3000/login > /dev/null; then break; fi
+            sleep 2
+          done
+          npx tsx scripts/bucky-browser-smoke.ts
+
+  publish:
+    needs: [collect, verify]
+    if: needs.verify.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: bucky-proposal
+          path: ${{ runner.temp }}
+      # Never execute the proposed application in the credentialed publishing job.
+      - run: npx tsx scripts/bucky-publish.ts publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUCKY_AUTO_PUBLISH: ${{ vars.BUCKY_AUTO_PUBLISH }}
+          BUCKY_WORKER_SITE_URL: ${{ vars.BUCKY_WORKER_SITE_URL }}
+          BUCKY_WORKER_TOKEN: ${{ secrets.BUCKY_API_WORKER_TOKEN }}
+          BUCKY_RESULT_PATH: ${{ runner.temp }}/bucky-result.json
+
+  record-failure:
+    needs: [collect, verify, publish]
+    if: always() && needs.collect.outputs.found == 'true' && (needs.verify.result == 'failure' || needs.publish.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: bucky-proposal
+          path: ${{ runner.temp }}
+      - run: npx tsx scripts/bucky-publish.ts record-failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUCKY_WORKER_SITE_URL: ${{ vars.BUCKY_WORKER_SITE_URL }}
+          BUCKY_WORKER_TOKEN: ${{ secrets.BUCKY_API_WORKER_TOKEN }}
+          BUCKY_RESULT_PATH: ${{ runner.temp }}/bucky-result.json
