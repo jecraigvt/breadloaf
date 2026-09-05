@@ -1,6 +1,6 @@
 # Bucky hybrid work: implementation and rollout
 
-**Written:** September 5, 2026. This describes the implementation in this working tree. No deployment, worker registration, scheduled-task installation, GitHub secret setup, or automatic publication was performed as part of implementing it.
+**Updated:** September 5, 2026. The application was first activated at commit `1e9064f`. The local worker and hosted scheduler are installed and registered. Local document processing, Ledger undo, paid API fallback, and independent website-proposal verification have passed production checks. The verified proposal is an open review PR; automatic publication is disabled.
 
 The August [Bucky 2.0 handoff](bucky-2.0-architecture-handoff.md) described the long-term custodian. This change delivers its first practical step: durable tasks that survive a closed browser, sleeping computer, interrupted session, or change of processing provider. PostgreSQL owns the work and results; the computer running it is replaceable.
 
@@ -39,14 +39,31 @@ Automatic publication additionally requires all of the following:
 
 Other permitted presentation changes create a PR for review. Model-reported checks or `requiresReview` do not override this gate. Publication uses a separate credentialed job that does not execute the proposed application. A confirmed receipt adds the PR link and publication status to Bucky's task. Merging to `main` can trigger the existing Railway GitHub deployment integration.
 
-## Rollout
+## September 5 activation
 
-1. **Review and deploy the completed change normally.** Startup already runs `prisma migrate deploy`; migration `20260905120000_add_bucky_jobs` adds the queue, worker registry, attempts, and monthly budget. Verify that it applies successfully before starting any worker. This document is not confirmation that production has been migrated.
-2. **Register separate local and API workers against the intended database.** Use `npm run worker:register` with `--id`, `--name`, `--provider local|api`, and `--base-url https://breadloafhill.com`. Registration rotates that worker's credential, saves configuration and a private token file outside the repository, and never prints the token. See [local worker setup](bucky-worker-local.md) for exact commands and paths. Supply database access only to registration, not the running local worker.
-3. **Set the Railway configuration.** `BUCKY_BACKGROUND_API_BUDGET_CENTS=300` is the default generation cap. Set `BUCKY_GITHUB_REPOSITORY=owner/repo` to the intended repository so publication receipts can verify their origin. `OPENAI_API_KEY` remains on Railway for document/archive fallback and embeddings. Do not add that key to the local worker's configuration.
-4. **Install the Windows worker deliberately.** After registration and Codex sign-in, run `scripts/install-bucky-worker.ps1`; use `-EnableDevelopment` to include website proposals and `-StartNow` to start immediately. Otherwise it starts hidden at this user's next sign-in. `npm run worker -- --doctor`, `--status`, `--pause`, and `--resume` provide local controls. Installation does not wake a sleeping computer or require an incoming network listener.
-5. **Configure the hosted scheduler and publisher.** `.github/workflows/bucky-development.yml` uses repository variables `BUCKY_WORKER_SITE_URL`, `BUCKY_API_WORKER_ID`, `BUCKY_BACKGROUND_ENABLED=true`, and optionally `BUCKY_AUTO_PUBLISH=true`. Add `BUCKY_API_WORKER_TOKEN` from the registered API worker's private token file and `OPENAI_API_KEY` as GitHub Actions secrets; the latter serves hosted code-generation fallback. Transfer credentials through secret-input mechanisms without displaying them in logs or source. Ensure repository permissions permit the workflow to open PRs; merging also remains subject to repository rules.
-6. **Verify the complete path before relying on it.** Submit a small background document, confirm the original exists while pending, run a local attempt, inspect the result and Ledger, and cancel/retry a test task. Then test a deliberately expedited API task, confirm budget accounting, and verify one review-only website proposal through independent checks. Use disposable documents/data for these checks.
+- **Deployment:** The application was first activated at commit `1e9064f`. Production applied `20260905120000_add_bucky_jobs` and `20260905130000_allow_pending_document_analysis`. The second migration extends the archive's existing SQL check constraint to allow `pending`; the queue migration alone was insufficient for new background uploads. Later operating-guide or installer commits may produce subsequent deployments.
+- **Registered workers:** `jeremy-pc` uses the local Codex subscription; `github-api` handles hosted fallback. Their credentials are stored separately outside the repository. Registration is complete; repeating it rotates credentials and requires updating the matching runner.
+- **Windows task:** The hidden, per-user sign-in task is installed with ordinary `Limited` privileges. The final activation check confirmed the task running, all three capabilities enabled, and the worker unpaused and idle. `--doctor` reported ready with 30% quota remaining against the 25% reserve; the initial reading had been 31%. These are activation snapshots, not live readings. The temporary API-test pause was lifted. An idempotent reinstall under Windows PowerShell 5.1 passed without elevation or interrupting the worker; private directory permissions and the absence of a wake timer were verified.
+- **Railway:** The background generation budget is 300 cents per UTC month, with a 25-cent attempt reservation. `BUCKY_GITHUB_REPOSITORY` is `jecraigvt/breadloaf`. Hosted provider credentials remain outside source control and are not supplied to the local worker.
+- **GitHub:** The hourly workflow is enabled. Authenticated idle run [33975933995](https://github.com/jecraigvt/breadloaf/actions/runs/33975933995) succeeded. `BUCKY_AUTO_PUBLISH=false`; verified website proposals require review.
+
+### Verified in production
+
+Synthetic document job `cmtok9bxm0001oe45b2c9qbhl` completed through `jeremy-pc` with zero recorded background API generation cost. The original bytes were retained, and the full normalized source text and summary were saved. The resulting Ledger action was undone successfully, restoring every changed document field. This verifies the local subscription path and its undo behavior; it does not measure paid fallback.
+
+Paid API job `cmtokct1w000boe45mhswbbv1` completed through `github-api` in [workflow run 33976224510](https://github.com/jecraigvt/breadloaf/actions/runs/33976224510). Original bytes, the complete normalized source text, the expected summary marker, and its Ledger entry were verified. Generation cost was recorded as 1 cent; the monthly budget then showed 1 cent spent and 0 reserved against its 300-cent limit. These are measured rollout values, not a forecast or a current bill reading.
+
+Cancel and retry controls passed. The three synthetic document fixtures were soft-deleted through the existing document-delete route, preserving their audit records. The local analysis was undone before its fixture was deleted.
+
+Website job `cmtokev5t000joe454531iwfz` completed locally with zero recorded API generation cost. It proposed six CSS lines adding keyboard focus indicators to `btn-ember` and `btn-quiet`. [Workflow run 33976424511](https://github.com/jecraigvt/breadloaf/actions/runs/33976424511) passed collection, independent verification, and the publishing step; verification included the production build and browser checks. It opened [PR #1, “Bucky: website improvement”](https://github.com/jecraigvt/breadloaf/pull/1). The PR is open and unmerged, as required by the disabled automatic-publication setting. A successful publishing step here means the review PR was created, not that its patch reached production.
+
+Live `/bucky/jobs` and `/upload` pages passed browser checks at 390-pixel and 1440-pixel widths without browser errors or horizontal overflow. The local worker's final readiness check confirmed all three capabilities, an unpaused/idle state, and 30% remaining quota.
+
+### Ongoing operation
+
+The activation checks are complete. Review PR #1 separately before merging; automatic publication remains disabled. Use worker status and quota checks for current readiness, and inspect the monthly budget rather than treating rollout measurements as ongoing availability or spending guarantees.
+
+For reinstallation, credential rotation, and local controls, use [the worker operating guide](bucky-worker-local.md). Database access belongs only in registration and deployment tools. Never add it or the hosted API key to the running local worker's configuration.
 
 The workflow can be dispatched manually, optionally for a completed local development job ID. Its scheduled pass runs hourly and advances up to eight document/archive sections. The data runner's authenticated `/api/bucky/worker/run-api` endpoint advances one section per invocation. A more frequent scheduler may call that endpoint with the API worker's bearer credential; it still obeys lease and budget limits.
 
@@ -57,17 +74,17 @@ The workflow can be dispatched manually, optionally for a completed local develo
 - The $3 background-generation budget does not cap the household's entire OpenAI bill. Chat and existing retrieval embeddings remain separate. Embedding work retries after analysis is saved.
 - Archive review creates findings, not an automatic filing cleanup. Website automation is restricted to the presentation allowlist; broader architecture changes still need normal development and review.
 - Email intake remains on its existing processor. It does not call the authenticated chat tools or accept arbitrary background-job creation from an email. A later extension would need its own authenticated intent handling; sender text must not grant a curator or board identity.
-- Production rollout, subscription processing, paid fallback, and GitHub publication still require their explicit setup and end-to-end verification. No deployment or unattended task was activated by writing this implementation.
+- Automatic publication is disabled. The verified website proposal remains an open review PR until a maintainer merges or closes it.
 
 ## Verification and future changes
 
-Verified during implementation: production build and TypeScript; 163 normal
+Verified during implementation: production build and TypeScript; the normal
 tests; queue/source/undo/API integration checks against disposable PostgreSQL;
 mobile upload/task flows; an authenticated Codex structured-output smoke; and
 the built HTTP PDF flow using a local mock provider, including duplicate upload,
 retained originals, search indexing, Ledger, and budget settlement. The GitHub
-workflow and Windows scripts passed syntax checks; production publication and
-persistent worker installation were not exercised.
+workflow and Windows scripts passed syntax checks. The activation results above
+record the subsequent production and persistent-worker checks separately.
 
 Run `npm test` for the normal suite. Database tests are opt-in: set
 `BUCKY_JOB_TEST_DATABASE_URL` and `BUCKY_HANDLER_TEST_DATABASE_URL` to a disposable
@@ -76,6 +93,13 @@ Postgres database, then run the Bucky integration test files with
 The queue tests create and remove an isolated schema; the handler tests need the
 complete application schema and remove only their fixtures.
 
+Also run `npx tsx --test src/lib/document-analysis-migration.test.ts` with
+`BUCKY_JOB_TEST_DATABASE_URL` pointing to the disposable database. This test
+reconstructs the actual historical `Document_analysisState_check`, proves that
+it rejects `pending`, applies `20260905130000_allow_pending_document_analysis`,
+and verifies that pending uploads and subsequent analysis transitions work while
+the four historical states remain valid and unknown states remain rejected.
+
 For a real HTTP check of the production build, set `BUCKY_TEST_DATABASE_URL` to a
 disposable loopback database whose name includes `test`, build the app, and run
 `npm run worker:verify:http`. This starts its own local server and mock OpenAI
@@ -83,8 +107,10 @@ endpoints, uploads a synthetic PDF, and verifies authentication, retained bytes,
 analysis, Ledger, and budget accounting without making a paid provider call.
 
 The repository's older migration history cannot bootstrap an empty database:
-its first migration expects an existing `Stay` table. This predates the hybrid
+an early migration alters `Stay` before its creation runs. This predates the hybrid
 change. For disposable CI databases the workflow creates the vector extension
 and uses `prisma db push`; the new queue SQL migration is separately exercised
-by the isolated-schema tests. Production continues using its existing migration
-history and the additive queue migration.
+by the isolated-schema tests. `prisma db push` does not reproduce historical SQL
+check constraints, so it cannot replace the focused constraint regression test.
+Production uses its existing migration history and both additive hybrid-work
+migrations; do not use a database reset or `db push` to repair production history.

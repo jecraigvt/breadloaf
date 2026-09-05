@@ -37,20 +37,37 @@ $workerConfig | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $configPath -
 
 # Only this Windows user and SYSTEM can read the credential and job directories.
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-$acl = New-Object Security.AccessControl.DirectorySecurity
-$acl.SetOwner($identity.User)
-$acl.SetAccessRuleProtection($true, $false)
 $inheritance = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
 $propagation = [Security.AccessControl.PropagationFlags]::None
-foreach ($sid in @($identity.User, (New-Object Security.Principal.SecurityIdentifier 'S-1-5-18'))) {
-  $rule = New-Object Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', $inheritance, $propagation, 'Allow')
-  $acl.AddAccessRule($rule)
+$allowedSids = @($identity.User.Value, 'S-1-5-18')
+$currentAcl = Get-Acl -LiteralPath $workerRoot
+$currentRules = @($currentAcl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))
+$aclMatches = $currentAcl.AreAccessRulesProtected -and $currentRules.Count -eq 2
+foreach ($rule in $currentRules) {
+  if ($rule.IdentityReference.Value -notin $allowedSids -or $rule.AccessControlType -ne 'Allow' -or
+      $rule.FileSystemRights -ne [Security.AccessControl.FileSystemRights]::FullControl -or
+      $rule.InheritanceFlags -ne $inheritance -or $rule.PropagationFlags -ne $propagation) { $aclMatches = $false }
 }
-Set-Acl -LiteralPath $workerRoot -AclObject $acl
+if (-not $aclMatches) {
+  # Change only the DACL. Rewriting an unchanged owner/security descriptor on a
+  # protected directory can require SeSecurityPrivilege under Windows PS 5.1.
+  $acl = New-Object Security.AccessControl.DirectorySecurity
+  $acl.SetAccessRuleProtection($true, $false)
+  foreach ($sidValue in $allowedSids) {
+    $sid = New-Object Security.Principal.SecurityIdentifier $sidValue
+    $rule = New-Object Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', $inheritance, $propagation, 'Allow')
+    $acl.AddAccessRule($rule)
+  }
+  Set-Acl -LiteralPath $workerRoot -AclObject $acl
+}
 foreach ($secretPath in @($tokenPath, $configPath)) {
   $fileAcl = Get-Acl -LiteralPath $secretPath
-  $fileAcl.SetAccessRuleProtection($false, $false)
-  Set-Acl -LiteralPath $secretPath -AclObject $fileAcl
+  $explicitRules = @($fileAcl.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier]))
+  if ($fileAcl.AreAccessRulesProtected -or $explicitRules.Count -gt 0) {
+    foreach ($rule in $explicitRules) { $fileAcl.RemoveAccessRuleSpecific($rule) }
+    $fileAcl.SetAccessRuleProtection($false, $false)
+    Set-Acl -LiteralPath $secretPath -AclObject $fileAcl
+  }
 }
 
 function ConvertTo-PowerShellLiteral([string]$Value) { return "'" + $Value.Replace("'", "''") + "'" }
