@@ -1,11 +1,12 @@
 [CmdletBinding()]
 param(
-  [string]$Repository = (Split-Path -Parent $PSScriptRoot),
+  [string]$Repository,
   [string]$CodexPath,
   [switch]$EnableDevelopment,
   [switch]$StartNow
 )
 $ErrorActionPreference = 'Stop'
+if (-not $Repository) { $Repository = Split-Path -Parent $PSScriptRoot }
 $taskName = 'Breadloaf Bucky Worker'
 $workerRoot = [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE '.breadloaf-worker'))
 $repositoryPath = (Resolve-Path -LiteralPath $Repository).Path

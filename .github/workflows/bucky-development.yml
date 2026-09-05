@@ -87,7 +87,6 @@ jobs:
       DATABASE_URL: postgresql://postgres:test@localhost:5432/breadloaf_test
       FAMILY_PINS: Test:2468
       NEXT_TELEMETRY_DISABLED: '1'
-      BUCKY_RESULT_PATH: ${{ runner.temp }}/bucky-result.json
     steps:
       - uses: actions/checkout@v4
         with:
@@ -104,6 +103,8 @@ jobs:
           path: ${{ runner.temp }}
       # This gate and every workflow step come from main, outside allowed edits.
       - run: npx tsx scripts/bucky-publish.ts prepare
+        env:
+          BUCKY_RESULT_PATH: ${{ runner.temp }}/bucky-result.json
       - run: psql "$DATABASE_URL" -c 'CREATE EXTENSION IF NOT EXISTS vector'
       - run: npx prisma db push
       - run: npx prisma db seed
@@ -112,6 +113,8 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - name: Browser checks against disposable data
+        env:
+          BUCKY_RESULT_PATH: ${{ runner.temp }}/bucky-result.json
         run: |
           node node_modules/next/dist/bin/next start > "$RUNNER_TEMP/bucky-next.log" 2>&1 &
           for attempt in $(seq 1 30); do
