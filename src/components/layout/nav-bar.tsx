@@ -61,7 +61,7 @@ export function NavBar() {
   return (
     <div className="nav-chrome">
       <IdentityGate />
-      <nav className="nav-bottom">
+      <nav className="nav-bottom" aria-label="Main navigation">
         {navItems.map((item) => {
           const isActive =
             item.href === "/"
@@ -73,6 +73,7 @@ export function NavBar() {
               key={item.href}
               href={item.href}
               className={`nav-item ${isActive ? "active" : ""}`}
+              aria-current={isActive ? "page" : undefined}
             >
               {item.icon}
               <span>{item.label}</span>

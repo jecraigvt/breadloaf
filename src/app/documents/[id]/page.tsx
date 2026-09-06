@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import type { DocumentWithCategory } from "@/types";
+import "../../fieldguide-archive.css";
 import { formatDate, formatFileSize, parseTags } from "@/lib/utils";
 
 export default function DocumentDetailPage() {
@@ -68,7 +69,7 @@ export default function DocumentDetailPage() {
 
   if (loading) {
     return (
-      <div>
+      <div className="fg-archive">
         <Header title="Loading..." />
         <div className="flex justify-center py-20">
           <Loader2 size={32} className="animate-spin text-green-700" />
@@ -79,7 +80,7 @@ export default function DocumentDetailPage() {
 
   if (!doc) {
     return (
-      <div>
+      <div className="fg-archive">
         <Header title="Not Found" />
         <div className="text-center py-12">
           <p className="text-stone-500">Document not found</p>
@@ -94,17 +95,20 @@ export default function DocumentDetailPage() {
   const tags = parseTags(doc.tags);
 
   return (
-    <div>
+    <div className="fg-archive fg-document-detail">
       <Header title={doc.title} />
 
-      <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
+      <div className="fg-archive-body fg-document-body space-y-5">
+        <div className="fg-archive-topline">
         <Link
           href="/documents"
-          className="flex items-center gap-1 text-green-700 text-sm font-medium"
+          className="fg-archive-text-link"
         >
           <ArrowLeft size={16} />
           Back to Archive
         </Link>
+        <span className="fg-archive-eyebrow">From the archive</span>
+        </div>
 
         {/* A story belongs to whoever told it. A fact is true regardless of who
             recorded it, so for everything else the uploader stays down in the
@@ -122,7 +126,7 @@ export default function DocumentDetailPage() {
             href={doc.filePath}
             target="_blank"
             rel="noopener noreferrer"
-            className="block rounded-xl border border-blue-200 bg-blue-50 p-8 text-center hover:bg-blue-100 transition-colors"
+            className="fg-document-preview block rounded-xl border border-blue-200 bg-blue-50 p-8 text-center hover:bg-blue-100 transition-colors"
           >
             <Link2 size={48} className="mx-auto text-blue-400 mb-3" />
             <p className="text-blue-700 font-medium text-sm break-all">{doc.filePath}</p>
@@ -131,13 +135,13 @@ export default function DocumentDetailPage() {
             </span>
           </a>
         ) : doc.fileType.startsWith("image/") ? (
-          <div className="rounded-xl overflow-hidden border border-stone-200">
+          <div className="fg-document-preview rounded-xl overflow-hidden border border-stone-200">
             <img src={`/api/documents/${doc.id}/file`} alt={doc.title} className="w-full" />
           </div>
         ) : (
           <a
             href={`/api/documents/${doc.id}/file?download=1`}
-            className="block rounded-xl border border-stone-200 p-12 text-center bg-stone-50 hover:bg-stone-100 transition-colors"
+            className="fg-document-preview block rounded-xl border border-stone-200 p-12 text-center bg-stone-50 hover:bg-stone-100 transition-colors"
           >
             <FileText size={64} className="mx-auto text-stone-300 mb-2" />
             <p className="text-stone-500">{doc.fileName}</p>
@@ -148,7 +152,7 @@ export default function DocumentDetailPage() {
         )}
 
         {/* Metadata */}
-        <div className="bg-white rounded-xl border border-stone-200 divide-y divide-stone-100">
+        <div className="fg-document-metadata bg-white rounded-xl border border-stone-200 divide-y divide-stone-100">
           {doc.category && (
             <div className="flex items-center gap-3 px-4 py-3">
               <FolderOpen size={18} className="text-stone-400" />
@@ -194,7 +198,7 @@ export default function DocumentDetailPage() {
 
         {/* AI Summary */}
         {doc.aiSummary && (
-          <div className="bg-green-50 rounded-xl p-4">
+          <div className="fg-archive-panel fg-document-summary bg-green-50 rounded-xl p-4">
             <h3 className="text-sm font-semibold text-green-800 mb-1">AI Summary</h3>
             <p className="text-sm text-green-700">{doc.aiSummary}</p>
           </div>
@@ -217,7 +221,7 @@ export default function DocumentDetailPage() {
 
         {/* Extracted Text */}
         {doc.aiExtractedText && (
-          <details className="bg-stone-50 rounded-xl p-4">
+          <details className="fg-archive-panel bg-stone-50 rounded-xl p-4">
             <summary className="text-sm font-medium text-stone-700 cursor-pointer">
               Extracted Text
             </summary>

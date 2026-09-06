@@ -294,7 +294,7 @@ export default function CorporateAccountsPage() {
   return (
     <div>
       <Header title="Corporation Vault" subtitle="Utility, vendor, and corporate account access" />
-      <main className="mx-auto max-w-3xl space-y-5 px-4 py-6">
+      <div className="mx-auto max-w-3xl space-y-5 px-4 py-6">
         {state === "loading" && <div className="flex justify-center py-20 text-stone-400"><Loader2 className="animate-spin" /></div>}
 
         {state === "unconfigured" && (
@@ -400,7 +400,7 @@ export default function CorporateAccountsPage() {
             )}
           </>
         )}
-      </main>
+      </div>
 
       {formOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">

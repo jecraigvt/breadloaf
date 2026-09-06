@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Header } from "@/components/layout/header";
+import "../fieldguide-visits.css";
 import {
   ChevronLeft,
   ChevronRight,
@@ -73,9 +74,48 @@ export default function CalendarPage() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const visitDialogRef = useRef<HTMLDivElement>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
   const [view, setView] = useState<"month" | "list">("month");
   const [feedToken, setFeedToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!showAddForm) return;
+    setFormError(null);
+    const dialog = visitDialogRef.current;
+    if (!dialog) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialog.querySelector<HTMLInputElement>("input")?.focus();
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setShowAddForm(false);
+      }
+      if (event.key !== "Tab") return;
+      const controls = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]'
+      ));
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      document.body.style.overflow = previousOverflow;
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [showAddForm]);
 
   // Form state
   const [guestName, setGuestName] = useState("");
@@ -144,6 +184,9 @@ export default function CalendarPage() {
 
   const handleAddStay = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    setFormError(null);
     try {
       const res = await fetch("/api/stays", {
         method: "POST",
@@ -166,9 +209,15 @@ export default function CalendarPage() {
         setStatus("confirmed");
         setShowAddForm(false);
         fetchRooms();
+      } else {
+        const result = await res.json().catch(() => null);
+        setFormError(result?.error || "We couldn’t save this visit. Please try again.");
       }
     } catch (err) {
       console.error("Failed to add stay:", err);
+      setFormError("We couldn’t reach the site. Check your connection and try again.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -219,9 +268,9 @@ export default function CalendarPage() {
 
   if (loading) {
     return (
-      <div>
+      <div className="fg-visits">
         <Header title="Calendar" subtitle="Family visits and events" />
-        <div className="max-w-5xl mx-auto px-4 py-12 text-center">
+        <div className="fg-visits-content fg-visits-loading">
           <div className="animate-pulse text-stone-400">Loading calendar...</div>
         </div>
       </div>
@@ -229,15 +278,16 @@ export default function CalendarPage() {
   }
 
   return (
-    <div>
+    <div className="fg-visits">
       <Header title="Calendar" subtitle="See who's coming to Breadloaf Hill" />
 
-      <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
+      <div className="fg-visits-content">
         {/* Top Bar: View Toggle + Actions */}
-        <div className="flex items-center justify-between">
-          <div className="flex bg-stone-100 rounded-lg p-1">
+        <div className="fg-calendar-actions">
+          <div className="fg-visit-view-toggle" role="group" aria-label="Calendar view">
             <button
               onClick={() => setView("month")}
+              aria-pressed={view === "month"}
               className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                 view === "month"
                   ? "bg-white text-stone-800 shadow-sm"
@@ -248,6 +298,7 @@ export default function CalendarPage() {
             </button>
             <button
               onClick={() => setView("list")}
+              aria-pressed={view === "list"}
               className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                 view === "list"
                   ? "bg-white text-stone-800 shadow-sm"
@@ -262,7 +313,9 @@ export default function CalendarPage() {
             <div className="relative">
               <button
                 onClick={() => setShowShareMenu(!showShareMenu)}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm text-stone-600 border border-stone-200 rounded-lg hover:bg-stone-50 transition-colors"
+                aria-expanded={showShareMenu}
+                aria-controls="calendar-sharing"
+                className="fg-visit-secondary"
               >
                 <Share2 size={15} />
                 Share
@@ -271,7 +324,7 @@ export default function CalendarPage() {
               {showShareMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowShareMenu(false)} />
-                  <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl border border-stone-200 shadow-lg z-50 overflow-hidden">
+                  <div className="fg-calendar-share" id="calendar-sharing">
                     <div className="p-3 border-b border-stone-100">
                       <p className="text-sm font-medium text-stone-800">Add to Your Calendar</p>
                       <p className="text-xs text-stone-500 mt-0.5">
@@ -379,7 +432,7 @@ export default function CalendarPage() {
 
             <button
               onClick={() => setShowAddForm(true)}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-green-700 rounded-lg hover:bg-green-800 transition-colors"
+              className="fg-visit-primary"
             >
               <Plus size={15} />
               Add Visit
@@ -387,19 +440,21 @@ export default function CalendarPage() {
           </div>
         </div>
 
+        <div className="fg-calendar-layout">
         {/* Month View */}
         {view === "month" && (
-          <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden">
+          <div className="fg-visit-panel fg-calendar-panel">
             {/* Month Header */}
-            <div className="flex items-center justify-between p-4 border-b border-stone-100">
+            <div className="cal-months fg-panel-heading">
               <button
                 onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
-                className="p-2 hover:bg-stone-100 rounded-lg transition-colors"
+                aria-label="Previous month"
+                className="fg-visit-icon-button"
               >
                 <ChevronLeft size={20} />
               </button>
               <div className="text-center">
-                <h3 className="text-lg font-semibold text-stone-800">
+                <h3 className="ym">
                   {format(currentMonth, "MMMM yyyy")}
                 </h3>
                 <button
@@ -411,14 +466,15 @@ export default function CalendarPage() {
               </div>
               <button
                 onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-                className="p-2 hover:bg-stone-100 rounded-lg transition-colors"
+                aria-label="Next month"
+                className="fg-visit-icon-button"
               >
                 <ChevronRight size={20} />
               </button>
             </div>
 
             {/* Day Headers */}
-            <div className="grid grid-cols-7 border-b border-stone-100">
+            <div className="cal-dows">
               {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
                 <div
                   key={d}
@@ -430,13 +486,13 @@ export default function CalendarPage() {
             </div>
 
             {/* Calendar Grid */}
-            <div className="grid grid-cols-7">
+            <div className="cal-grid">
               {paddedDays.map((day, i) => {
                 if (!day) {
                   return (
                     <div
                       key={`pad-${i}`}
-                      className="min-h-[5rem] sm:min-h-[6rem] bg-stone-50/50 border-b border-r border-stone-100"
+                      className="cal-cell out fg-calendar-empty"
                     />
                   );
                 }
@@ -450,7 +506,10 @@ export default function CalendarPage() {
                   <button
                     key={day.toISOString()}
                     onClick={() => setSelectedDay(isSelected ? null : day)}
-                    className={`min-h-[5rem] sm:min-h-[6rem] p-1.5 text-left border-b border-r border-stone-100 transition-colors ${
+                    aria-label={`${format(day, "EEEE, MMMM d, yyyy")}, ${dayStays.length} visit${dayStays.length === 1 ? "" : "s"}`}
+                    aria-pressed={Boolean(isSelected)}
+                    aria-current={today ? "date" : undefined}
+                    className={`cal-cell fg-calendar-day ${
                       isSelected
                         ? "bg-green-50 ring-2 ring-inset ring-green-300"
                         : today
@@ -500,7 +559,7 @@ export default function CalendarPage() {
             </div>
 
             {/* Legend */}
-            <div className="flex items-center gap-4 p-3 border-t border-stone-100 bg-stone-50/50">
+            <div className="fg-calendar-legend">
               <div className="flex items-center gap-1.5 text-xs text-stone-500">
                 <span className="w-2 h-2 rounded-full bg-green-500" />
                 Confirmed
@@ -519,8 +578,8 @@ export default function CalendarPage() {
 
         {/* Selected Day Detail */}
         {view === "month" && selectedDay && (
-          <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden animate-fade-in-up">
-            <div className="flex items-center justify-between p-4 border-b border-stone-100">
+          <div className="fg-visit-panel fg-selected-day">
+            <div className="cal-months fg-panel-heading">
               <h3 className="font-semibold text-stone-800">
                 {format(selectedDay, "EEEE, MMMM d")}
               </h3>
@@ -534,6 +593,7 @@ export default function CalendarPage() {
                 </button>
                 <button
                   onClick={() => setSelectedDay(null)}
+                  aria-label="Close selected day"
                   className="p-1.5 hover:bg-stone-100 rounded-lg"
                 >
                   <X size={16} className="text-stone-400" />
@@ -566,7 +626,7 @@ export default function CalendarPage() {
                     return (
                       <div
                         key={stay.id}
-                        className={`rounded-xl border p-4 ${statusColors[stay.status] || "border-stone-200"}`}
+                        className={`fg-day-visit ${statusColors[stay.status] || "border-stone-200"}`}
                       >
                         <div className="flex items-start justify-between">
                           <div>
@@ -598,6 +658,7 @@ export default function CalendarPage() {
                             </a>
                             <button
                               onClick={() => handleDeleteStay(stay.id)}
+                              aria-label={`Remove ${stay.guestName}’s stay`}
                               className="p-1.5 hover:bg-white/50 rounded-lg transition-colors"
                             >
                               <Trash2 size={14} />
@@ -613,11 +674,20 @@ export default function CalendarPage() {
           </div>
         )}
 
+        {view === "month" && !selectedDay && (
+          <aside className="fg-visit-panel fg-calendar-guide">
+            <p className="fg-visit-eyebrow">Planning a visit</p>
+            <h2>A place for everyone</h2>
+            <p>Choose a day to see who’s visiting, or add your dates to the family calendar.</p>
+            <a href="/stays" className="fg-visit-secondary"><BedDouble size={16} /> See rooms</a>
+            <div className="fg-calendar-guide-photo" aria-hidden="true" />
+          </aside>
+        )}
         {/* List View: Upcoming Stays */}
         {view === "list" && (
-          <div className="space-y-3">
+          <div className="fg-upcoming-visits">
             {upcomingStays.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-stone-200 p-10 text-center">
+              <div className="fg-visit-panel fg-visit-empty">
                 <CalendarDays size={36} className="mx-auto text-stone-300 mb-3" />
                 <p className="text-stone-600 font-medium mb-1">No upcoming visits</p>
                 <p className="text-sm text-stone-400 mb-4">
@@ -625,7 +695,7 @@ export default function CalendarPage() {
                 </p>
                 <button
                   onClick={() => setShowAddForm(true)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-green-700 rounded-lg hover:bg-green-800 transition-colors"
+                  className="fg-visit-primary"
                 >
                   <Plus size={15} />
                   Add a Visit
@@ -646,21 +716,21 @@ export default function CalendarPage() {
                 return (
                   <div
                     key={stay.id}
-                    className="bg-white rounded-xl border border-stone-200 p-4 card-hover"
+                    className="fg-upcoming-visit"
                   >
-                    <div className="flex items-start gap-4">
+                    <div className="stay fg-stay-row">
                       {/* Date block */}
-                      <div className="flex-shrink-0 w-14 text-center">
+                      <div className="mark fg-visit-date">
                         <p className="text-xs text-stone-400 uppercase font-medium">
                           {format(new Date(stay.checkIn), "MMM")}
                         </p>
-                        <p className="text-2xl font-bold text-stone-800">
+                        <p className="day">
                           {format(new Date(stay.checkIn), "d")}
                         </p>
                       </div>
 
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="fg-visit-name-status">
                           <h3 className="font-semibold text-stone-800">
                             {stay.guestName}
                           </h3>
@@ -697,7 +767,7 @@ export default function CalendarPage() {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-1 flex-shrink-0">
+                      <div className="fg-stay-actions">
                         <a
                           href={getGoogleCalendarUrl(stay)}
                           target="_blank"
@@ -709,6 +779,7 @@ export default function CalendarPage() {
                         </a>
                         <button
                           onClick={() => handleDeleteStay(stay.id)}
+                              aria-label={`Remove ${stay.guestName}’s stay`}
                           className="p-2 text-stone-400 hover:text-red-500 rounded-lg hover:bg-stone-50 transition-colors"
                         >
                           <Trash2 size={16} />
@@ -721,28 +792,32 @@ export default function CalendarPage() {
             )}
           </div>
         )}
+        </div>
       </div>
 
       {/* Add Stay Modal */}
       {showAddForm && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-4 border-b border-stone-100">
-              <h3 className="font-semibold text-stone-800 text-lg">Plan a Visit</h3>
+        <div className="fg-visit-overlay">
+          <div ref={visitDialogRef} className="fg-visit-dialog" role="dialog" aria-modal="true" aria-labelledby="calendar-form-title">
+            <div className="cal-months fg-panel-heading">
+              <h3 id="calendar-form-title">Plan a Visit</h3>
               <button
                 onClick={() => setShowAddForm(false)}
+                  aria-label="Close visit form"
                 className="p-2 hover:bg-stone-100 rounded-lg"
               >
                 <X size={18} />
               </button>
             </div>
-            <form onSubmit={handleAddStay} className="p-4 space-y-4">
+            <form onSubmit={handleAddStay} className="fg-visit-form">
               <div>
-                <label className="block text-sm font-medium text-stone-700 mb-1">
+                <label htmlFor="calendar-guest" className="block text-sm font-medium text-stone-700 mb-1">
                   Who&apos;s coming?
                 </label>
                 <input
                   type="text"
+                  id="calendar-guest"
+                  autoComplete="name"
                   value={guestName}
                   onChange={(e) => setGuestName(e.target.value)}
                   className="w-full border border-stone-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
@@ -751,13 +826,14 @@ export default function CalendarPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="fg-visit-date-fields">
                 <div>
-                  <label className="block text-sm font-medium text-stone-700 mb-1">
-                    Arriving
-                  </label>
+                  <label htmlFor="calendar-check-in" className="block text-sm font-medium text-stone-700 mb-1">
+                  Arriving
+                </label>
                   <input
                     type="date"
+                    id="calendar-check-in"
                     value={checkIn}
                     onChange={(e) => setCheckIn(e.target.value)}
                     className="w-full border border-stone-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
@@ -765,11 +841,12 @@ export default function CalendarPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-stone-700 mb-1">
-                    Leaving
-                  </label>
+                  <label htmlFor="calendar-check-out" className="block text-sm font-medium text-stone-700 mb-1">
+                  Leaving
+                </label>
                   <input
                     type="date"
+                    id="calendar-check-out"
                     value={checkOut}
                     onChange={(e) => setCheckOut(e.target.value)}
                     className="w-full border border-stone-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
@@ -779,10 +856,11 @@ export default function CalendarPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-stone-700 mb-1">
+                <label htmlFor="calendar-room" className="block text-sm font-medium text-stone-700 mb-1">
                   Room preference
                 </label>
                 <select
+                  id="calendar-room"
                   value={roomId}
                   onChange={(e) => setRoomId(e.target.value)}
                   className="w-full border border-stone-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
@@ -800,7 +878,7 @@ export default function CalendarPage() {
                 <label className="block text-sm font-medium text-stone-700 mb-1.5">
                   Status
                 </label>
-                <div className="flex gap-2">
+                <div className="fg-visit-status-options" role="group" aria-label="Status">
                   {[
                     { value: "confirmed", label: "Confirmed", icon: Check },
                     { value: "tentative", label: "Maybe", icon: Clock },
@@ -812,6 +890,7 @@ export default function CalendarPage() {
                         key={opt.value}
                         type="button"
                         onClick={() => setStatus(opt.value)}
+                          aria-pressed={status === opt.value}
                         className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-sm font-medium border transition-all ${
                           status === opt.value
                             ? statusColors[opt.value] + " border-current"
@@ -827,10 +906,11 @@ export default function CalendarPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-stone-700 mb-1">
+                <label htmlFor="calendar-notes" className="block text-sm font-medium text-stone-700 mb-1">
                   Notes
                 </label>
                 <textarea
+                  id="calendar-notes"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   className="w-full border border-stone-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none resize-none"
@@ -839,11 +919,15 @@ export default function CalendarPage() {
                 />
               </div>
 
+              {formError && <p className="fg-visit-form-error" role="alert">{formError}</p>}
+
               <button
                 type="submit"
-                className="w-full bg-green-700 text-white rounded-lg py-3 font-medium hover:bg-green-800 transition-colors"
+                disabled={saving}
+                aria-busy={saving}
+                className="fg-visit-primary fg-visit-submit"
               >
-                Add Visit
+                {saving ? "Saving…" : "Add Visit"}
               </button>
             </form>
           </div>

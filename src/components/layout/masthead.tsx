@@ -1,135 +1,60 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Pause, Play } from "lucide-react";
 
-type Photo = { src: string; caption: string; chapter: string };
-
-const HERO_PHOTOS: Photo[] = [
-  {
-    src: "/photos/hero-drone-house.jpg",
-    caption: "The house from the hill, looking northwest",
-    chapter: "Chapter I · The House",
-  },
-  {
-    src: "/photos/hero-rainbow.jpg",
-    caption: "Double rainbow after evening storm, July",
-    chapter: "Chapter II · Weather",
-  },
-  {
-    src: "/photos/winter-mountains.jpg",
-    caption: "Breadloaf Mountain, first snow",
-    chapter: "Chapter III · Winter",
-  },
-  {
-    src: "/photos/bonfire.jpg",
-    caption: "Solstice bonfire, June",
-    chapter: "Chapter IV · Gatherings",
-  },
-  {
-    src: "/photos/hilltop-view.jpg",
-    caption: "Summit view with a small observer",
-    chapter: "Chapter V · Passages",
-  },
+const HERO_PHOTOS = [
+  { src: "/photos/hero-rainbow.jpg", caption: "A rainbow over the meadow at Breadloaf Hill" },
+  { src: "/photos/hero-drone-house.jpg", caption: "The house among the trees" },
+  { src: "/photos/winter-mountains.jpg", caption: "Winter in the Green Mountains" },
+  { src: "/photos/bonfire.jpg", caption: "Gathering around the fire" },
+  { src: "/photos/hilltop-view.jpg", caption: "Taking in the view together" },
 ];
 
 export function Masthead() {
   const [idx, setIdx] = useState(0);
-  const [dateStr, setDateStr] = useState("");
-
+  const [paused, setPaused] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(true);
   useEffect(() => {
-    const t = setInterval(
-      () => setIdx((i) => (i + 1) % HERO_PHOTOS.length),
-      6000
-    );
-    return () => clearInterval(t);
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReducedMotion(preference.matches);
+    update();
+    preference.addEventListener("change", update);
+    return () => preference.removeEventListener("change", update);
   }, []);
-
   useEffect(() => {
-    const d = new Date();
-    setDateStr(
-      d
-        .toLocaleDateString("en-US", {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-        })
-        .toUpperCase()
-    );
-  }, []);
-
-  const cur = HERO_PHOTOS[idx];
-
+    if (paused || reducedMotion) return;
+    const timer = setInterval(() => setIdx((current) => (current + 1) % HERO_PHOTOS.length), 6000);
+    return () => clearInterval(timer);
+  }, [paused, reducedMotion]);
   return (
-    <div className="masthead">
+    <section className="masthead fg-masthead" aria-label="Our place at Breadloaf Hill">
       <div className="photo-stack">
-        {HERO_PHOTOS.map((p, i) => (
-          <img
-            key={p.src}
-            src={p.src}
-            alt=""
-            style={{ opacity: i === idx ? 1 : 0 }}
-          />
+        {HERO_PHOTOS.map((photo, index) => (
+          <img key={photo.src} src={photo.src} alt={index === idx ? photo.caption : ""}
+            aria-hidden={index !== idx} style={{ opacity: index === idx ? 1 : 0 }}
+            className={index === 1 ? "fg-house-photo" : undefined}
+            fetchPriority={index === 0 ? "high" : "auto"} />
         ))}
       </div>
       <div className="scrim" />
-
-      <div className="top-meta">
-        <span>44.0107° N · 72.9826° W</span>
-        <span>{dateStr}</span>
+      <div className="fg-hero-copy">
+        <p className="eyebrow">Ripton, Vermont · Est. 1974</p>
+        <h1>A place to<br /><em>come together.</em></h1>
+        <p className="fg-hero-caption">The days slow down. The door stays open.</p>
       </div>
-
-      <div className="bot-meta">
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 14,
-            alignItems: "flex-start",
-          }}
-        >
-          <div className="tag">{cur.chapter}</div>
-          <div className="bigtitle">
-            Breadloaf
-            <em>Hill.</em>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              width: "100%",
-              alignItems: "flex-end",
-              gap: 12,
-            }}
-          >
-            <div
-              style={{
-                fontFamily: "var(--mono)",
-                fontSize: 10,
-                letterSpacing: "0.15em",
-                textTransform: "uppercase",
-                color: "rgba(245,239,228,0.85)",
-                maxWidth: 240,
-                lineHeight: 1.5,
-              }}
-            >
-              <div>A family record of the house</div>
-              <div>at 3995 Vermont Route 125 —</div>
-              <div style={{ color: "rgba(245,239,228,0.55)" }}>
-                Ripton, Addison County.
-              </div>
-            </div>
-            <div className="pager">
-              {HERO_PHOTOS.map((_, i) => (
-                <span
-                  key={i}
-                  className={i === idx ? "active" : ""}
-                  onClick={() => setIdx(i)}
-                />
-              ))}
-            </div>
-          </div>
+      <div className="fg-hero-controls" aria-label="Property photographs">
+        <div className="fg-photo-pager">
+          {HERO_PHOTOS.map((photo, index) => (
+            <button key={photo.src} type="button" aria-label={`Show photo ${index + 1}: ${photo.caption}`}
+              aria-pressed={index === idx} onClick={() => { setIdx(index); setPaused(true); }}><span /></button>
+          ))}
         </div>
+        {!reducedMotion && <button type="button" className="fg-photo-pause" onClick={() => setPaused(!paused)}
+          aria-label={paused ? "Play slideshow" : "Pause slideshow"}>
+          {paused ? <Play size={15} aria-hidden="true" /> : <Pause size={15} aria-hidden="true" />}
+        </button>}
       </div>
-    </div>
+    </section>
   );
 }

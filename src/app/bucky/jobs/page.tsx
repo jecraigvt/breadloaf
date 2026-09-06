@@ -2,13 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, Loader2, RefreshCw } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, Clock3, FileText, Loader2, RefreshCw } from "lucide-react";
+import { Header } from "@/components/layout/header";
 import {
   BackgroundJobCard,
   isActiveBackgroundJob,
   type BackgroundJob,
   type BackgroundJobAction,
 } from "@/components/bucky/background-job";
+import "../../fieldguide-bucky.css";
 
 export default function BackgroundJobsPage() {
   const [jobs, setJobs] = useState<BackgroundJob[]>([]);
@@ -72,6 +74,7 @@ export default function BackgroundJobsPage() {
 
   const activeCount = jobs.filter(isActiveBackgroundJob).length;
   const reviewCount = jobs.filter((job) => job.status === "needs_review").length;
+  const countsUnavailable = loading || (!!error && jobs.length === 0);
   useEffect(() => {
     if (!activeCount) return;
     const refreshVisible = () => {
@@ -135,39 +138,44 @@ export default function BackgroundJobsPage() {
   };
 
   return (
-    <div className="text-[var(--ink)]">
-      <header className="border-b border-[var(--rule)] px-5 py-5">
-        <Link href="/assistant" className="inline-flex min-h-11 items-center gap-1 text-sm text-[var(--pine)]">
-          <ChevronLeft size={16} aria-hidden="true" /> Back to Bucky
-        </Link>
-        <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]" style={{ fontFamily: "var(--mono)" }}>The family’s ongoing work</p>
-        <h1 className="mt-1 text-4xl italic" style={{ fontFamily: "var(--serif)" }}>Bucky’s tasks</h1>
-        <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">Leave a task with Bucky and return when it is ready. Uploaded originals stay saved while analysis is pending.</p>
-      </header>
+    <div className="fg-jobs-page">
+      <Header title="Bucky’s tasks" subtitle="Leave a task with Bucky. Come back when it is ready." />
 
-      <main className="space-y-5 px-4 py-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <Link href="/upload" className="min-h-11 rounded-lg bg-[var(--pine)] px-4 py-3 text-sm font-medium text-white">Add documents</Link>
-          <button type="button" onClick={() => void fetchJobs()} disabled={refreshing} className="inline-flex min-h-11 items-center gap-2 px-3 text-sm text-[var(--muted)] disabled:opacity-50">
+      <div className="fg-jobs-content">
+        <div className="fg-jobs-toolbar">
+          <Link href="/assistant" className="fg-jobs-back">Back to Bucky <ArrowUpRight size={16} aria-hidden="true" /></Link>
+          <button type="button" onClick={() => void fetchJobs()} disabled={refreshing} className="fg-jobs-refresh">
             <RefreshCw size={15} className={refreshing ? "animate-spin" : ""} aria-hidden="true" /> Refresh
           </button>
         </div>
+        <div className="fg-jobs-overview" aria-label="Task overview">
+          <div><Clock3 size={18} aria-hidden="true" /><span className="fg-bucky-eyebrow">Waiting or in progress</span><strong>{countsUnavailable ? "—" : activeCount}</strong></div>
+          <div><FileText size={18} aria-hidden="true" /><span className="fg-bucky-eyebrow">Ready for review</span><strong>{countsUnavailable ? "—" : reviewCount}</strong></div>
+          <div><CheckCircle2 size={18} aria-hidden="true" /><span className="fg-bucky-eyebrow">Complete</span><strong>{countsUnavailable ? "—" : jobs.filter((job) => job.status === "succeeded").length}</strong></div>
+        </div>
+        <div className="fg-jobs-workspace">
+        <section className="fg-jobs-primary" aria-label="Background tasks">
         {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-        {canManage && budget && (
-          <p className="text-xs text-[var(--muted)]">Background analysis this month: ${(budget.spentCents / 100).toFixed(2)} used of ${(budget.limitCents / 100).toFixed(2)}{budget.reservedCents > 0 ? `, with $${(budget.reservedCents / 100).toFixed(2)} set aside for work in progress` : ""}.</p>
-        )}
         {loading ? (
-          <p className="flex items-center gap-2 py-6 text-sm text-[var(--muted)]"><Loader2 size={18} className="animate-spin" aria-hidden="true" /> Checking tasks…</p>
-        ) : (
+          <p role="status" className="fg-jobs-loading"><Loader2 size={18} className="animate-spin" aria-hidden="true" /> Checking tasks…</p>
+        ) : (!error || jobs.length > 0) && (
           <>
-            <p role="status" className="text-sm text-[var(--muted)]">{activeCount ? `${activeCount} task${activeCount === 1 ? "" : "s"} in progress or waiting. This page updates while work is pending.` : reviewCount ? `${reviewCount} task${reviewCount === 1 ? " is" : "s are"} ready for review.` : jobs.length ? "No tasks are waiting or in progress." : "No background tasks yet. Choose “Analyze in background” when you add a document, or leave a review request below."}</p>
-            <div className="space-y-3">
-              {jobs.map((job) => <BackgroundJobCard key={job.id} job={job} pendingAction={pendingActions[job.id]} error={actionErrors[job.id]} onAction={handleAction} canAct={job.kind !== "site_improvement" || canManage} />)}
+            <p role="status" className="fg-jobs-status">{activeCount ? `${activeCount} task${activeCount === 1 ? "" : "s"} in progress or waiting. This page updates while work is pending.` : reviewCount ? `${reviewCount} task${reviewCount === 1 ? " is" : "s are"} ready for review.` : jobs.length ? "No tasks are waiting or in progress." : "No background tasks yet. Choose “Analyze in background” when you add a document, or leave a review request."}</p>
+            <div className="fg-jobs-list">
+              {jobs.map((job) => <div key={job.id} className="fg-jobs-entry" data-job-status={job.status}><BackgroundJobCard job={job} pendingAction={pendingActions[job.id]} error={actionErrors[job.id]} onAction={handleAction} canAct={job.kind !== "site_improvement" || canManage} /></div>)}
             </div>
           </>
         )}
+        </section>
 
-        <details className="rounded-xl border border-stone-300 bg-white/40 p-4">
+        <aside className="fg-jobs-sidebar" aria-label="Leave work with Bucky">
+        <div className="fg-jobs-archive-note">
+          <p className="fg-bucky-eyebrow">Keep the original. Add the story.</p>
+          <h2>The family archive,<br /><em>one piece at a time.</em></h2>
+          <p>Uploaded originals stay saved while analysis is pending. You can leave this page and return to your tasks later.</p>
+          <Link href="/upload" className="fg-jobs-add"><FileText size={17} aria-hidden="true" /> Add documents <ArrowUpRight size={16} aria-hidden="true" /></Link>
+        </div>
+        <details className="fg-jobs-request">
           <summary className="cursor-pointer py-1 font-medium">Leave a review request</summary>
           <p className="mt-3 text-sm text-[var(--muted)]">Bucky can review the archive{canManage ? " or prepare a site improvement proposal" : ""}. You review the findings before any proposed changes are applied.</p>
           <form onSubmit={submitRequest} className="mt-4 space-y-3">
@@ -184,8 +192,13 @@ export default function BackgroundJobsPage() {
             {requestError && <p role="alert" className="text-sm text-red-700">{requestError}</p>}
           </form>
         </details>
-        <Link href="/documents" className="inline-flex min-h-11 items-center text-sm text-[var(--pine)] underline underline-offset-4">Return to the archive</Link>
-      </main>
+        {canManage && budget && (
+          <p className="fg-jobs-budget">Background analysis this month: ${(budget.spentCents / 100).toFixed(2)} used of ${(budget.limitCents / 100).toFixed(2)}{budget.reservedCents > 0 ? `, with $${(budget.reservedCents / 100).toFixed(2)} set aside for work in progress` : ""}.</p>
+        )}
+        <Link href="/documents" className="fg-jobs-back">Return to the archive <ArrowUpRight size={16} aria-hidden="true" /></Link>
+        </aside>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,0 +1,157 @@
+/* A — the familiar cabin catalogue, refined and made consistent. */
+body[data-concept="cabin"]{--paper:#f5efe4;--paper-2:#eae1cf;--white:#faf6ee;--ink:#302b23;--muted:#6d6558;--pine:#354b35;--pine-soft:#e6e7d8;--ember:#a04c2d;--rule:#d4c9b6;--radius:1px}
+[data-concept="cabin"] .site-header{border-bottom:3px double var(--rule)}
+[data-concept="cabin"] .page-heading h1,[data-concept="cabin"] .section-heading h2{font-style:italic}
+[data-concept="cabin"] .hero-photo{object-position:center 78%;transform:scale(1.11)}
+[data-concept="cabin"] .hero-copy{padding-bottom:25px}
+[data-concept="cabin"] .hero-title{font-style:italic}
+[data-concept="cabin"] .hero-kicker{padding:5px 8px;border:1px solid #ffffff70;background:#273a2440}
+[data-concept="cabin"] .tile-bucky{background:var(--paper-2);color:var(--ink);border-color:var(--rule)}
+[data-concept="cabin"] .tile-bucky .tile-number,[data-concept="cabin"] .tile-bucky .tile-meta{color:var(--muted)}
+[data-concept="cabin"] .tile-bucky .icon{color:var(--pine)}
+[data-concept="cabin"] .tile-title{font-style:italic}
+[data-concept="cabin"] .tile-number{padding-bottom:8px;border-bottom:1px solid var(--rule);width:100%}
+[data-concept="cabin"] .feature-story{border-top:3px double var(--rule);border-bottom:3px double var(--rule);background:none;padding:22px 0}
+[data-concept="cabin"] .button.primary{background:var(--pine)}
+[data-concept="cabin"] .room-card{border-left:0;border-right:0;background:transparent}
+/* B — a photographic family field guide with generous editorial pacing. */
+body[data-concept="fieldguide"]{--paper:#fbf9f0;--paper-2:#e9ebdc;--white:#fffdf6;--ink:#233d30;--muted:#5c6d5d;--pine:#2c4c35;--pine-soft:#e8ecd8;--ember:#a75832;--rule:#d1d8c5;--radius:3px}
+[data-concept="fieldguide"] .site-header{border-bottom:0;height:82px}
+[data-concept="fieldguide"] .site-header .wordmark{font-size:31px}
+[data-concept="fieldguide"] #main-content{padding-top:18px}
+[data-concept="fieldguide"] .hero{border-radius:0;min-height:310px;background:#3a5838}
+[data-concept="fieldguide"] .hero-copy{min-height:310px;padding-top:70px;padding-bottom:29px}
+[data-concept="fieldguide"] .hero:after{background:linear-gradient(0deg,#102519dd,#19372828 90%)}
+[data-concept="fieldguide"] .hero-title{font-size:52px;max-width:10ch;font-style:normal}
+[data-concept="fieldguide"] .hero-kicker{color:#f2eed2}
+[data-concept="fieldguide"] .hero-photo{object-position:50% 55%}
+[data-concept="fieldguide"] .overview-strip{background:var(--pine);color:#fff;border:0;padding-top:16px;padding-bottom:16px}
+[data-concept="fieldguide"] .overview-stat{border-color:#ffffff35}
+[data-concept="fieldguide"] .overview-stat .eyebrow,[data-concept="fieldguide"] .overview-stat small{color:#e1e8d7}
+[data-concept="fieldguide"] .section-heading{border-top:0;padding-top:5px;margin-top:26px}
+[data-concept="fieldguide"] .section-heading h2{font-size:34px}
+[data-concept="fieldguide"] .hub-tiles{gap:16px}
+[data-concept="fieldguide"] .hub-tiles .tile-calendar,[data-concept="fieldguide"] .hub-tiles .tile-family{grid-column:1}
+[data-concept="fieldguide"] .hub-tiles .tile-rooms,[data-concept="fieldguide"] .hub-tiles .tile-more{grid-column:2}
+[data-concept="fieldguide"] .tile-bucky{grid-column:1/-1;min-height:130px;border:0;background:var(--paper-2);color:var(--ink)}
+[data-concept="fieldguide"] .tile-bucky .tile-copy{display:grid;grid-template-columns:1fr auto;gap:5px 14px;padding:20px}
+[data-concept="fieldguide"] .tile-bucky .tile-number,[data-concept="fieldguide"] .tile-bucky .tile-meta{color:var(--muted)}
+[data-concept="fieldguide"] .tile-bucky .tile-title{font-size:36px}
+[data-concept="fieldguide"] .tile-bucky .tile-arrow{grid-column:2;grid-row:1/5;align-self:center;padding:0}
+[data-concept="fieldguide"] .tile-photo{height:160px}
+[data-concept="fieldguide"] .hub-tile:not(.tile-bucky){border:0;background:transparent;border-bottom:1px solid var(--rule)}
+[data-concept="fieldguide"] .tile-copy{padding:15px 0}
+[data-concept="fieldguide"] .tile-title{font-size:29px}
+[data-concept="fieldguide"] .tile-family,[data-concept="fieldguide"] .tile-more{min-height:100px}
+[data-concept="fieldguide"] .feature-story{background:var(--pine);color:var(--paper);padding:25px;margin-top:20px;position:relative}
+[data-concept="fieldguide"] .feature-story p,[data-concept="fieldguide"] .feature-story .eyebrow{color:#e1e8d7}
+[data-concept="fieldguide"] .feature-story .visit-date{background:#ffffff18}
+[data-concept="fieldguide"] .feature-story>.eyebrow{font-size:10px}
+[data-concept="fieldguide"] .feature-story .button.text-button{padding-left:10px;padding-right:10px}
+[data-concept="fieldguide"] .feature-story .button{background:var(--paper);color:var(--pine);border-color:var(--paper)}
+[data-concept="fieldguide"] .feature-story img{max-height:210px;width:100%;object-fit:cover;margin-bottom:20px}
+[data-concept="fieldguide"] .room-card{border:0;box-shadow:0 3px 16px #2039250a}
+[data-concept="fieldguide"] .room-photo{height:210px}
+[data-concept="fieldguide"] .panel{border-top:3px solid var(--pine)}
+[data-concept="fieldguide"] .page-heading h1{font-size:48px}
+[data-concept="fieldguide"] .site-nav{background:#fffdf6}
+[data-concept="fieldguide"] .site-nav button.active:before{width:40px;background:var(--pine)}
+/* C — a contemporary, quietly useful home dashboard. */
+body[data-concept="homestead"]{--paper:#f1f4ef;--paper-2:#e1e9df;--white:#fff;--ink:#203b31;--muted:#56695e;--pine:#28503f;--pine-soft:#e3eddf;--ember:#a65232;--rule:#d4dfd2;--radius:12px}
+[data-concept="homestead"] .site-header{background:var(--white);height:76px;border:0}
+[data-concept="homestead"] .site-header .wordmark{font-size:27px}
+[data-concept="homestead"] .site-header .identity{background:var(--pine-soft);border-color:transparent}
+[data-concept="homestead"] .welcome-row{padding:5px 0 8px;display:flex;align-items:center;gap:18px;justify-content:space-between}
+[data-concept="homestead"] .welcome-row>div{min-width:0}
+[data-concept="homestead"] .welcome-row>img{width:78px;height:104px;object-fit:cover;object-position:50% 70%;border-radius:40px;flex:none}
+[data-concept="homestead"] .welcome-row h1{font-family:var(--sans);font-size:32px;font-weight:500;letter-spacing:-1.2px;line-height:1.17;max-width:18ch}
+[data-concept="homestead"] .welcome-row h1 em{font-family:var(--serif);font-size:1.18em;font-weight:400}
+[data-concept="homestead"] .welcome-row .eyebrow{letter-spacing:.03em;font-size:11px;text-transform:none}
+[data-concept="homestead"] .status-board{display:flex;flex-direction:column;gap:10px;margin:12px 0 25px}
+[data-concept="homestead"] .status-board .overview-strip{margin:0;padding:18px 14px;border:0;border-radius:var(--radius);background:var(--pine);color:white;gap:10px}
+[data-concept="homestead"] .status-board .overview-stat{flex-direction:column;align-items:flex-start;gap:4px;border-color:#ffffff30}
+[data-concept="homestead"] .status-board .overview-stat .eyebrow,[data-concept="homestead"] .status-board .overview-stat small{color:#e4ecdf}
+[data-concept="homestead"] .status-board .overview-stat strong{font-size:20px;margin:0}
+[data-concept="homestead"] .status-board-bucky{display:flex;align-items:center;gap:12px;padding:15px;border-radius:var(--radius);background:var(--paper-2)}
+[data-concept="homestead"] .status-board-bucky>div{flex:1;min-width:0}
+[data-concept="homestead"] .status-board .status-board-bucky strong{font-size:13px;letter-spacing:0;margin:0 0 3px}
+[data-concept="homestead"] .status-board-bucky p{font-size:12px;color:var(--muted);margin:0}
+[data-concept="homestead"] .status-board-bucky .button{font-size:11px;flex:none;padding:8px}
+[data-concept="homestead"] .status-board .panel{padding:15px;border:0;background:var(--paper-2)}
+[data-concept="homestead"] .status-board strong{font-size:22px;font-weight:500;letter-spacing:-.5px}
+[data-concept="homestead"] .status-board .panel:first-child{background:var(--pine);color:white}
+[data-concept="homestead"] .status-board .panel:first-child .eyebrow,[data-concept="homestead"] .status-board .panel:first-child p{color:#e4ecdf}
+[data-concept="homestead"] .status-board .eyebrow{font-family:var(--sans);font-size:11px;letter-spacing:0;text-transform:none}
+[data-concept="homestead"] .hub-tiles{gap:12px}
+[data-concept="homestead"] .hub-tiles .tile-calendar,[data-concept="homestead"] .hub-tiles .tile-family{grid-column:1}
+[data-concept="homestead"] .hub-tiles .tile-rooms,[data-concept="homestead"] .hub-tiles .tile-more{grid-column:2}
+[data-concept="homestead"] .hub-tile{border:0;box-shadow:0 2px 6px #253c2810}
+[data-concept="homestead"] .tile-bucky{grid-column:1/-1;min-height:146px;background:var(--white);color:var(--ink);border:1px solid var(--pine)}
+[data-concept="homestead"] .tile-bucky .tile-copy{padding:20px}
+[data-concept="homestead"] .tile-bucky .tile-number,[data-concept="homestead"] .tile-bucky .tile-meta{color:var(--muted)}
+[data-concept="homestead"] .tile-number{font-family:var(--sans);text-transform:none;letter-spacing:0;font-size:11px}
+[data-concept="homestead"] .tile-bucky .tile-title{font-family:var(--sans);font-size:25px;font-weight:600;font-style:normal}
+[data-concept="homestead"] .tile-bucky .tile-arrow{position:absolute;right:22px;top:22px;display:grid;place-items:center;width:36px;height:36px;background:var(--pine-soft);border-radius:50%;padding:0}
+[data-concept="homestead"] .tile-title{font-family:var(--sans);font-size:19px;font-style:normal;font-weight:600;letter-spacing:-.4px}
+[data-concept="homestead"] .tile-photo{height:95px}
+[data-concept="homestead"] .tile-calendar .tile-copy,[data-concept="homestead"] .tile-rooms .tile-copy{padding:16px}
+[data-concept="homestead"] .tile-family,[data-concept="homestead"] .tile-more{min-height:98px}
+[data-concept="homestead"] .section-heading{border:0;padding:0;margin-top:27px}
+[data-concept="homestead"] .section-heading h2{font-family:var(--sans);font-size:19px;font-weight:600;letter-spacing:-.3px}
+[data-concept="homestead"] .panel,[data-concept="homestead"] .task-card{border:0;box-shadow:0 2px 9px #293b2208}
+[data-concept="homestead"] .page-heading h1{font-family:var(--sans);font-size:32px;line-height:1.2;font-weight:500;letter-spacing:-1px}
+[data-concept="homestead"] .room-card h3,[data-concept="homestead"] .room-card h2{font-family:var(--sans);font-size:21px;font-weight:500}
+[data-concept="homestead"] .task-card h2,[data-concept="homestead"] .task-card h3{font-family:var(--sans);font-size:22px;font-weight:500;line-height:1.3}
+[data-concept="homestead"] .pill{border-radius:40px;padding:5px 10px}
+[data-concept="homestead"] .feature-story{background:var(--white);border:1px solid var(--rule)}
+[data-concept="homestead"] .feature-story h2{font-family:var(--sans);font-size:22px;font-weight:500}
+[data-concept="homestead"] .site-nav{background:white;border:0;padding-top:6px;padding-bottom:6px;box-shadow:0 -3px 22px #274c3210}
+[data-concept="homestead"] .site-nav button.active:before,[data-concept="homestead"] .site-nav button[aria-current="page"]:before{display:none}
+[data-concept="homestead"] .site-nav button{height:62px;border-radius:9px}
+[data-concept="homestead"] .site-nav button.active{background:var(--pine-soft)}
+@media(min-width:650px){
+  [data-concept="fieldguide"] .hero,[data-concept="fieldguide"] .hero-copy{min-height:380px}
+  [data-concept="fieldguide"] .hero-title{font-size:74px}
+  [data-concept="homestead"] .welcome-row h1{font-size:44px;max-width:none}
+  [data-concept="homestead"] .page-heading h1{font-size:42px}
+  [data-concept="homestead"] .tile-photo{height:140px}
+}
+@media(min-width:1024px){
+  [data-concept="cabin"] .hero,[data-concept="cabin"] .hero-copy{min-height:330px}
+  [data-concept="cabin"] .hub-tiles{grid-template-columns:repeat(6,minmax(0,1fr))}
+  [data-concept="cabin"] .hub-tiles .tile-bucky{grid-column:1/3;grid-row:1}
+  [data-concept="cabin"] .hub-tiles .tile-calendar{grid-column:3/5;grid-row:1}
+  [data-concept="cabin"] .hub-tiles .tile-rooms{grid-column:5/7;grid-row:1}
+  [data-concept="cabin"] .hub-tiles .tile-family{grid-column:1/4;grid-row:2}
+  [data-concept="cabin"] .hub-tiles .tile-more{grid-column:4/7;grid-row:2}
+  [data-concept="cabin"] .tile-copy,[data-concept="cabin"] .tile-bucky .tile-copy{padding:18px}
+  [data-concept="cabin"] .tile-title{font-size:29px}
+  [data-concept="fieldguide"] .hero,[data-concept="fieldguide"] .hero-copy{min-height:460px}
+  [data-concept="fieldguide"] .hero-title{font-size:88px;max-width:12ch}
+  [data-concept="fieldguide"] .hero-copy{padding-left:56px;padding-bottom:44px}
+  [data-concept="fieldguide"] .hub-layout{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:45px}
+  [data-concept="fieldguide"] .hub-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+  [data-concept="fieldguide"] .tile-bucky{grid-row:auto;min-height:135px}
+  [data-concept="fieldguide"] .tile-photo{height:220px}
+  [data-concept="fieldguide"] .page-heading h1{font-size:65px}
+  [data-concept="homestead"] #main-content{padding-top:34px}
+  [data-concept="homestead"] .welcome-row{margin-bottom:25px}
+  [data-concept="homestead"] .welcome-row>img{width:180px;height:120px;border-radius:60px}
+  [data-concept="homestead"] .welcome-row h1{font-size:48px}
+  [data-concept="homestead"] .hub-layout{grid-template-columns:minmax(0,1.85fr) minmax(0,1fr);gap:28px}
+  [data-concept="homestead"] .status-board{display:grid;max-width:none;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:18px}
+  [data-concept="homestead"] .status-board .panel{padding:24px}
+  [data-concept="homestead"] .status-board strong{font-size:30px}
+  [data-concept="homestead"] .hub-tiles{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+  [data-concept="homestead"] .tile-bucky{grid-row:auto;min-height:150px}
+  [data-concept="homestead"] .tile-bucky .tile-title{font-size:30px}
+  [data-concept="homestead"] .tile-bucky .tile-copy{padding:26px}
+  [data-concept="homestead"] .site-nav{padding-left:25%;padding-right:25%}
+  [data-concept="homestead"] .tile-title{font-size:24px}
+}
+@media(max-width:649px){
+  [data-concept="cabin"] .hero-photo{transform:scale(1.7);transform-origin:50% 75%}
+  [data-concept="cabin"] .hub-tiles .tile-more .tile-arrow{position:absolute;right:20px;bottom:20px}
+  [data-concept="cabin"] .hub-tiles .tile-more .tile-copy{padding-right:54px}
+  [data-concept="homestead"] .section-heading .eyebrow{font-size:9px;max-width:38%;text-align:right}
+}

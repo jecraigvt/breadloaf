@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f4f2ed">
+  <title>Three fresh perspectives · Breadloaf Hill</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/fonts.css">
+  <link rel="stylesheet" href="/compare.css">
+  <script type="module" src="/compare.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#preview-content">Skip to design previews</a>
+  <header class="studio-header">
+    <a class="studio-wordmark" href="/" aria-label="Breadloaf Hill design comparison home"><span class="hill-symbol" aria-hidden="true">⌁</span> Breadloaf Hill <span class="studio-label">Design study</span></a>
+    <span class="prototype-badge"><span aria-hidden="true"></span> Interactive prototypes</span>
+  </header>
+
+  <main id="preview-content">
+    <section class="introduction" aria-labelledby="page-title">
+      <p class="eyebrow">One familiar place · Three new directions</p>
+      <h1 id="page-title">A familiar place.<br><em>A fresh perspective.</em></h1>
+      <div class="introduction-bottom">
+        <p class="intro-copy">The same paths to dates, rooms, and a little help from Bucky. Three ways to make Breadloaf Hill feel clearer, more welcoming, and unmistakably upgraded.</p>
+        <p class="intro-note">Start with the homepages below, then explore a direction on your phone, tablet, or desktop.</p>
+      </div>
+    </section>
+
+    <section class="comparison-controls" aria-label="Preview controls">
+      <div class="mode-switch" aria-label="View mode">
+        <button type="button" id="compare-mode" class="mode-button" aria-pressed="true">Compare all three</button>
+        <button type="button" id="explore-mode" class="mode-button" aria-pressed="false">Explore one</button>
+      </div>
+      <div class="screen-control"><label for="screen-select">Screen</label><select id="screen-select"><option value="hub">Hub</option><option value="calendar">Calendar</option><option value="rooms">Stays &amp; Rooms</option><option value="bucky">Bucky</option><option value="upload">Add to Archive</option><option value="tasks">Bucky’s tasks</option></select></div>
+    </section>
+
+    <section id="comparison-view" class="concept-grid" aria-label="Compare the three design concepts">
+      <article class="concept-card" data-concept="cabin">
+        <div class="concept-heading"><span class="concept-number">01</span><span class="concept-tag">A natural next chapter</span></div>
+        <h2>Refined Cabin</h2><p class="concept-description">Everything feels where it belongs. Warmer details, clearer pages, and a gentle polish on the site you know.</p>
+        <div class="mini-frame-outer"><div class="mini-frame" data-mini-frame="cabin"><iframe title="Refined Cabin interactive mobile preview" src="/prototype.html?concept=cabin&amp;screen=hub" data-preview-concept="cabin" loading="eager"></iframe></div></div>
+        <div class="concept-footer"><p><span class="familiarity-dot" aria-hidden="true"></span> Closest to today’s site</p><button class="explore-button" type="button" data-explore="cabin">Explore this direction <span aria-hidden="true">↗</span></button></div>
+      </article>
+      <article class="concept-card" data-concept="fieldguide">
+        <div class="concept-heading"><span class="concept-number">02</span><span class="concept-tag">A place worth coming back to</span></div>
+        <h2>Family Field Guide</h2><p class="concept-description">A little more of the mountain, a little more of the family. Photography and thoughtful chapters bring the place forward.</p>
+        <div class="mini-frame-outer"><div class="mini-frame" data-mini-frame="fieldguide"><iframe title="Family Field Guide interactive mobile preview" src="/prototype.html?concept=fieldguide&amp;screen=hub" data-preview-concept="fieldguide" loading="eager"></iframe></div></div>
+        <div class="concept-footer"><p><span class="familiarity-dot" aria-hidden="true"></span> Most welcoming and expressive</p><button class="explore-button" type="button" data-explore="fieldguide">Explore this direction <span aria-hidden="true">↗</span></button></div>
+      </article>
+      <article class="concept-card" data-concept="homestead">
+        <div class="concept-heading"><span class="concept-number">03</span><span class="concept-tag">Make room for the everyday</span></div>
+        <h2>Modern Homestead</h2><p class="concept-description">A calm, useful home base. Upcoming visits, everyday actions, and Bucky’s progress come into focus.</p>
+        <div class="mini-frame-outer"><div class="mini-frame" data-mini-frame="homestead"><iframe title="Modern Homestead interactive mobile preview" src="/prototype.html?concept=homestead&amp;screen=hub" data-preview-concept="homestead" loading="eager"></iframe></div></div>
+        <div class="concept-footer"><p><span class="familiarity-dot" aria-hidden="true"></span> Clearest for frequent visits</p><button class="explore-button" type="button" data-explore="homestead">Explore this direction <span aria-hidden="true">↗</span></button></div>
+      </article>
+    </section>
+
+    <section id="exploration-view" class="exploration" aria-label="Explore a design concept" hidden>
+      <div class="explore-toolbar">
+        <div class="concept-control"><label for="concept-select">Direction</label><select id="concept-select"><option value="cabin">01 · Refined Cabin</option><option value="fieldguide">02 · Family Field Guide</option><option value="homestead">03 · Modern Homestead</option></select></div>
+        <div class="viewport-switch" role="group" aria-label="Preview viewport"><button type="button" data-viewport="mobile" aria-pressed="true">Mobile <span>390</span></button><button type="button" data-viewport="tablet" aria-pressed="false">Tablet <span>768</span></button><button type="button" data-viewport="desktop" aria-pressed="false">Desktop <span>1440</span></button></div>
+        <a id="full-size-link" class="quiet-button" href="/prototype.html?concept=cabin&amp;screen=hub" target="_blank" rel="noopener">Open full-size <span aria-hidden="true">↗</span></a>
+      </div>
+      <div class="explore-description"><p id="active-concept-description">The gentlest transition: the familiar editorial character, made more consistent and easier to use.</p><span id="scale-label">390 × 844 · Actual size</span></div>
+      <div id="focused-stage" class="focused-stage"><div id="focused-frame" class="focused-frame"><iframe id="focused-preview" title="Refined Cabin focused interactive preview" src="about:blank"></iframe></div></div>
+      <div class="flow-helpers"><div><span class="eyebrow">Try a familiar task</span><p>Check dates and add a stay, or add a document and follow Bucky’s progress.</p></div><button type="button" id="reset-flow" class="quiet-button">Reset this preview <span aria-hidden="true">↺</span></button></div>
+    </section>
+
+    <section class="decision-guide" aria-labelledby="decision-heading">
+      <div><p class="eyebrow">A little guidance</p><h2 id="decision-heading">Familiar by design.<br><em>Different in feeling.</em></h2><p>Every direction keeps Hub / Dates / Rooms / Guide / Board, the same destinations, and the same everyday tasks. The choice is how you want the place to feel.</p></div>
+      <div class="recommendation"><p class="recommendation-label">Our recommendation</p><h3>Start with Refined Cabin.</h3><p>It gives returning family members the most recognizable experience, with enough polish to clearly feel new. Choose Family Field Guide for more atmosphere, or Modern Homestead for a more compact everyday workspace.</p><p class="recommendation-footnote">You can also choose one direction and borrow a detail you love from another.</p></div>
+    </section>
+    <footer class="studio-footer"><p><strong>Design demonstration only.</strong> All visits, documents, and conversations are sample content. Nothing here books a room, uploads a file, contacts Bucky, or changes the live site.</p><span>Breadloaf Hill · UX study · 2026</span></footer>
+  </main>
+  <div id="preview-announcement" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+</body>
+</html>

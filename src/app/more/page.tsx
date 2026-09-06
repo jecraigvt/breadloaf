@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Header } from "@/components/layout/header";
 
 const ICLOUD_ALBUM = "https://www.icloud.com/sharedalbum/#B2X5nhQSTTixIx";
 
@@ -15,7 +16,7 @@ const DESTINATIONS: Destination[] = [
   { name: "Local Guide", sub: "Swims, hikes, and restaurants", href: "/guide" },
   { name: "Weather", sub: "Forecast on the hill", href: "/weather" },
   { name: "Finances", sub: "S-Corp expenses and splits", href: "/expenses" },
-  { name: "Family Album", sub: "847 photos on iCloud", href: ICLOUD_ALBUM, external: true },
+  { name: "Family Album", sub: "Family photographs on iCloud", href: ICLOUD_ALBUM, external: true },
   { name: "Checklists", sub: "Opening and closing", href: "/checklists" },
   { name: "Emergency", sub: "Contacts and tap-to-call", href: "/emergency" },
   { name: "Archive", sub: "Documents and auto-filing", href: "/documents" },
@@ -23,31 +24,17 @@ const DESTINATIONS: Destination[] = [
   { name: "Bulletin Board", sub: "Family notes", href: "/bulletin" },
   { name: "Maintenance", sub: "Property work and history", href: "/maintenance" },
   { name: "Add Documents", sub: "Scan, upload, or link a file", href: "/upload" },
+  { name: "Bucky’s tasks", sub: "Follow background work and results", href: "/bucky/jobs" },
   { name: "Catalogue by Voice", sub: "Record boxes and objects item by item", href: "/narrate" },
 ];
 
 export default function MorePage() {
   return (
     <div className="fade-in">
-      <div className="chrome-top">
-        <Link href="/" className="ctr">← Hub</Link>
-        <span className="wordmark"><em>Breadloaf</em> Hill</span>
-        <span className="ctr">Directory</span>
-      </div>
-
-      <div className="chapter-intro">
-        <div className="number">The full directory</div>
-        <div className="lede">
-          Every corner of the hill, <em>still within reach.</em>
-        </div>
-      </div>
-
-      <div className="section-head">
-        <div className="lt">All <em>Tools</em></div>
-        <div className="rt">{DESTINATIONS.length} destinations</div>
-      </div>
-
-      <div className="index-list">
+      <Header title="All Tools" subtitle="Every corner of the hill, still within reach." />
+      <div className="fg-directory">
+      <p className="eyebrow">The full directory / {DESTINATIONS.length} destinations</p>
+      <div className="index-list fg-directory-list">
         {DESTINATIONS.map((destination, index) => {
           const content = (
             <>
@@ -69,6 +56,7 @@ export default function MorePage() {
             </Link>
           );
         })}
+      </div>
       </div>
     </div>
   );

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { resolveSupportedFileType } from "@/lib/document-file-types";
+import "../fieldguide-archive.css";
 
 type UploadStep = "select" | "preview" | "uploading" | "categorizing" | "review" | "done" | "link" | "batch" | "background-saving" | "background-done";
 
@@ -438,18 +439,34 @@ export default function UploadPage() {
   };
 
   return (
-    <div>
+    <div className="fg-archive fg-upload">
       <Header
         title="Add to Archive"
         subtitle="Upload documents, recordings, videos, or link a URL"
       />
 
-      <div className="max-w-lg mx-auto px-4 py-6 space-y-6">
-        <Link href="/bucky/jobs" className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-green-800 underline underline-offset-4">
+      <div className="fg-archive-body">
+        <div className="fg-archive-topline">
+          <span className="fg-archive-eyebrow">The family record</span>
+          <Link href="/bucky/jobs" className="fg-archive-text-link">
           <Clock3 size={16} aria-hidden="true" /> Bucky’s background tasks
-        </Link>
+          </Link>
+        </div>
+        <div className="fg-upload-layout">
+        <section className="fg-archive-panel fg-upload-workspace space-y-6" aria-label="Add a document">
+        <ol className="fg-upload-progress" aria-label="Upload progress">
+          {[
+            { label: "Choose", active: step === "select" || step === "link" || step === "preview" || (step === "batch" && !batchStarted) },
+            { label: "Process", active: step === "uploading" || step === "categorizing" || step === "review" || step === "background-saving" || (step === "batch" && batchRunning) },
+            { label: "Archive", active: step === "done" || step === "background-done" || (step === "batch" && batchStarted && !batchRunning) },
+          ].map((item, index) => (
+            <li key={item.label} aria-current={item.active ? "step" : undefined}>
+              <span>{String(index + 1).padStart(2, "0")}</span>{item.label}
+            </li>
+          ))}
+        </ol>
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm flex items-start gap-2">
+          <div role="alert" className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm flex items-start gap-2">
             <X size={16} className="mt-0.5 flex-shrink-0" />
             {error}
           </div>
@@ -457,6 +474,10 @@ export default function UploadPage() {
 
         {step === "select" && (
           <>
+            <div className="fg-upload-intro">
+              <h2>Keep it in the family.</h2>
+              <p>Scan a page, choose a file, or save a link. Bucky can help read it and find its place in the archive.</p>
+            </div>
             <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
               <ShieldAlert size={18} className="mt-0.5 flex-shrink-0" />
               <p>
@@ -587,8 +608,9 @@ export default function UploadPage() {
         {step === "link" && (
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">URL</label>
+              <label htmlFor="archive-link-url" className="block text-sm font-medium text-stone-700 mb-1">URL</label>
               <input
+                id="archive-link-url"
                 type="url"
                 value={linkUrl}
                 onChange={(e) => setLinkUrl(e.target.value)}
@@ -617,8 +639,9 @@ export default function UploadPage() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">Title</label>
+              <label htmlFor="archive-link-title" className="block text-sm font-medium text-stone-700 mb-1">Title</label>
               <input
+                id="archive-link-title"
                 type="text"
                 value={linkTitle}
                 onChange={(e) => setLinkTitle(e.target.value)}
@@ -627,8 +650,9 @@ export default function UploadPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">Category</label>
+              <label htmlFor="archive-link-category" className="block text-sm font-medium text-stone-700 mb-1">Category</label>
               <select
+                id="archive-link-category"
                 value={linkCategory}
                 onChange={(e) => setLinkCategory(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
@@ -640,8 +664,9 @@ export default function UploadPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">Description</label>
+              <label htmlFor="archive-link-description" className="block text-sm font-medium text-stone-700 mb-1">Description</label>
               <input
+                id="archive-link-description"
                 type="text"
                 value={linkDescription}
                 onChange={(e) => setLinkDescription(e.target.value)}
@@ -650,8 +675,9 @@ export default function UploadPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">Your name</label>
+              <label htmlFor="archive-link-name" className="block text-sm font-medium text-stone-700 mb-1">Your name</label>
               <input
+                id="archive-link-name"
                 type="text"
                 value={uploadedBy}
                 onChange={(e) => setUploadedBy(e.target.value)}
@@ -709,10 +735,11 @@ export default function UploadPage() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">
+              <label htmlFor="archive-upload-name" className="block text-sm font-medium text-stone-700 mb-1">
                 Your name
               </label>
               <input
+                id="archive-upload-name"
                 type="text"
                 value={uploadedBy}
                 onChange={(e) => setUploadedBy(e.target.value)}
@@ -789,10 +816,11 @@ export default function UploadPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">
+              <label htmlFor="archive-document-title" className="block text-sm font-medium text-stone-700 mb-1">
                 Document Title
               </label>
               <input
+                id="archive-document-title"
                 type="text"
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
@@ -901,6 +929,21 @@ export default function UploadPage() {
             </div>
           </div>
         )}
+        </section>
+        <aside className="fg-upload-aside">
+          <section className="fg-archive-panel fg-archive-note">
+            <span className="fg-archive-eyebrow">A little help from Bucky</span>
+            <h2>Save now.<br /><em>Find it later.</em></h2>
+            <p>House records, receipts, old stories, and useful links — kept together for the next person who needs them.</p>
+            <ol className="fg-archive-steps">
+              <li><span>01</span><div><h3>Choose an original</h3><p>Use your camera, files, or a document URL.</p></div></li>
+              <li><span>02</span><div><h3>Choose when to analyze</h3><p>Upload &amp; Analyze works while you wait. Analyze in background saves supported files first, so you can leave after the upload finishes.</p></div></li>
+              <li><span>03</span><div><h3>Return to your archive</h3><p>Review immediate results here, or follow background progress in Bucky’s tasks.</p></div></li>
+            </ol>
+            <Link href="/documents" className="fg-archive-text-link">Browse the archive <FolderOpen size={16} aria-hidden="true" /></Link>
+          </section>
+        </aside>
+        </div>
       </div>
     </div>
   );

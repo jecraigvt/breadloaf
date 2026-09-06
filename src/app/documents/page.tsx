@@ -8,6 +8,7 @@ import type { DocumentWithCategory } from "@/types";
 import { formatDate } from "@/lib/utils";
 import type { ArchiveHealth } from "@/lib/archive-health";
 import { archiveVerificationStalenessMessage } from "@/lib/archive-health-shared";
+import "../fieldguide-archive.css";
 
 const CATEGORY_COLORS: Record<string, string> = {
   blue: "bg-blue-100 text-blue-800",
@@ -189,14 +190,20 @@ export default function DocumentsPage() {
   };
 
   return (
-    <div>
+    <div className="fg-archive">
       <Header title="Document Archive" subtitle="Browse and search all property documents" />
 
-      <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
+      <div className="fg-archive-body space-y-5">
+        <div className="fg-archive-topline">
+          <span className="fg-archive-eyebrow">The family record</span>
+          <Link href="/bucky/jobs" className="fg-archive-text-link">
+            <Clock3 size={16} aria-hidden="true" /> Bucky’s background tasks
+          </Link>
+        </div>
         {archiveHealth && (
           <section
             aria-label="Archive health"
-            className={`rounded-xl border p-3 ${
+            className={`fg-archive-health rounded-xl border p-3 ${
               archiveHealth.issueDocuments === 0
                 ? "border-green-200 bg-green-50"
                 : "border-amber-200 bg-amber-50"
@@ -239,16 +246,19 @@ export default function DocumentsPage() {
         )}
 
         {/* Search Bar */}
-        <Link href="/bucky/jobs" className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-green-800 underline underline-offset-4">
-          <Clock3 size={16} aria-hidden="true" /> Bucky’s background tasks
-        </Link>
-        <div className="relative">
+        <section className="fg-archive-panel fg-archive-search-panel" aria-label="Find a document">
+        <div className="fg-archive-section-heading">
+          <h2>From the shelves.</h2>
+          <p>Search by a word you remember, or browse a category.</p>
+        </div>
+        <div className="relative fg-archive-search">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search documents..."
+            aria-label="Search documents"
             className="w-full pl-10 pr-4 py-3 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
           />
         </div>
@@ -256,12 +266,13 @@ export default function DocumentsPage() {
         {/* Category Filters */}
         {!showDeleted && (
         <div
-          className="flex flex-wrap gap-2"
+          className="fg-archive-filters flex flex-wrap gap-2"
           role="group"
           aria-label="Filter documents by category"
         >
           <button
             onClick={() => setSelectedCategory(null)}
+            aria-pressed={!selectedCategory}
             className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
               !selectedCategory
                 ? "bg-green-700 text-white"
@@ -272,6 +283,7 @@ export default function DocumentsPage() {
           </button>
           {uncategorizedCount > 0 && (
             <button
+              aria-pressed={selectedCategory === "uncategorized"}
               onClick={() =>
                 setSelectedCategory(
                   selectedCategory === "uncategorized" ? null : "uncategorized"
@@ -291,6 +303,7 @@ export default function DocumentsPage() {
             .map((cat) => (
               <button
                 key={cat.id}
+                aria-pressed={selectedCategory === cat.slug}
                 onClick={() =>
                   setSelectedCategory(selectedCategory === cat.slug ? null : cat.slug)
                 }
@@ -305,13 +318,14 @@ export default function DocumentsPage() {
             ))}
         </div>
         )}
+        </section>
 
         {/* View Toggle + Librarian */}
-        <div className="flex items-center justify-between">
+        <div className="fg-archive-toolbar">
           <span className="text-sm text-stone-500">
             {documents.length} document{documents.length !== 1 ? "s" : ""}
           </span>
-          <div className="flex items-center gap-1">
+          <div className="fg-archive-tools">
             <button
               onClick={() => {
                 setShowDeleted((current) => !current);
@@ -321,6 +335,7 @@ export default function DocumentsPage() {
                 showDeleted ? "bg-stone-800 text-white" : "text-stone-600 bg-stone-100 hover:bg-stone-200"
               }`}
               title="Recently Deleted"
+              aria-pressed={showDeleted}
             >
               <Trash2 size={14} />
               <span>Deleted</span>
@@ -349,11 +364,12 @@ export default function DocumentsPage() {
             </button>
             )}
             {!showDeleted && (
-              <>
+              <span className="fg-archive-views" role="group" aria-label="Document view">
                 <button
                   onClick={() => setViewMode("grid")}
                   className={`p-2 rounded-lg ${viewMode === "grid" ? "bg-stone-200" : "hover:bg-stone-100"}`}
                   title="Grid view"
+                  aria-pressed={viewMode === "grid"}
                 >
                   <Grid size={16} />
                 </button>
@@ -361,10 +377,11 @@ export default function DocumentsPage() {
                   onClick={() => setViewMode("list")}
                   className={`p-2 rounded-lg ${viewMode === "list" ? "bg-stone-200" : "hover:bg-stone-100"}`}
                   title="List view"
+                  aria-pressed={viewMode === "list"}
                 >
                   <List size={16} />
                 </button>
-              </>
+              </span>
             )}
           </div>
         </div>
@@ -372,7 +389,7 @@ export default function DocumentsPage() {
         {librarianMessage && (
           <div className="flex items-center justify-between bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 text-sm text-purple-800">
             <span>{librarianMessage}</span>
-            <button onClick={() => setLibrarianMessage(null)} className="text-purple-400 hover:text-purple-600">
+            <button aria-label="Dismiss librarian message" onClick={() => setLibrarianMessage(null)} className="text-purple-400 hover:text-purple-600">
               <X size={14} />
             </button>
           </div>
@@ -380,7 +397,7 @@ export default function DocumentsPage() {
 
         {/* Librarian plan review */}
         {(librarianState === "reviewing" || librarianState === "applying") && plan && (
-          <div className="bg-white border border-purple-200 rounded-xl p-4 space-y-4">
+          <div className="fg-archive-panel bg-white border border-purple-200 rounded-xl p-4 space-y-4">
             <div className="flex items-start justify-between gap-2">
               <div>
                 <h3 className="font-semibold text-stone-800 flex items-center gap-2">
@@ -390,6 +407,7 @@ export default function DocumentsPage() {
                 <p className="text-sm text-stone-600 mt-1">{plan.summary}</p>
               </div>
               <button
+                aria-label="Close librarian proposal"
                 onClick={() => { setPlan(null); setLibrarianState("idle"); }}
                 className="text-stone-400 hover:text-stone-600 flex-shrink-0"
               >
@@ -512,13 +530,13 @@ export default function DocumentsPage() {
 
         {/* Documents */}
         {loading ? (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="fg-archive-grid" aria-label="Loading documents" role="status">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="bg-stone-100 rounded-xl h-48 animate-pulse" />
             ))}
           </div>
         ) : documents.length === 0 ? (
-          <div className="text-center py-12">
+          <div className="fg-archive-empty text-center py-12">
             <FolderOpen size={48} className="mx-auto text-stone-300 mb-3" />
             <p className="text-stone-500 font-medium">{showDeleted ? "Recently Deleted is empty" : "No documents found"}</p>
             <p className="text-stone-400 text-sm mt-1">
@@ -556,15 +574,12 @@ export default function DocumentsPage() {
             ))}
           </div>
         ) : viewMode === "grid" ? (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="fg-archive-grid">
             {documents.map((doc) => (
-              <Link
-                key={doc.id}
-                href={`/documents/${doc.id}`}
-                className="bg-white rounded-xl border border-stone-200 overflow-hidden hover:shadow-md transition-shadow"
-              >
+              <article key={doc.id} className="fg-archive-card">
+              <Link href={`/documents/${doc.id}`} className="fg-archive-card-link">
                 {doc.fileType.startsWith("image/") ? (
-                  <div className="h-32 bg-stone-100">
+                  <div className="fg-archive-card-image">
                     <img
                       src={`/api/documents/${doc.id}/file`}
                       alt={doc.title}
@@ -572,15 +587,16 @@ export default function DocumentsPage() {
                     />
                   </div>
                 ) : (
-                  <div className="h-32 bg-stone-50 flex items-center justify-center">
-                    <FolderOpen size={32} className="text-stone-300" />
+                  <div className="fg-archive-card-image fg-archive-card-placeholder">
+                    <FolderOpen size={32} aria-hidden="true" />
+                    <span className="fg-archive-eyebrow">From the archive</span>
                   </div>
                 )}
-                <div className="p-3">
-                  <p className="font-medium text-sm text-stone-800 line-clamp-2">
+                <div className="fg-archive-card-copy">
+                  <h3 className="line-clamp-2">
                     {doc.title}
-                  </p>
-                  {doc.category ? (
+                  </h3>
+                  {doc.category && (
                     <span
                       className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                         CATEGORY_COLORS[doc.category.color || "gray"]
@@ -588,17 +604,16 @@ export default function DocumentsPage() {
                     >
                       {doc.category.name}
                     </span>
-                  ) : (
+                  )}
+                  <p className="fg-archive-card-date">{formatDate(doc.createdAt)}</p>
+                </div>
+              </Link>
+              {!doc.category && (
+                <div className="fg-archive-card-filing">
                     <select
                       defaultValue=""
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                      }}
-                      onChange={(e) => {
-                        e.preventDefault();
-                        assignCategory(doc.id, e.target.value);
-                      }}
+                      aria-label={`File ${doc.title} under category`}
+                      onChange={(e) => void assignCategory(doc.id, e.target.value)}
                       className="mt-1 w-full px-2 py-1 rounded-lg border border-amber-300 bg-amber-50 text-xs text-amber-800"
                     >
                       <option value="" disabled>
@@ -610,19 +625,16 @@ export default function DocumentsPage() {
                         </option>
                       ))}
                     </select>
-                  )}
                 </div>
-              </Link>
+              )}
+              </article>
             ))}
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="fg-archive-list">
             {documents.map((doc) => (
-              <Link
-                key={doc.id}
-                href={`/documents/${doc.id}`}
-                className="flex items-start gap-3 bg-white rounded-xl border border-stone-200 p-3 hover:shadow-md transition-shadow"
-              >
+              <article key={doc.id} className="fg-archive-list-card">
+              <Link href={`/documents/${doc.id}`} className="fg-archive-list-link">
                 {doc.fileType.startsWith("image/") ? (
                   <div className="w-16 h-16 rounded-lg bg-stone-100 flex-shrink-0 overflow-hidden">
                     <img
@@ -637,40 +649,18 @@ export default function DocumentsPage() {
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-stone-800 truncate">{doc.title}</p>
+                  <h3 className="line-clamp-2">{doc.title}</h3>
                   {doc.aiSummary && (
                     <p className="text-stone-500 text-sm line-clamp-1 mt-0.5">
                       {doc.aiSummary}
                     </p>
                   )}
-                  <div className="flex items-center gap-3 mt-1 text-xs text-stone-400">
-                    {doc.category ? (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-stone-500">
+                    {doc.category && (
                       <span className="flex items-center gap-1">
                         <Tag size={10} />
                         {doc.category.name}
                       </span>
-                    ) : (
-                      <select
-                        defaultValue=""
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onChange={(e) => {
-                          e.preventDefault();
-                          assignCategory(doc.id, e.target.value);
-                        }}
-                        className="px-2 py-0.5 rounded-lg border border-amber-300 bg-amber-50 text-xs text-amber-800"
-                      >
-                        <option value="" disabled>
-                          File under…
-                        </option>
-                        {categories.map((cat) => (
-                          <option key={cat.id} value={cat.id}>
-                            {cat.name}
-                          </option>
-                        ))}
-                      </select>
                     )}
                     <span className="flex items-center gap-1">
                       <Calendar size={10} />
@@ -679,6 +669,20 @@ export default function DocumentsPage() {
                   </div>
                 </div>
               </Link>
+              {!doc.category && (
+                <div className="fg-archive-list-filing">
+                  <select
+                    defaultValue=""
+                    aria-label={`File ${doc.title} under category`}
+                    onChange={(e) => void assignCategory(doc.id, e.target.value)}
+                    className="w-full px-2 py-1 rounded-lg border border-amber-300 bg-amber-50 text-xs text-amber-800"
+                  >
+                    <option value="" disabled>File under…</option>
+                    {categories.map((cat) => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                  </select>
+                </div>
+              )}
+              </article>
             ))}
           </div>
         )}

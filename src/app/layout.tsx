@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Instrument_Serif, Instrument_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import "./field-guide.css";
 import { NavBar } from "@/components/layout/nav-bar";
 
 const instrumentSerif = Instrument_Serif({
@@ -32,9 +33,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-  themeColor: "#1c1a17",
+  themeColor: "#2c4c35",
 };
 
 export default function RootLayout({
@@ -43,13 +42,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${instrumentSerif.variable} ${instrumentSans.variable} ${jetbrainsMono.variable} antialiased`}
-      >
+    <html lang="en" className={`${instrumentSerif.variable} ${instrumentSans.variable} ${jetbrainsMono.variable}`}>
+      <body className="antialiased">
+        <a href="#main-content" className="fg-skip-link">Skip to content</a>
         <div className="stage">
           <div className="shell">
-            {children}
+            <main id="main-content" className="site-content" tabIndex={-1}>{children}</main>
             <NavBar />
           </div>
         </div>

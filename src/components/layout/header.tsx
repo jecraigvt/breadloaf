@@ -1,4 +1,4 @@
-import { Mountain, ChevronLeft } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 
 interface HeaderProps {
@@ -8,19 +8,22 @@ interface HeaderProps {
 
 export function Header({ title, subtitle }: HeaderProps) {
   return (
-    <header className="bg-gradient-to-r from-green-800 to-green-900 text-white px-4 py-6">
-      <div className="max-w-5xl mx-auto">
+    <header className="fg-page-header">
+      <div className="chrome-top fg-brand-bar">
         <Link
           href="/"
-          className="inline-flex items-center gap-1.5 text-green-300 hover:text-green-200 text-sm font-medium mb-2 transition-colors"
+          className="fg-home-link"
         >
-          <ChevronLeft size={16} />
-          <Mountain size={16} />
-          <span>Breadloaf Hill</span>
+          <ChevronLeft size={16} aria-hidden="true" />
+          <span className="wordmark">Breadloaf Hill<span className="fg-wordmark-dot">.</span></span>
         </Link>
-        <h1 className="text-2xl font-bold">{title}</h1>
+        <span className="ctr fg-brand-caption">The family field guide</span>
+      </div>
+      <div className="fg-page-heading">
+        <p className="eyebrow">Breadloaf Hill / Vermont</p>
+        <h1>{title}</h1>
         {subtitle && (
-          <p className="text-green-200 text-sm mt-1">{subtitle}</p>
+          <p className="fg-page-subtitle">{subtitle}</p>
         )}
       </div>
     </header>

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
-import { Loader2, Mic, Square, X } from "lucide-react";
+import { ArrowRight, Loader2, Mic, Square, X } from "lucide-react";
 import { useState } from "react";
 import {
   formatRecordingClock,
@@ -45,8 +45,7 @@ export function HubLeadTile({ lbl, sub, href }: HubLeadTileProps) {
   });
 
   const handleMicTap = async (event: React.MouseEvent<HTMLButtonElement>) => {
-    // The button intentionally lives inside the tile Link. Both calls are
-    // required or a tap starts the mic and navigates at the same time.
+    // Keep recording taps isolated from the tile's navigation and bubbling.
     isolateTileMicTap(event);
     if (checkingPermission || recorder.starting || recorder.recording) return;
 
@@ -121,10 +120,11 @@ export function HubLeadTile({ lbl, sub, href }: HubLeadTileProps) {
 
   return (
     <>
-      <Link href={href} className="tile-text tile-lead relative">
+      <div className="tile-text tile-lead fg-bucky-lead relative">
+        <Link href={href} className="fg-bucky-link">
         <div className="lbl">Sec. {lbl}</div>
         <div>
-          <div className="big"><em>Bucky</em><br />Dragon</div>
+          <div className="big">Bucky</div>
           <div
             style={{
               marginTop: 6,
@@ -138,10 +138,12 @@ export function HubLeadTile({ lbl, sub, href }: HubLeadTileProps) {
             {sub}
           </div>
         </div>
+        <ArrowRight className="fg-bucky-arrow" size={22} aria-hidden="true" />
+        </Link>
         <button
           type="button"
           onClick={(event) => void handleMicTap(event)}
-          className={`absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full border border-stone-300 bg-[#f5efe4] text-green-800 shadow-sm transition-colors hover:bg-white ${checkingPermission || recorder.starting ? "opacity-50" : ""}`}
+          className={`fg-hub-mic ${checkingPermission || recorder.starting ? "opacity-50" : ""}`}
           aria-label="Record a voice note for Bucky"
           aria-disabled={checkingPermission || recorder.starting}
         >
@@ -149,7 +151,7 @@ export function HubLeadTile({ lbl, sub, href }: HubLeadTileProps) {
             ? <Loader2 size={16} className="animate-spin" />
             : <Mic size={17} />}
         </button>
-      </Link>
+      </div>
       {overlay}
     </>
   );

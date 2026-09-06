@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import { Header } from "@/components/layout/header";
-import { Send, Loader2, Mountain, User, Trash2, Paperclip, FileText, X, Mic, Square, MessageCircle, CircleHelp, History } from "lucide-react";
+import { Send, Loader2, Mountain, User, Trash2, Paperclip, FileText, X, Mic, Square, MessageCircle, CircleHelp, History, ArrowUpRight, CalendarDays, Clock3 } from "lucide-react";
 import { BuckyLedgerPanel, BuckyQuestionsPanel } from "@/components/bucky/oversight-panel";
 import {
   formatRecordingClock,
@@ -10,6 +11,7 @@ import {
   useVoiceRecorder,
 } from "@/components/voice/use-voice-recorder";
 import { consumeVoiceHandoff } from "@/lib/voice-handoff";
+import "../fieldguide-bucky.css";
 
 interface Message {
   role: "user" | "model";
@@ -48,7 +50,7 @@ export default function AssistantPage() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
-      top: scrollRef.current.scrollHeight,
+      top: messages.length ? scrollRef.current.scrollHeight : 0,
       behavior: "smooth",
     });
   }, [messages]);
@@ -200,14 +202,19 @@ export default function AssistantPage() {
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
+    <div className="fg-bucky-page">
       <Header
         title="Bucky Dragon"
         subtitle="Your family property assistant"
       />
 
-      <div className="border-b border-stone-200 bg-white px-4 py-2">
-        <div className="mx-auto grid max-w-lg grid-cols-3 gap-1 rounded-lg bg-stone-100 p-1">
+      <div className="fg-bucky-topline">
+        <Link href="/bucky/jobs"><Clock3 size={16} aria-hidden="true" /> Bucky’s tasks <ArrowUpRight size={15} aria-hidden="true" /></Link>
+      </div>
+      <div className="fg-bucky-workspace">
+      <section className="fg-bucky-panel" aria-label="Bucky assistant">
+      <div className="fg-bucky-tabs">
+        <div className="fg-bucky-tab-list" role="tablist" aria-label="Bucky views">
           {([
             { id: "chat", label: "Chat", icon: MessageCircle },
             { id: "questions", label: "Questions", icon: CircleHelp },
@@ -216,14 +223,29 @@ export default function AssistantPage() {
             <button
               key={id}
               onClick={() => setActiveTab(id)}
-              className={`flex min-h-9 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors ${
-                activeTab === id ? "bg-white text-stone-900 shadow-sm" : "text-stone-500 hover:text-stone-800"
-              }`}
+              type="button"
+              role="tab"
+              id={`bucky-tab-${id}`}
+              aria-controls={`bucky-panel-${id}`}
+              aria-selected={activeTab === id}
+              tabIndex={activeTab === id ? 0 : -1}
+              onKeyDown={(event) => {
+                const tabs = ["chat", "questions", "ledger"] as const;
+                const index = tabs.indexOf(id);
+                const next = event.key === "ArrowRight" ? (index + 1) % tabs.length
+                  : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length
+                  : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : null;
+                if (next === null) return;
+                event.preventDefault();
+                setActiveTab(tabs[next]);
+                event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("[role=tab]")[next]?.focus();
+              }}
+              className={`fg-bucky-tab ${activeTab === id ? "is-active" : ""}`}
             >
               <Icon size={14} />
               <span>{label}</span>
               {id === "questions" && questionCount > 0 && (
-                <span className="min-w-4 rounded-full bg-amber-500 px-1 text-[10px] leading-4 text-white">{questionCount}</span>
+                <span className="fg-bucky-question-count">{questionCount}</span>
               )}
             </button>
           ))}
@@ -231,26 +253,31 @@ export default function AssistantPage() {
       </div>
 
       {activeTab === "chat" ? (
-        <>
+        <div className="fg-bucky-chat" id="bucky-panel-chat" role="tabpanel" aria-labelledby="bucky-tab-chat">
 
       {/* Chat Messages */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto chat-scroll px-4 py-4 space-y-4"
+        className="fg-bucky-messages chat-scroll"
+        role="log"
+        aria-label="Conversation with Bucky"
+        aria-live="polite"
+        aria-busy={loading}
       >
         {messages.length === 0 && (
-          <div className="text-center py-12">
-            <Mountain size={48} className="mx-auto text-green-200 mb-4" />
-            <h2 className="text-lg font-semibold text-stone-700">
-              Bucky Dragon
-            </h2>
-            <p className="text-stone-400 text-sm mt-2 max-w-xs mx-auto">
-              Your family property hub — I know about visits, rooms, documents,
-              expenses, supplies, and everything Breadloaf Hill. Ask me anything,
-              attach a document (📎) to file it, or tap the mic and just talk —
-              walkthroughs of the property become the family notebook.
+          <div className="fg-bucky-welcome">
+            <div className="fg-bucky-welcome-heading">
+            <div className="fg-bucky-welcome-mark"><Mountain size={32} aria-hidden="true" /></div>
+            <div>
+            <p className="fg-bucky-eyebrow">The family notebook</p>
+            <h2>What’s on your mind?</h2>
+            </div>
+            </div>
+            <p className="fg-bucky-intro">
+              Ask about the house, attach a document, or leave a voice memo for
+              the family notebook.
             </p>
-            <div className="flex flex-wrap gap-2 justify-center mt-6">
+            <div className="fg-bucky-suggestions">
               {[
                 "What can you help with?",
                 "Add paper towels to the grocery list",
@@ -263,7 +290,7 @@ export default function AssistantPage() {
                     setInput(q);
                     inputRef.current?.focus();
                   }}
-                  className="bg-white border border-stone-200 rounded-full px-3 py-1.5 text-sm text-stone-600 hover:bg-stone-50 hover:border-green-300 transition-colors"
+                  className="fg-bucky-suggestion"
                 >
                   {q}
                 </button>
@@ -275,39 +302,37 @@ export default function AssistantPage() {
         {messages.map((msg, i) => (
           <div
             key={i}
-            className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            className={`fg-bucky-message ${msg.role === "user" ? "is-user" : "is-bucky"}`}
           >
             {msg.role === "model" && (
-              <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-                <Mountain size={16} className="text-green-700" />
+              <div className="fg-bucky-avatar">
+                <Mountain size={16} aria-hidden="true" />
               </div>
             )}
             <div
-              className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                msg.role === "user"
-                  ? "bg-green-700 text-white"
-                  : "bg-white border border-stone-200 text-stone-700"
-              }`}
+              className="fg-bucky-bubble"
             >
-              <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+              <span className="fg-bucky-speaker">{msg.role === "user" ? "You" : "Bucky"}</span>
+              <p>{msg.content}</p>
             </div>
             {msg.role === "user" && (
-              <div className="w-8 h-8 rounded-full bg-stone-200 flex items-center justify-center flex-shrink-0">
-                <User size={16} className="text-stone-600" />
+              <div className="fg-bucky-avatar">
+                <User size={16} aria-hidden="true" />
               </div>
             )}
           </div>
         ))}
 
         {loading && messages[messages.length - 1]?.role === "user" && (
-          <div className="flex gap-3">
-            <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
-              <Mountain size={16} className="text-green-700" />
+          <div className="fg-bucky-message is-bucky" role="status">
+            <div className="fg-bucky-avatar">
+              <Mountain size={16} aria-hidden="true" />
             </div>
-            <div className="bg-white border border-stone-200 rounded-2xl px-4 py-3 flex items-center gap-2">
-              <Loader2 size={16} className="animate-spin text-green-700" />
+            <div className="fg-bucky-thinking">
+              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+              <span className="sr-only">Bucky is thinking</span>
               {messages[messages.length - 1]?.content.includes("📎") && (
-                <span className="text-xs text-stone-400">
+                <span>
                   Processing your attachment...
                 </span>
               )}
@@ -318,10 +343,10 @@ export default function AssistantPage() {
 
       {/* Input Bar — in normal flow at the bottom of the chat column, so it
           can never float over messages; the messages area scrolls above it */}
-      <div className="bg-white border-t border-stone-200 px-4 py-3">
-        <div className="max-w-lg mx-auto space-y-2">
+      <div className="fg-bucky-composer">
+        <div className="space-y-2">
           {(entryError || recorder.error) && (
-            <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            <div role="alert" className="flex items-center gap-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
               <span className="flex-1">{entryError || recorder.error}</span>
               <button onClick={() => { setEntryError(null); recorder.clearError(); }} aria-label="Dismiss">
                 <X size={12} />
@@ -329,7 +354,7 @@ export default function AssistantPage() {
             </div>
           )}
           {recorder.recording && (
-            <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+            <div className="fg-bucky-recording flex flex-wrap items-center gap-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
               <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
               <span className="text-sm font-medium text-red-700 tabular-nums">
                 Recording {formatRecordingClock(recorder.seconds)}
@@ -377,15 +402,21 @@ export default function AssistantPage() {
               ))}
             </div>
           )}
-          <div className="flex gap-2">
-            {messages.length > 0 && (
-              <button
-                onClick={clearChat}
-                className="p-3 rounded-xl text-stone-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-              >
-                <Trash2 size={20} />
-              </button>
-            )}
+          <div className="fg-bucky-composer-controls">
+            <input
+              ref={inputRef}
+              type="text"
+              aria-label="Message Bucky"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+              placeholder={
+                attachments.length > 0
+                  ? "Add a note about these files (optional)..."
+                  : "Ask, or attach a document to file..."
+              }
+              className="fg-bucky-input"
+            />
             <input
               ref={fileInputRef}
               type="file"
@@ -403,7 +434,7 @@ export default function AssistantPage() {
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={loading || recorder.recording || recorder.starting}
-              className="p-3 rounded-xl text-stone-400 hover:text-green-700 hover:bg-green-50 disabled:opacity-50 transition-colors"
+              className="fg-bucky-composer-button fg-bucky-attach"
               aria-label="Attach a document"
             >
               <Paperclip size={20} />
@@ -411,7 +442,7 @@ export default function AssistantPage() {
             <button
               onClick={() => (recorder.recording ? recorder.stopRecording(false) : void recorder.startRecording())}
               disabled={loading || recorder.starting}
-              className={`p-3 rounded-xl transition-colors disabled:opacity-50 ${
+              className={`fg-bucky-composer-button fg-bucky-record ${
                 recorder.recording
                   ? "text-red-600 bg-red-50"
                   : "text-stone-400 hover:text-green-700 hover:bg-green-50"
@@ -420,35 +451,47 @@ export default function AssistantPage() {
             >
               <Mic size={20} />
             </button>
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-              placeholder={
-                attachments.length > 0
-                  ? "Add a note about these files (optional)..."
-                  : "Ask, or attach a document to file..."
-              }
-              className="flex-1 px-4 py-3 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            />
+            {messages.length > 0 && (
+              <button
+                onClick={clearChat}
+                className="fg-bucky-composer-button fg-bucky-clear"
+                aria-label="Clear chat"
+              >
+                <Trash2 size={20} />
+              </button>
+            )}
             <button
               onClick={() => void sendMessage()}
               disabled={(!input.trim() && attachments.length === 0) || loading || recorder.recording}
-              className="p-3 rounded-xl bg-green-700 text-white hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="fg-bucky-composer-button fg-bucky-send"
+              aria-label="Send message to Bucky"
             >
               <Send size={20} />
             </button>
           </div>
         </div>
       </div>
-        </>
+        </div>
       ) : activeTab === "questions" ? (
-        <BuckyQuestionsPanel onCountChange={setQuestionCount} />
+        <div className="fg-bucky-oversight" id="bucky-panel-questions" role="tabpanel" aria-labelledby="bucky-tab-questions"><BuckyQuestionsPanel onCountChange={setQuestionCount} /></div>
       ) : (
-        <BuckyLedgerPanel />
+        <div className="fg-bucky-oversight" id="bucky-panel-ledger" role="tabpanel" aria-labelledby="bucky-tab-ledger"><BuckyLedgerPanel /></div>
       )}
+      </section>
+      <aside className="fg-bucky-sidebar" aria-label="Bucky shortcuts">
+        <p className="fg-bucky-eyebrow">Take a shortcut</p>
+        <h2>A few things<br /><em>I can help with.</em></h2>
+        <div className="fg-bucky-shortcuts">
+          <Link href="/calendar"><CalendarDays size={18} aria-hidden="true" /><span>Plan your next visit</span><ArrowUpRight size={16} aria-hidden="true" /></Link>
+          <Link href="/upload"><FileText size={18} aria-hidden="true" /><span>Add to Archive</span><ArrowUpRight size={16} aria-hidden="true" /></Link>
+          <Link href="/bucky/jobs"><Clock3 size={18} aria-hidden="true" /><span>Bucky’s tasks</span><ArrowUpRight size={16} aria-hidden="true" /></Link>
+        </div>
+        <div className="fg-bucky-sidebar-note">
+          <p className="fg-bucky-eyebrow">The family notebook</p>
+          <p>Questions keeps track of things Bucky needs your help with. The Ledger records changes and lets you undo supported actions.</p>
+        </div>
+      </aside>
+      </div>
     </div>
   );
 }

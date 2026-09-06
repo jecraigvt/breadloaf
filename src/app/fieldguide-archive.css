@@ -1,0 +1,136 @@
+/* The archive keeps its existing actions and data; these styles belong only to
+   its upload, browsing, and document pages. */
+.fg-archive {
+  --archive-paper: #fbf9f0;
+  --archive-sage: #e9ebdc;
+  --archive-white: #fffdf6;
+  --archive-forest: #2c4c35;
+  --archive-ink: #233d30;
+  --archive-muted: #5c6d5d;
+  --archive-rule: #d1d8c5;
+  color: var(--archive-ink);
+  background: var(--archive-paper);
+  min-width: 0;
+}
+.fg-archive-body { max-width: 1120px; margin: 0 auto; padding: 20px 22px 48px; }
+.fg-archive-topline { display: flex; align-items: center; justify-content: space-between; gap: 10px 22px; flex-wrap: wrap; margin-bottom: 22px; }
+.fg-archive-eyebrow { font: 500 10px/1.6 var(--mono); text-transform: uppercase; letter-spacing: .11em; color: var(--archive-muted); }
+.fg-archive-text-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; font-size: 13px; font-weight: 500; color: var(--archive-forest); text-decoration: underline; text-underline-offset: 4px; }
+.fg-archive-text-link svg { flex-shrink: 0; }
+.fg-archive-panel { background: var(--archive-white); border: 1px solid var(--archive-rule); border-top: 3px solid var(--archive-forest); border-radius: 3px; padding: 22px; }
+.fg-upload-layout { display: grid; gap: 26px; align-items: start; }
+.fg-upload-workspace, .fg-upload-aside { min-width: 0; }
+.fg-upload-progress { display: flex; gap: 12px; margin: 0; padding: 0 0 18px; list-style: none; border-bottom: 1px solid var(--archive-rule); }
+.fg-upload-progress li { flex: 1; display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--archive-muted); }
+.fg-upload-progress li > span { display: grid; place-items: center; width: 26px; height: 26px; flex: none; border: 1px solid var(--archive-rule); border-radius: 50%; font: 10px var(--mono); }
+.fg-upload-progress li[aria-current="step"] { color: var(--archive-forest); font-weight: 600; }
+.fg-upload-progress li[aria-current="step"] > span { background: var(--archive-forest); border-color: var(--archive-forest); color: white; }
+.fg-upload-intro h2 { font: 400 35px/1.08 var(--serif); letter-spacing: -.6px; margin-bottom: 12px; }
+.fg-upload-intro p, .fg-archive-section-heading p { font-size: 14px; line-height: 1.65; color: var(--archive-muted); }
+.fg-upload .fg-archive-note { background: var(--archive-sage); border: 0; padding: 26px; }
+.fg-archive-note h2 { font: 400 38px/1.05 var(--serif); margin: 15px 0; }
+.fg-archive-note > p { font-size: 14px; line-height: 1.7; color: var(--archive-muted); }
+.fg-archive-steps { list-style: none; margin: 24px 0; padding: 0; }
+.fg-archive-steps li { display: flex; gap: 13px; padding: 15px 0; border-top: 1px solid #cbd2bf; }
+.fg-archive-steps li > span { font: 11px/1.8 var(--mono); color: var(--archive-muted); }
+.fg-archive-steps h3 { font-size: 13px; line-height: 1.5; font-weight: 600; margin-bottom: 4px; }
+.fg-archive-steps p { font-size: 12px; line-height: 1.7; color: var(--archive-muted); }
+.fg-archive .rounded-xl, .fg-archive .rounded-lg { border-radius: 3px; }
+.fg-archive :is(button, a, input, select, textarea, summary, [role="presentation"]):focus-visible { outline: 2px solid var(--archive-forest); outline-offset: 3px; }
+.fg-archive button { min-height: 44px; }
+.fg-archive input:not([type="file"]), .fg-archive select, .fg-archive textarea { min-width: 0; max-width: 100%; min-height: 44px; border-color: var(--archive-rule); background: var(--archive-white); border-radius: 3px; font-size: 16px; color: var(--archive-ink); }
+.fg-archive label { color: var(--archive-ink); }
+.fg-archive .bg-white { background-color: var(--archive-white); }
+.fg-archive :is(.bg-stone-50, .bg-stone-100, .bg-green-50) { background-color: var(--archive-sage); }
+.fg-archive .bg-green-700 { background-color: var(--archive-forest); }
+.fg-archive :is(.text-green-600, .text-green-700, .text-green-800) { color: var(--archive-forest); }
+.fg-archive :is(.text-stone-300, .text-stone-400, .text-stone-500, .text-stone-600) { color: var(--archive-muted); }
+.fg-archive :is(.text-stone-700, .text-stone-800) { color: var(--archive-ink); }
+.fg-archive :is(.border-stone-200, .border-stone-300, .border-green-200) { border-color: var(--archive-rule); }
+.fg-archive .border-green-700 { border-color: var(--archive-forest); }
+.fg-archive .bg-green-700:hover { background-color: #203e2a; }
+.fg-archive :is(.bg-green-700, .bg-green-700:hover) { color: white; }
+.fg-upload-workspace .border-dashed { background: var(--archive-paper); border-width: 1px; border-color: #a7b49c; }
+.fg-upload-workspace .border-dashed > .flex { flex-wrap: wrap; gap: 8px 14px; }
+.fg-upload-workspace .border-dashed > svg { color: var(--archive-forest); }
+.fg-upload-workspace .border-dashed > p:first-of-type { font: 400 27px/1.2 var(--serif); color: var(--archive-ink); }
+.fg-upload-workspace .border-dashed > p + p { font-size: 12px; }
+.fg-upload-workspace img { max-height: 480px; object-fit: contain; }
+.fg-upload-workspace :is(p, h2, h3) { overflow-wrap: anywhere; }
+.fg-upload-workspace .text-center > h2 { font: 400 36px/1.15 var(--serif); }
+.fg-archive-health { padding: 17px 20px; }
+.fg-archive-section-heading { margin-bottom: 18px; }
+.fg-archive-section-heading h2 { font: 400 36px/1.1 var(--serif); letter-spacing: -.5px; margin-bottom: 8px; }
+.fg-archive-search-panel { display: grid; gap: 18px; }
+.fg-archive-search-panel .fg-archive-section-heading { margin-bottom: 0; }
+.fg-archive-filters button { border: 1px solid transparent; border-radius: 3px; font-size: 12px; min-height: 40px; padding: 8px 12px; overflow-wrap: anywhere; }
+.fg-archive-filters button[aria-pressed="true"] { border-color: var(--archive-forest); }
+.fg-archive-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 18px; padding: 8px 0; border-bottom: 1px solid var(--archive-rule); }
+.fg-archive-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.fg-archive-views { display: inline-flex; flex: none; align-items: center; gap: 4px; margin-left: auto; }
+.fg-archive-tools :is(button, a) { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.fg-archive-tools button[title$="view"] { min-width: 44px; }
+.fg-archive-tools button[aria-pressed="true"][title$="view"] { background: var(--archive-sage); color: var(--archive-forest); box-shadow: inset 0 0 0 1px var(--archive-rule); }
+.fg-archive-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 15px; }
+.fg-archive-card { min-width: 0; background: var(--archive-white); border-bottom: 1px solid var(--archive-rule); display: flex; flex-direction: column; }
+.fg-archive-card-link { display: block; flex: 1; }
+.fg-archive-card-image { height: 142px; overflow: hidden; background: var(--archive-sage); }
+.fg-archive-card-image img { transition: transform .25s ease; }
+.fg-archive-card-link:hover img { transform: scale(1.035); }
+.fg-archive-card-placeholder { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; color: #6c7c61; }
+.fg-archive-card-placeholder .fg-archive-eyebrow { text-align: center; font-size: 8px; padding: 0 10px; }
+.fg-archive-card-copy { padding: 14px 10px 16px; }
+.fg-archive-card-copy h3 { font: 400 25px/1.12 var(--serif); overflow-wrap: anywhere; margin-bottom: 10px; }
+.fg-archive-card-copy > span { max-width: 100%; overflow-wrap: anywhere; font-size: 10px; }
+.fg-archive-card-date { margin-top: 11px; color: var(--archive-muted); font: 9px/1.7 var(--mono); }
+.fg-archive-card-filing { padding: 0 10px 14px; }
+.fg-archive .fg-archive-card-filing select, .fg-archive .fg-archive-list-filing select { font-size: 13px; background: #fff7e5; color: #7c4f17; border-color: #d7bf94; }
+.fg-archive-empty { background: var(--archive-sage); padding-left: 24px; padding-right: 24px; }
+.fg-archive-empty > p:first-of-type { font: 400 31px/1.15 var(--serif); color: var(--archive-ink); }
+.fg-archive-list { display: grid; gap: 13px; }
+.fg-archive-list-card { min-width: 0; background: var(--archive-white); border-bottom: 1px solid var(--archive-rule); }
+.fg-archive-list-link { display: flex; align-items: flex-start; gap: 14px; padding: 16px; }
+.fg-archive-list-link h3 { font: 400 27px/1.15 var(--serif); overflow-wrap: anywhere; }
+.fg-archive-list-filing { padding: 0 16px 16px 94px; }
+.fg-document-body { max-width: 900px; }
+.fg-document-preview { background: var(--archive-sage); overflow-wrap: anywhere; }
+.fg-document-preview > img { max-height: 620px; object-fit: contain; }
+.fg-document-metadata > div { flex-wrap: wrap; }
+.fg-document-metadata > div > span:last-child { overflow-wrap: anywhere; text-align: right; max-width: 62%; }
+.fg-document-metadata > div > svg { flex-shrink: 0; }
+.fg-document-summary h3 { font: 400 29px/1.15 var(--serif); margin-bottom: 10px; }
+.fg-document-summary p, .fg-document-body details p { line-height: 1.8; overflow-wrap: anywhere; }
+.fg-document-body details summary { min-height: 30px; }
+@media (min-width: 700px) {
+  .fg-archive-body { padding: 26px 34px 60px; }
+  .fg-archive-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 26px; }
+  .fg-archive-card-image { height: 180px; }
+  .fg-archive-card-copy { padding: 18px 16px; }
+  .fg-archive-card-copy h3 { font-size: 29px; }
+  .fg-archive-card-filing { padding: 0 16px 18px; }
+  .fg-archive-search-panel { padding: 26px; }
+  .fg-archive-search { max-width: 680px; }
+  .fg-document-metadata { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fg-document-metadata > div { border-bottom: 1px solid var(--archive-rule); }
+}
+@media (min-width: 950px) {
+  .fg-upload-layout { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 34px; }
+  .fg-archive-panel.fg-upload-workspace { padding: 28px; }
+  .fg-archive-note h2 { font-size: 44px; }
+  .fg-upload-intro h2 { font-size: 41px; }
+  .fg-archive-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .fg-archive-section-heading { display: flex; gap: 25px; justify-content: space-between; align-items: baseline; }
+}
+@media (max-width: 360px) {
+  .fg-archive-body { padding-left: 16px; padding-right: 16px; }
+  .fg-archive-panel { padding: 17px; }
+  .fg-upload-progress { gap: 6px; }
+  .fg-upload-progress li { font-size: 10px; gap: 5px; }
+  .fg-upload-progress li > span { width: 22px; height: 22px; }
+  .fg-archive-card-copy h3 { font-size: 23px; }
+  .fg-archive-tools { gap: 5px; }
+  .fg-archive-tools :is(button, a) { font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fg-archive-card-image img { transition: none; }
+}
