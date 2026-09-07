@@ -1109,6 +1109,12 @@ h3.chapter {
 }
 .btn-quiet:hover { background: var(--paper-2); }
 
+.btn-ember:focus-visible,
+.btn-quiet:focus-visible {
+  outline: 2px solid var(--pine);
+  outline-offset: 3px;
+}
+
 .sheet-note {
   padding: 14px 20px;
   font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em;
