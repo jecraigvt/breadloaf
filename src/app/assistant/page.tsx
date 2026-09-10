@@ -22,6 +22,18 @@ interface Message {
 const ACCEPTED_FILES =
   "image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,audio/*,video/*";
 
+const STARTER_QUESTION_LIMIT = 3;
+const INTERACTION_COUNT_KEY = "breadloaf-bucky-completed-interactions";
+
+function readInteractionCount(): number {
+  try {
+    const count = Number(window.localStorage.getItem(INTERACTION_COUNT_KEY));
+    return Number.isSafeInteger(count) && count > 0 ? Math.min(count, STARTER_QUESTION_LIMIT) : 0;
+  } catch {
+    return 0;
+  }
+}
+
 // The shared recorder keeps Safari's AAC preference aligned across every entry point.
 
 // Transcription reads files up to ~15MB (~30 min of AAC) — nudge people to
@@ -45,6 +57,8 @@ export default function AssistantPage() {
   const [loading, setLoading] = useState(false);
   const [entryError, setEntryError] = useState<string | null>(null);
   const [copiedMessage, setCopiedMessage] = useState<number | null>(null);
+  const [completedInteractions, setCompletedInteractions] = useState<number | null>(null);
+  const interactionCountRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -52,6 +66,31 @@ export default function AssistantPage() {
   const sendingRef = useRef(false);
   const followReplyRef = useRef(true);
   const [showLatest, setShowLatest] = useState(false);
+
+  useEffect(() => {
+    const loadCount = () => {
+      interactionCountRef.current = readInteractionCount();
+      setCompletedInteractions(interactionCountRef.current);
+    };
+    loadCount();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === INTERACTION_COUNT_KEY || event.key === null) loadCount();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  const rememberInteraction = () => {
+    // Read again so another open Bucky tab contributes to the same small count.
+    const count = Math.min(STARTER_QUESTION_LIMIT, Math.max(interactionCountRef.current, readInteractionCount()) + 1);
+    interactionCountRef.current = count;
+    setCompletedInteractions(count);
+    try {
+      window.localStorage.setItem(INTERACTION_COUNT_KEY, String(count));
+    } catch {
+      // The current visit still works when browser storage is unavailable.
+    }
+  };
 
   useEffect(() => {
     if (followReplyRef.current) {
@@ -148,8 +187,10 @@ export default function AssistantPage() {
       // Add empty assistant message
       setMessages((prev) => [...prev, { role: "model", content: "" }]);
 
+      let receivedReply = false;
       const appendReply = (text: string) => {
         if (!text) return;
+        if (text.trim()) receivedReply = true;
         setMessages((prev) => prev.map((message, index) =>
           index === prev.length - 1 && message.role === "model"
             ? { ...message, content: message.content + text }
@@ -163,6 +204,7 @@ export default function AssistantPage() {
         appendReply(decoder.decode(value, { stream: true }));
       }
       appendReply(decoder.decode());
+      if (receivedReply) rememberInteraction();
     } catch (err) {
       // Prefer the server's specific reason over a
       // generic — and misleading — connection message
@@ -328,6 +370,7 @@ export default function AssistantPage() {
               Ask about the house, attach a document, or leave a voice memo for
               the family notebook.
             </p>
+            {completedInteractions !== null && completedInteractions < STARTER_QUESTION_LIMIT && (
             <div className="fg-bucky-suggestions">
               {[
                 "What can you help with?",
@@ -347,6 +390,7 @@ export default function AssistantPage() {
                 </button>
               ))}
             </div>
+            )}
           </div>
         )}
 
