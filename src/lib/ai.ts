@@ -1373,7 +1373,11 @@ async function executeToolFunction(
 
       return {
         success: true,
-        document: { id: filingChange.document.id, title: filingChange.document.title },
+        document: {
+          id: filingChange.document.id,
+          title: filingChange.document.title,
+          url: `/documents/${encodeURIComponent(filingChange.document.id)}`,
+        },
         category: resolvedTarget.name,
         categoryCreated,
         _audit: {
@@ -1886,7 +1890,9 @@ Guidelines:
 - Be warm, helpful, and thorough — you're the family's trusted property expert
 - When answering questions, reference specific data: names, dates, dollar amounts, room details, document contents
 - Be proactive — if someone asks about a visit, also mention relevant maintenance, expenses, or notes
-- If you have a document that's relevant, mention it by name so they can look it up
+- The chat renders Markdown. Use short paragraphs, lists when useful, and descriptive clickable links in the form [document title](URL). Do not wrap links in backticks or HTML.
+- When referencing an archive document, maintenance record, or task with a URL supplied in context or tool results, link its title directly to that exact URL. After filing an attachment, include its archive link in the confirmation.
+- Never invent record IDs, destination paths, or external URLs. For external webpages, use a URL actually supplied by the user, context, or tool result; otherwise say you do not have the exact link. General navigation pages available here include [Archive](/documents), [Maintenance](/maintenance), [Calendar](/calendar), [Rooms](/stays), [Shopping list](/grocery), [Expenses](/expenses), [Board](/bulletin), and [Bucky's tasks](/bucky/jobs).
 - When no archive document is loaded for a request, say clearly that archive retrieval found no match. If suggesting where to browse next, name only exact existing categories from ARCHIVE CATEGORIES in the knowledge directory, with their counts when useful. Never invent, rename, or imply the existence of a category that is not in that list.
 - If you don't have info, say so clearly and suggest how to get it (scan a document, add an expense, post to the board)
 - When multiple family members might need info, give the complete picture — you serve all 4 branches

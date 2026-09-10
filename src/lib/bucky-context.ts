@@ -366,7 +366,7 @@ export async function buildBuckyContext(
   }
   if (recentMaintenance.length) {
     operationalParts.push(`RECENT MAINTENANCE (loaded for this request):\n${boundedLines(recentMaintenance, 15, (record) =>
-      `- ${dateOnly(record.performedAt)}: ${record.title}${record.asset ? ` on ${record.asset.name}` : ""}${record.cost != null ? ` ($${record.cost.toFixed(2)})` : ""}`, "maintenance records")}`);
+      `- ${dateOnly(record.performedAt)}: ${record.title}${record.asset ? ` on ${record.asset.name}` : ""}${record.cost != null ? ` ($${record.cost.toFixed(2)})` : ""}; URL: /maintenance#${encodeURIComponent(record.id)}`, "maintenance records")}`);
   }
 
   const dictationNotes = await dictationContext([
@@ -390,11 +390,11 @@ export async function buildBuckyContext(
   }
   for (const document of [...documentDirectory, ...documents.filter((document) => !documentDirectory.some((listed) => listed.id === document.id))]) {
     const chunks = matchedChunks(retrieved, "document", document.id);
-    relevantParts.push(`[ARCHIVE DOCUMENT ${document.id}] ${document.title} [${document.category?.name || "Uncategorized"}]\n${document.aiSummary || document.description || "No summary"}${chunks.length ? `\nRelevant excerpts:\n${chunks.join("\n---\n")}` : ""}`);
+    relevantParts.push(`[ARCHIVE DOCUMENT ${document.id}] ${document.title} [${document.category?.name || "Uncategorized"}]\nURL: /documents/${encodeURIComponent(document.id)}\n${document.aiSummary || document.description || "No summary"}${chunks.length ? `\nRelevant excerpts:\n${chunks.join("\n---\n")}` : ""}`);
     if (dictationNotes.get(document.filePath)) relevantParts.push(dictationNotes.get(document.filePath)!);
   }
   for (const record of maintenance) {
-    relevantParts.push(`[MAINTENANCE] ${dateOnly(record.performedAt)}: ${record.title}${record.asset ? ` on ${record.asset.name}` : ""}${record.description ? `\n${record.description}` : ""}${record.cost != null ? `\nCost: $${record.cost.toFixed(2)}` : ""}`);
+    relevantParts.push(`[MAINTENANCE] ${dateOnly(record.performedAt)}: ${record.title}${record.asset ? ` on ${record.asset.name}` : ""}\nURL: /maintenance#${encodeURIComponent(record.id)}${record.description ? `\n${record.description}` : ""}${record.cost != null ? `\nCost: $${record.cost.toFixed(2)}` : ""}`);
     for (const source of recordingSources(record.sourceRecordings)) {
       relevantParts.push(`ORIGINAL DICTATION for maintenance ${record.id}:\n${source.transcript}`);
       if (dictationNotes.get(source.filePath)) relevantParts.push(dictationNotes.get(source.filePath)!);

@@ -3,8 +3,9 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { Header } from "@/components/layout/header";
-import { Send, Loader2, Mountain, User, Trash2, Paperclip, FileText, X, Mic, Square, MessageCircle, CircleHelp, History, ArrowUpRight, CalendarDays, Clock3 } from "lucide-react";
+import { Send, Loader2, Mountain, User, Trash2, Paperclip, FileText, X, Mic, Square, MessageCircle, CircleHelp, History, ArrowUpRight, CalendarDays, Clock3, Copy, Check } from "lucide-react";
 import { BuckyLedgerPanel, BuckyQuestionsPanel } from "@/components/bucky/oversight-panel";
+import { ChatMessageContent } from "@/components/bucky/chat-message-content";
 import {
   formatRecordingClock,
   RECORDING_WARN_SECONDS,
@@ -43,17 +44,35 @@ export default function AssistantPage() {
   const [attachments, setAttachments] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [entryError, setEntryError] = useState<string | null>(null);
+  const [copiedMessage, setCopiedMessage] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const entryHandledRef = useRef(false);
+  const sendingRef = useRef(false);
+  const followReplyRef = useRef(true);
+  const [showLatest, setShowLatest] = useState(false);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({
-      top: messages.length ? scrollRef.current.scrollHeight : 0,
-      behavior: "smooth",
-    });
-  }, [messages]);
+    if (followReplyRef.current) {
+      scrollRef.current?.scrollTo({
+        top: messages.length ? scrollRef.current.scrollHeight : 0,
+      });
+    }
+  }, [messages, activeTab, loading]);
+
+  useEffect(() => {
+    const textarea = inputRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
+  }, [input, activeTab]);
+
+  useEffect(() => {
+    if (copiedMessage === null) return;
+    const timeout = window.setTimeout(() => setCopiedMessage(null), 2000);
+    return () => window.clearTimeout(timeout);
+  }, [copiedMessage]);
 
   useEffect(() => {
     const requestedTab = new URLSearchParams(window.location.search).get("tab");
@@ -72,7 +91,11 @@ export default function AssistantPage() {
   const sendMessage = async (options?: { files?: File[]; text?: string }) => {
     const files = options?.files ?? attachments;
     const typedText = options?.text ?? input;
-    if ((!typedText.trim() && files.length === 0) || loading) return;
+    if ((!typedText.trim() && files.length === 0) || sendingRef.current) return;
+    sendingRef.current = true;
+    followReplyRef.current = true;
+    setShowLatest(false);
+    setCopiedMessage(null);
     // Attachment names go into the visible message (and the transcript the
     // model sees) so the conversation reads naturally later
     const attachmentLines = files.map((f) => `📎 ${f.name}`).join("\n");
@@ -86,9 +109,8 @@ export default function AssistantPage() {
     setAttachments([]);
     setLoading(true);
 
-    // Until the server accepts the turn, nothing has been processed server-side,
-    // so a failure is safe to recover from by restoring the composer for a
-    // one-tap retry (crucial for a voice memo that can't be re-typed).
+    // Keep attachments available if no response arrives. Never retry
+    // automatically: a lost connection can occur after the server has saved them.
     let responseStarted = false;
     try {
       let res: Response;
@@ -108,7 +130,7 @@ export default function AssistantPage() {
       }
 
       if (!res.ok) {
-        // The server sends a human-readable reason (e.g. Gemini overloaded)
+        // The server sends a human-readable reason.
         const serverMessage = await res.text().catch(() => "");
         throw new Error(serverMessage || "Failed to get response");
       }
@@ -126,31 +148,31 @@ export default function AssistantPage() {
       // Add empty assistant message
       setMessages((prev) => [...prev, { role: "model", content: "" }]);
 
+      const appendReply = (text: string) => {
+        if (!text) return;
+        setMessages((prev) => prev.map((message, index) =>
+          index === prev.length - 1 && message.role === "model"
+            ? { ...message, content: message.content + text }
+            : message
+        ));
+      };
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
-        const text = decoder.decode(value);
-        setMessages((prev) => {
-          const updated = [...prev];
-          const last = updated[updated.length - 1];
-          if (last.role === "model") {
-            last.content += text;
-          }
-          return [...updated];
-        });
+        appendReply(decoder.decode(value, { stream: true }));
       }
+      appendReply(decoder.decode());
     } catch (err) {
-      // Prefer the server's specific reason (Gemini overloaded, etc.) over a
+      // Prefer the server's specific reason over a
       // generic — and misleading — connection message
       const serverMessage =
         err instanceof Error && err.message && err.message !== "Failed to get response"
           ? err.message
           : "Sorry, I had trouble answering that. Give it a moment and try again.";
       if (!responseStarted) {
-        // Nothing was processed server-side. Drop the optimistic user bubble
-        // and put the text + attachments back in the composer so a voice memo
-        // isn't lost — one tap of Send retries the whole message.
+        // Put the text and attachments back so an irreplaceable voice memo
+        // remains available. Retrying is an explicit user action.
         setMessages([...messages, { role: "model", content: serverMessage }]);
         setInput(typedText);
         setAttachments(files);
@@ -161,6 +183,7 @@ export default function AssistantPage() {
         ]);
       }
     } finally {
+      sendingRef.current = false;
       setLoading(false);
     }
   };
@@ -198,7 +221,21 @@ export default function AssistantPage() {
   }, []);
 
   const clearChat = () => {
+    if (sendingRef.current || recorder.recording || recorder.starting) return;
     setMessages([]);
+    setCopiedMessage(null);
+    followReplyRef.current = true;
+    setShowLatest(false);
+    inputRef.current?.focus();
+  };
+
+  const copyReply = async (message: Message, index: number) => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopiedMessage(index);
+    } catch {
+      setEntryError("Copy wasn’t available. You can select the reply’s text and copy it instead.");
+    }
   };
 
   return (
@@ -263,6 +300,20 @@ export default function AssistantPage() {
         aria-label="Conversation with Bucky"
         aria-live="polite"
         aria-busy={loading}
+        tabIndex={0}
+        onWheel={(event) => {
+          if (event.deltaY < 0) followReplyRef.current = false;
+        }}
+        onTouchMove={() => { followReplyRef.current = false; }}
+        onKeyDown={(event) => {
+          if (["ArrowUp", "PageUp", "Home"].includes(event.key)) followReplyRef.current = false;
+        }}
+        onScroll={(event) => {
+          const log = event.currentTarget;
+          const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+          followReplyRef.current = atBottom;
+          setShowLatest(!atBottom);
+        }}
       >
         {messages.length === 0 && (
           <div className="fg-bucky-welcome">
@@ -313,7 +364,18 @@ export default function AssistantPage() {
               className="fg-bucky-bubble"
             >
               <span className="fg-bucky-speaker">{msg.role === "user" ? "You" : "Bucky"}</span>
-              <p>{msg.content}</p>
+              {msg.role === "model" ? <ChatMessageContent content={msg.content} /> : <p>{msg.content}</p>}
+              {msg.role === "model" && msg.content && !(loading && i === messages.length - 1) && (
+                <button
+                  type="button"
+                  className="fg-bucky-copy"
+                  onClick={() => void copyReply(msg, i)}
+                  aria-label={copiedMessage === i ? "Reply copied" : "Copy Bucky’s reply"}
+                >
+                  {copiedMessage === i ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+                  <span>{copiedMessage === i ? "Copied" : "Copy"}</span>
+                </button>
+              )}
             </div>
             {msg.role === "user" && (
               <div className="fg-bucky-avatar">
@@ -340,6 +402,21 @@ export default function AssistantPage() {
           </div>
         )}
       </div>
+
+      {showLatest && (
+        <button
+          type="button"
+          className="fg-bucky-latest"
+          onClick={() => {
+            followReplyRef.current = true;
+            setShowLatest(false);
+            scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+          }}
+        >
+          Jump to latest reply ↓
+        </button>
+      )}
+      <span className="sr-only" role="status">{copiedMessage !== null ? "Bucky’s reply copied to clipboard." : ""}</span>
 
       {/* Input Bar — in normal flow at the bottom of the chat column, so it
           can never float over messages; the messages area scrolls above it */}
@@ -403,13 +480,20 @@ export default function AssistantPage() {
             </div>
           )}
           <div className="fg-bucky-composer-controls">
-            <input
+            <textarea
               ref={inputRef}
-              type="text"
+              rows={2}
               aria-label="Message Bucky"
+              aria-describedby="bucky-composer-hint"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+              onKeyDown={(e) => {
+                const desktopKeyboard = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && desktopKeyboard) {
+                  e.preventDefault();
+                  if (!recorder.recording && !recorder.starting) void sendMessage();
+                }
+              }}
               placeholder={
                 attachments.length > 0
                   ? "Add a note about these files (optional)..."
@@ -436,6 +520,7 @@ export default function AssistantPage() {
               disabled={loading || recorder.recording || recorder.starting}
               className="fg-bucky-composer-button fg-bucky-attach"
               aria-label="Attach a document"
+              title="Attach a document"
             >
               <Paperclip size={20} />
             </button>
@@ -448,27 +533,34 @@ export default function AssistantPage() {
                   : "text-stone-400 hover:text-green-700 hover:bg-green-50"
               }`}
               aria-label={recorder.recording ? "Stop recording" : "Record a voice memo"}
+              title={recorder.recording ? "Stop recording" : "Record a voice memo"}
             >
               <Mic size={20} />
             </button>
             {messages.length > 0 && (
               <button
                 onClick={clearChat}
+                disabled={loading || recorder.recording || recorder.starting}
                 className="fg-bucky-composer-button fg-bucky-clear"
                 aria-label="Clear chat"
+                title="Clear chat"
               >
                 <Trash2 size={20} />
               </button>
             )}
             <button
               onClick={() => void sendMessage()}
-              disabled={(!input.trim() && attachments.length === 0) || loading || recorder.recording}
+              disabled={(!input.trim() && attachments.length === 0) || loading || recorder.recording || recorder.starting}
               className="fg-bucky-composer-button fg-bucky-send"
               aria-label="Send message to Bucky"
             >
-              <Send size={20} />
+              {loading ? <Loader2 size={20} className="animate-spin" aria-hidden="true" /> : <Send size={20} aria-hidden="true" />}
             </button>
           </div>
+          <p id="bucky-composer-hint" className="fg-bucky-composer-hint">
+            <span className="fg-bucky-keyboard-hint">Enter to send · Shift + Enter for a new line</span>
+            <span className="fg-bucky-touch-hint">Return for a new line · Tap the arrow to send</span>
+          </p>
         </div>
       </div>
         </div>

@@ -43,6 +43,7 @@ function filedDocumentLine(document: FiledDocument, index: number): string {
       ? "saved to the NEEDS REVIEW bucket (couldn't confidently categorize)"
       : `filed under "${document.category}"${document.categoryCreated ? " (new category created)" : ""}`;
   const details = [
+    `Archive URL: /documents/${encodeURIComponent(document.id)}`,
     document.summary ? `Summary: ${document.summary}` : null,
     document.extractedText ? `Key content: ${document.extractedText.slice(0, 1500)}` : null,
   ].filter(Boolean).join("\n   ");
@@ -235,9 +236,13 @@ Respond to what the person said and take any appropriate native action. Do not c
 
     if (filed.length > 0 || voiceNotes.length > 0) {
       const lines = [
-        ...filed.map((document) => document.needsReview
-          ? `• "${document.title}" — saved to the Needs Review bucket`
-          : `• "${document.title}" — filed under ${document.category}`),
+        ...filed.map((document) => {
+          const title = document.title.replace(/[\\\[\]]/g, "\\$&");
+          const link = `[${title}](/documents/${encodeURIComponent(document.id)})`;
+          return document.needsReview
+            ? `- ${link} — saved to the Needs Review bucket`
+            : `- ${link} — filed under ${document.category}`;
+        }),
         ...voiceNotes.map((note) => `• "${note.topic}" — saved as an attributed voice memory, not an archive document`),
       ];
       return new Response(

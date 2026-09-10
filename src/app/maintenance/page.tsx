@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Header } from "@/components/layout/header";
 import { dictationDisplaySummary } from "@/lib/dictation-analysis";
 import {
@@ -104,6 +104,7 @@ export default function MaintenancePage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const handledFragmentRef = useRef<string | null>(null);
 
   // Form state
   const [formTitle, setFormTitle] = useState("");
@@ -126,6 +127,33 @@ export default function MaintenancePage() {
       .then(setAssets)
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    // Linked records arrive after the page shell, too late for the browser's
+    // initial fragment scroll. Retry once the matching row has rendered.
+    const scrollToLinkedRecord = () => {
+      const fragment = window.location.hash;
+      if (!fragment) {
+        handledFragmentRef.current = null;
+        return;
+      }
+      if (loading || handledFragmentRef.current === fragment) return;
+      let id: string;
+      try {
+        id = decodeURIComponent(fragment.slice(1));
+      } catch {
+        return;
+      }
+      if (!records.some((record) => record.id === id)) return;
+      const target = document.getElementById(id);
+      if (!target) return;
+      target.scrollIntoView({ block: "start", behavior: "auto" });
+      handledFragmentRef.current = fragment;
+    };
+    scrollToLinkedRecord();
+    window.addEventListener("hashchange", scrollToLinkedRecord);
+    return () => window.removeEventListener("hashchange", scrollToLinkedRecord);
+  }, [loading, records]);
 
   const fetchRecords = async () => {
     setLoading(true);
@@ -521,7 +549,7 @@ export default function MaintenancePage() {
                   <div
                     key={record.id}
                     id={record.id}
-                    className={`relative bg-white rounded-xl border p-4 sm:ml-12 ${
+                    className={`relative scroll-mt-24 bg-white rounded-xl border p-4 sm:ml-12 ${
                       overdue
                         ? "border-red-200 bg-red-50/30"
                         : "border-stone-200"
