@@ -38,7 +38,13 @@ export function dictationDisplaySummary(text: string | null | undefined, title =
 }
 
 function normalizedEvidence(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
+  const clean = text.replace(/\s+/g, " ").trim();
+  // Models sometimes decorate verbatim excerpts with quotation marks. These
+  // are presentation, not extra source words; remove only a matching outer pair.
+  if ((clean.startsWith('"') && clean.endsWith('"')) ||
+      (clean.startsWith("“") && clean.endsWith("”")) ||
+      (clean.startsWith("‘") && clean.endsWith("’"))) return clean.slice(1, -1).trim();
+  return clean;
 }
 
 /** Links and evidence are resolved against server-loaded sources, never model URLs. */
@@ -50,11 +56,14 @@ export function validateDictationAnalysis(input: unknown, transcript: string, so
   const seen = new Set<string>();
   const connections = parsed.connections.flatMap((connection) => {
     const source = sources.find((candidate) => candidate.key === connection.sourceKey);
+    const dictationEvidence = normalizedEvidence(connection.dictationEvidence);
+    const sourceEvidence = normalizedEvidence(connection.sourceEvidence);
     if (!source || seen.has(source.key) ||
-      !normalizedEvidence(transcript).includes(normalizedEvidence(connection.dictationEvidence)) ||
-      !normalizedEvidence(source.text).includes(normalizedEvidence(connection.sourceEvidence))) return [];
+      dictationEvidence.length < 8 || sourceEvidence.length < 8 ||
+      !normalizedEvidence(transcript).includes(dictationEvidence) ||
+      !normalizedEvidence(source.text).includes(sourceEvidence)) return [];
     seen.add(source.key);
-    return [{ ...connection, sourceTitle: source.title, sourceUrl: source.url, sourceUpdatedAt: source.updatedAt }];
+    return [{ ...connection, dictationEvidence, sourceEvidence, sourceTitle: source.title, sourceUrl: source.url, sourceUpdatedAt: source.updatedAt }];
   });
   return { ...parsed, connections };
 }

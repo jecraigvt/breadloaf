@@ -32,6 +32,16 @@ test("unknown source IDs and invented evidence cannot become saved connections",
   }
 });
 
+test("quotation marks around a real excerpt do not discard a source-backed connection", () => {
+  const result = validateDictationAnalysis({ ...analysis, connections: [{ ...analysis.connections[0],
+    dictationEvidence: `“${analysis.connections[0].dictationEvidence}”`,
+    sourceEvidence: `"${analysis.connections[0].sourceEvidence}"`,
+  }] }, transcript, [source]);
+  assert.equal(result.connections.length, 1);
+  assert.equal(result.connections[0].dictationEvidence, analysis.connections[0].dictationEvidence);
+  assert.equal(result.connections[0].sourceEvidence, analysis.connections[0].sourceEvidence);
+});
+
 test("model-supplied URLs and transcript replacements are discarded", () => {
   const result = validateDictationAnalysis({ ...analysis, transcript: "rewritten", connections: [{ ...analysis.connections[0], sourceUrl: "https://invented.example" }] }, transcript, [source]);
   assert.equal("transcript" in result, false);
