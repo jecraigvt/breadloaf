@@ -4,6 +4,7 @@ import { getAuthCookieName, getFamilyFromAuthToken } from "@/lib/auth";
 import { closeOpenArchiveQuestions } from "@/lib/archive-questions";
 import { getCurrentActor } from "@/lib/actor";
 import { indexDocument, removeFromIndex } from "@/lib/embeddings";
+import { dictationDisplaySummaries } from "@/lib/dictation-intelligence";
 
 export async function GET(
   _request: NextRequest,
@@ -19,7 +20,8 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  return NextResponse.json(document);
+  const summaries = await dictationDisplaySummaries(document.fileType.startsWith("audio/") ? [document.filePath] : []);
+  return NextResponse.json({ ...document, displaySummary: summaries.get(document.filePath) || null });
 }
 
 export async function PATCH(

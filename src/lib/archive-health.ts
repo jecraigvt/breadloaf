@@ -38,6 +38,7 @@ export interface ArchiveHealth {
   issueDocuments: number;
   documentsAddedAfterMeasurement: number;
   analysisStates: Record<string, number>;
+  issues?: { id: string; title: string; analysisState: string; analysisError: string | null }[];
   /** Recorded harness run when one exists, else the checked-in fallback. */
   verification: ArchiveVerificationSummary;
 }
@@ -75,7 +76,7 @@ export async function getArchiveHealth(): Promise<ArchiveHealth> {
   const measuredThrough = new Date(
     `${verification.measuredAt}T23:59:59.999Z`
   );
-  const [stateGroups, documentsAddedAfterMeasurement] = await Promise.all([
+  const [stateGroups, documentsAddedAfterMeasurement, issues] = await Promise.all([
     prisma.document.groupBy({
       by: ["analysisState"],
       where: { deletedAt: null },
@@ -83,6 +84,11 @@ export async function getArchiveHealth(): Promise<ArchiveHealth> {
     }),
     prisma.document.count({
       where: { deletedAt: null, createdAt: { gt: measuredThrough } },
+    }),
+    prisma.document.findMany({
+      where: { deletedAt: null, accessScope: "family", analysisState: { not: "ok" } },
+      select: { id: true, title: true, analysisState: true, analysisError: true },
+      orderBy: { createdAt: "desc" }, take: 20,
     }),
   ]);
 
@@ -101,6 +107,7 @@ export async function getArchiveHealth(): Promise<ArchiveHealth> {
     issueDocuments: totalDocuments - readyDocuments,
     documentsAddedAfterMeasurement,
     analysisStates,
+    issues,
     verification,
   };
 }

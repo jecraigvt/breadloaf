@@ -84,6 +84,9 @@ export async function processVoiceUpload(
     contentType: storedFile.fileType,
     uploadedBy: input.actorName || undefined,
     storedFile,
+    transcript,
   });
-  return { route: "document", transcript, storedFile, document };
+  // A retry of an already archived recording uses its retained transcript,
+  // even if another speech-recognition pass produced slightly different words.
+  return { route: "document", transcript: document.extractedText || transcript, storedFile, document };
 }

@@ -20,6 +20,8 @@ import Link from "next/link";
 import type { DocumentWithCategory } from "@/types";
 import "../../fieldguide-archive.css";
 import { formatDate, formatFileSize, parseTags } from "@/lib/utils";
+import { dictationDisplaySummary } from "@/lib/dictation-analysis";
+import { archiveAnalysisIssueMessage } from "@/lib/archive-health-shared";
 
 export default function DocumentDetailPage() {
   const params = useParams();
@@ -93,6 +95,7 @@ export default function DocumentDetailPage() {
   }
 
   const tags = parseTags(doc.tags);
+  const isAudio = doc.fileType.startsWith("audio/");
 
   return (
     <div className="fg-archive fg-document-detail">
@@ -120,6 +123,17 @@ export default function DocumentDetailPage() {
           </p>
         )}
 
+        {isAudio && (
+          <p className="text-sm leading-6 text-stone-700">
+            {doc.displaySummary || dictationDisplaySummary(doc.aiSummary, doc.title)}
+          </p>
+        )}
+        {doc.analysisState !== "ok" && (
+          <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+            {archiveAnalysisIssueMessage(doc.analysisState, doc.analysisError)}
+          </p>
+        )}
+
         {/* Document Preview */}
         {doc.fileType === "link" ? (
           <a
@@ -134,6 +148,13 @@ export default function DocumentDetailPage() {
               <ExternalLink size={12} /> Open Link
             </span>
           </a>
+        ) : isAudio ? (
+          <div className="fg-archive-panel">
+            <p className="mb-2 text-sm font-medium text-stone-700">Original recording</p>
+            <audio controls preload="none" aria-label={`Play original recording of ${doc.title}`} className="w-full" src={`/api/documents/${doc.id}/file`}>
+              Your browser does not support audio playback.
+            </audio>
+          </div>
         ) : doc.fileType.startsWith("image/") ? (
           <div className="fg-document-preview rounded-xl overflow-hidden border border-stone-200">
             <img src={`/api/documents/${doc.id}/file`} alt={doc.title} className="w-full" />
@@ -149,6 +170,14 @@ export default function DocumentDetailPage() {
               <Download size={12} /> Tap to download
             </span>
           </a>
+        )}
+
+        {isAudio && doc.aiExtractedText && (
+          <details className="fg-archive-panel bg-stone-50 rounded-xl p-4">
+            <summary className="text-sm font-medium text-stone-700 cursor-pointer">Complete unedited transcript</summary>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-stone-700">{doc.aiExtractedText}</p>
+            <p className="mt-3 text-xs text-stone-500">Automated transcription, with no Bucky rewriting. The original recording is the source if speech recognition missed a word.</p>
+          </details>
         )}
 
         {/* Metadata */}
@@ -197,7 +226,7 @@ export default function DocumentDetailPage() {
         </div>
 
         {/* AI Summary */}
-        {doc.aiSummary && (
+        {!isAudio && doc.aiSummary && (
           <div className="fg-archive-panel fg-document-summary bg-green-50 rounded-xl p-4">
             <h3 className="text-sm font-semibold text-green-800 mb-1">AI Summary</h3>
             <p className="text-sm text-green-700">{doc.aiSummary}</p>
@@ -220,7 +249,7 @@ export default function DocumentDetailPage() {
         )}
 
         {/* Extracted Text */}
-        {doc.aiExtractedText && (
+        {!isAudio && doc.aiExtractedText && (
           <details className="fg-archive-panel bg-stone-50 rounded-xl p-4">
             <summary className="text-sm font-medium text-stone-700 cursor-pointer">
               Extracted Text

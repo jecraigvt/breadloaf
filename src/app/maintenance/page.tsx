@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Header } from "@/components/layout/header";
+import { dictationDisplaySummary } from "@/lib/dictation-analysis";
 import {
   Plus,
   Trash2,
@@ -28,6 +29,7 @@ interface MaintenanceRecord {
   id: string;
   title: string;
   description: string | null;
+  displaySummary?: string | null;
   category: string;
   performedBy: string | null;
   performedAt: string;
@@ -518,6 +520,7 @@ export default function MaintenancePage() {
                 return (
                   <div
                     key={record.id}
+                    id={record.id}
                     className={`relative bg-white rounded-xl border p-4 sm:ml-12 ${
                       overdue
                         ? "border-red-200 bg-red-50/30"
@@ -533,7 +536,7 @@ export default function MaintenancePage() {
 
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <div className="flex items-center gap-2 flex-wrap mb-1 pr-20">
                           <h3 className="font-semibold text-stone-800 text-sm">
                             {record.title}
                           </h3>
@@ -581,8 +584,12 @@ export default function MaintenancePage() {
                           )}
                         </div>
 
-                        {/* Bucky's summary plus immutable voice-source evidence. */}
-                        {(record.description || record.sourceRecordings?.length) && (
+                        {Boolean(record.sourceRecordings?.length) && (
+                          <p className="mt-3 text-sm leading-6 text-stone-700">
+                            {record.displaySummary || dictationDisplaySummary(record.description, record.title)}
+                          </p>
+                        )}
+                        {record.description && !record.sourceRecordings?.length && (
                           <button
                             onClick={() =>
                               setExpandedId(isExpanded ? null : record.id)
@@ -597,12 +604,12 @@ export default function MaintenancePage() {
                             {isExpanded ? "Hide details" : "Show details"}
                           </button>
                         )}
-                        {isExpanded && (
+                        {(isExpanded || Boolean(record.sourceRecordings?.length)) && (
                           <div className="mt-2 space-y-3">
-                            {record.description && (
+                            {record.description && !record.sourceRecordings?.length && (
                               <div className="rounded-lg bg-stone-50 p-3">
                                 <p className="mb-1 font-mono text-[10px] uppercase tracking-wider text-stone-400">
-                                  Bucky&apos;s summary
+                                  Details
                                 </p>
                                 <p className="text-sm text-stone-600">{record.description}</p>
                               </div>
@@ -612,7 +619,7 @@ export default function MaintenancePage() {
                                 <p className="mb-2 flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-amber-800">
                                   <Mic size={11} /> Original recording {record.sourceRecordings!.length > 1 ? index + 1 : ""}
                                 </p>
-                                <audio controls preload="metadata" className="mb-3 w-full" src={source.filePath}>
+                                <audio controls preload="none" aria-label={`Play original recording of ${record.title}`} className="mb-3 w-full" src={`/api/maintenance/${record.id}/recording?index=${index}`}>
                                   Your browser does not support audio playback.
                                 </audio>
                                 <details>
@@ -632,7 +639,7 @@ export default function MaintenancePage() {
                         )}
                       </div>
 
-                      <div className="flex gap-1 flex-shrink-0">
+                      <div className="absolute right-4 top-4 flex gap-1">
                         <button
                           onClick={() => startEdit(record)}
                           className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-green-200 bg-green-50 text-green-700 transition-colors hover:border-green-300 hover:bg-green-100 hover:text-green-800 focus:outline-none focus:ring-2 focus:ring-green-600 focus:ring-offset-2"

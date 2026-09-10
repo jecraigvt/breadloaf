@@ -9,6 +9,7 @@ export interface DocumentWithCategory {
   categoryId: string | null;
   tags: string | null;
   aiSummary: string | null;
+  displaySummary?: string | null;
   aiExtractedText: string | null;
   analysisState: string;
   analysisError: string | null;

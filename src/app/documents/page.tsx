@@ -7,7 +7,8 @@ import Link from "next/link";
 import type { DocumentWithCategory } from "@/types";
 import { formatDate } from "@/lib/utils";
 import type { ArchiveHealth } from "@/lib/archive-health";
-import { archiveVerificationStalenessMessage } from "@/lib/archive-health-shared";
+import { archiveVerificationStalenessMessage, archiveAnalysisIssueMessage } from "@/lib/archive-health-shared";
+import { dictationDisplaySummary } from "@/lib/dictation-analysis";
 import "../fieldguide-archive.css";
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -225,9 +226,19 @@ export default function DocumentsPage() {
                 <p className="mt-1 text-xs leading-5 text-stone-600">
                   {archiveHealth.issueDocuments === 0
                     ? "Every active document has usable analysis. "
-                    : `${archiveHealth.issueDocuments} active document${archiveHealth.issueDocuments === 1 ? "" : "s"} cannot be analyzed. `}
+                    : `${archiveHealth.issueDocuments} active document${archiveHealth.issueDocuments === 1 ? "" : "s"} awaiting analysis or needing attention. `}
                   Latest retrieval checks: {archiveHealth.verification.roundTrip.rate.toFixed(1)}% round-trip, {archiveHealth.verification.golden.rate.toFixed(1)}% golden, {archiveHealth.verification.negativeControls.passed}/{archiveHealth.verification.negativeControls.total} safety controls.
                 </p>
+                {Boolean(archiveHealth.issues?.length) && (
+                  <ul className="mt-2 space-y-2 text-xs leading-5 text-stone-700">
+                    {archiveHealth.issues!.map((issue) => (
+                      <li key={issue.id}>
+                        <Link href={`/documents/${issue.id}`} className="font-medium text-green-800 underline">{issue.title}</Link>
+                        {" — "}{archiveAnalysisIssueMessage(issue.analysisState, issue.analysisError)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 <p className="mt-0.5 text-[11px] text-stone-500">
                   Measured {archiveHealth.verification.measuredAt}
                 </p>
@@ -652,7 +663,7 @@ export default function DocumentsPage() {
                   <h3 className="line-clamp-2">{doc.title}</h3>
                   {doc.aiSummary && (
                     <p className="text-stone-500 text-sm line-clamp-1 mt-0.5">
-                      {doc.aiSummary}
+                      {doc.fileType.startsWith("audio/") ? doc.displaySummary || dictationDisplaySummary(doc.aiSummary, doc.title) : doc.aiSummary}
                     </p>
                   )}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-stone-500">

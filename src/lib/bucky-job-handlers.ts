@@ -117,6 +117,11 @@ export async function applyJobResult(tx: Prisma.TransactionClient, job: BuckyJob
   }
   const category = doc.categoryId ? null : await resolveDocumentCategory({ suggestedCategory: result.suggestedCategory, confidence: result.confidence }, tx);
   const newUpload = jobRequest(job).newUpload === true && doc.analysisState === "pending";
+  // Reanalysis may add a summary, but a retained dictation is primary evidence.
+  // Worker extraction/section markers must never replace its existing transcript.
+  if ((doc.fileType.startsWith("audio/") || doc.fileType.startsWith("video/")) && doc.aiExtractedText) {
+    result.extractedText = doc.aiExtractedText;
+  }
   const updated = await tx.document.update({ where: { id }, data: {
     aiSummary: result.summary, aiExtractedText: result.extractedText, analysisState: "ok", analysisError: null,
     ...(newUpload ? { title: resolveDocumentTitle({ suggestedTitle: result.title, fileName: doc.fileName, summary: result.summary, extractedText: result.extractedText }), tags: result.tags.join(", ") } : {}),

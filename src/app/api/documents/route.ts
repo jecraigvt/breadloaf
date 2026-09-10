@@ -8,6 +8,7 @@ import {
 } from "@/lib/document-analysis";
 import { getArchiveHealth } from "@/lib/archive-health";
 import { createHistoricalPhotoQuestion } from "@/lib/historical-photo";
+import { dictationDisplaySummaries, tryAnalyzeRetainedDictation } from "@/lib/dictation-intelligence";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -62,7 +63,8 @@ export async function GET(request: NextRequest) {
     take: 100,
   });
 
-  return NextResponse.json(documents);
+  const summaries = await dictationDisplaySummaries(documents.filter((doc) => doc.fileType.startsWith("audio/")).map((doc) => doc.filePath));
+  return NextResponse.json(documents.map((doc) => ({ ...doc, displaySummary: summaries.get(doc.filePath) || null })));
 }
 
 export async function POST(request: NextRequest) {
@@ -169,6 +171,9 @@ export async function POST(request: NextRequest) {
             cost: maintenanceCost
               ? parseFloat(String(maintenanceCost))
               : undefined,
+            sourceRecordings: document.fileType.startsWith("audio/") && document.aiExtractedText
+              ? [{ filePath: document.filePath, fileName: document.fileName, transcript: document.aiExtractedText }]
+              : undefined,
           },
         });
         void indexMaintenance(maintenance.id);
@@ -176,6 +181,10 @@ export async function POST(request: NextRequest) {
         // Don't fail the document save if cross-linking fails
         console.error("Cross-link maintenance record failed:", e);
       }
+    }
+
+    if (document.fileType.startsWith("audio/") && document.aiExtractedText && document.accessScope === "family") {
+      await tryAnalyzeRetainedDictation({ filePath: document.filePath, transcript: document.aiExtractedText, title: document.title });
     }
 
     // Embed document for semantic search (async, don't block response)

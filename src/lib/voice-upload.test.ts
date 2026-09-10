@@ -96,6 +96,7 @@ test("a substantive recording reuses the retained file in Document filing", asyn
       fileDocument: async (options) => {
         events.push("document");
         assert.ok(options.storedFile);
+        assert.equal(options.transcript, "This is a detailed walkthrough of the furnace and well systems.");
         assert.deepEqual(
           await readFile(path.join(uploadRoot, path.basename(options.storedFile.filePath))),
           buffer

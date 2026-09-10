@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { getOpenAIClient, withRetry } from "@/lib/openai-client";
 import { Prisma } from "@prisma/client";
+import { dictationIndexText } from "@/lib/dictation-intelligence";
+import { recordingSources } from "@/lib/dictation-analysis";
 
 export const EMBEDDING_MODEL = "text-embedding-3-small";
 
@@ -403,6 +405,7 @@ export async function indexDocument(documentId: string, options: IndexOptions = 
       await removeFromIndex("document", documentId);
       return;
     }
+    const notes = document.fileType.startsWith("audio/") ? await dictationIndexText([document.filePath]) : new Map<string, string>();
     await embedAndStore(
       "document",
       document.id,
@@ -412,6 +415,7 @@ export async function indexDocument(documentId: string, options: IndexOptions = 
         document.description ? `Description: ${document.description}` : "",
         document.aiSummary ? `Summary: ${document.aiSummary}` : "",
         document.aiExtractedText ? `Contents:\n${document.aiExtractedText}` : "",
+        notes.get(document.filePath) || "",
       ].filter(Boolean).join("\n"),
       options
     );
@@ -452,10 +456,11 @@ export async function indexMemory(memoryId: string, options: IndexOptions = {}) 
       await removeFromIndex("memory", memoryId);
       return;
     }
+    const notes = memory.filePath ? await dictationIndexText([memory.filePath]) : new Map<string, string>();
     await embedAndStore(
       "memory",
       memory.id,
-      memoryIndexContent(memory),
+      [memoryIndexContent(memory), memory.filePath ? notes.get(memory.filePath) : ""].filter(Boolean).join("\n\n"),
       options
     );
   });
@@ -503,6 +508,8 @@ export async function indexMaintenance(recordId: string, options: IndexOptions =
       await removeFromIndex("maintenance", recordId);
       return;
     }
+    const sources = recordingSources(record.sourceRecordings);
+    const notes = await dictationIndexText(sources.map((source) => source.filePath));
     await embedAndStore(
       "maintenance",
       record.id,
@@ -517,6 +524,7 @@ export async function indexMaintenance(recordId: string, options: IndexOptions =
           : "",
         record.performedBy ? `Performed by: ${record.performedBy}` : "",
         record.cost != null ? `Cost: $${record.cost.toFixed(2)}` : "",
+        ...Array.from(notes.values()),
       ].filter(Boolean).join("\n"),
       options
     );

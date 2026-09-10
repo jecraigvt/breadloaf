@@ -221,9 +221,10 @@ export async function processMediaFile(
   base64Data: string,
   mimeType: string,
   existingCategories: CategoryOption[],
-  fileName?: string
+  fileName?: string,
+  retainedTranscript?: string
 ): Promise<CategorizationResult> {
-  const transcript = await transcribeMediaBuffer(
+  const transcript = retainedTranscript ?? await transcribeMediaBuffer(
     Buffer.from(base64Data, "base64"),
     mimeType,
     fileName || "media"
@@ -631,7 +632,7 @@ const assistantToolDeclarations: Array<{
             },
             description: {
               type: "string",
-              description: "Concise high-level summary of the work and its important details",
+              description: "Exactly one short display sentence about this work. For dictation, use only what the speaker said; do not add inferences, rewrite their transcript, or repeat it in a long summary. The server preserves the original and separately analyzes connections.",
             },
             category: {
               type: "string",

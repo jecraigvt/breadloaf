@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { tryAnalyzeRetainedDictation } from "@/lib/dictation-intelligence";
 import type { Prisma } from "@prisma/client";
 import { indexDocument, indexMaintenance } from "@/lib/embeddings";
 import { resolveDocumentCategory } from "@/lib/document-categories";
@@ -44,6 +45,8 @@ export interface FileDocumentBufferOptions {
   uploadedBy?: string;
   /** Audio is retained before transcription/triage and handed through here. */
   storedFile?: StoredFile;
+  /** The already captured source transcript; never transcribe the same upload twice. */
+  transcript?: string;
 }
 
 export async function fileDocumentFromBuffer(
@@ -71,6 +74,9 @@ export async function fileDocumentFromBuffer(
     include: { category: true },
   });
   if (existingCopy) {
+    if (type.startsWith("audio/") && existingCopy.aiExtractedText && existingCopy.accessScope === "family") {
+      await tryAnalyzeRetainedDictation({ filePath: existingCopy.filePath, transcript: existingCopy.aiExtractedText, title: existingCopy.title });
+    }
     return {
       id: existingCopy.id,
       title: existingCopy.title,
@@ -107,6 +113,7 @@ export async function fileDocumentFromBuffer(
     fileName,
     fileType: type,
     categories,
+    transcript: opts.transcript,
   });
   const result = analysis.result;
   if (!result) {
@@ -149,7 +156,7 @@ export async function fileDocumentFromBuffer(
       categoryId: resolution.categoryId,
       tags: result?.tags?.length ? JSON.stringify(result.tags) : null,
       aiSummary: result?.summary || null,
-      aiExtractedText: result?.extractedText || null,
+      aiExtractedText: result?.extractedText || opts.transcript || null,
       analysisState: analysis.state,
       analysisError: analysis.error,
       uploadedBy: uploadedBy || undefined,
@@ -184,6 +191,10 @@ export async function fileDocumentFromBuffer(
     } catch (e) {
       console.error("Cross-link maintenance record failed:", e);
     }
+  }
+
+  if (type.startsWith("audio/") && doc.aiExtractedText) {
+    await tryAnalyzeRetainedDictation({ filePath: doc.filePath, transcript: doc.aiExtractedText, title: doc.title });
   }
 
   // Embed for semantic search so Bucky can recall it later

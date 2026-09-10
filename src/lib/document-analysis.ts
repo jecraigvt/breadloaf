@@ -193,6 +193,7 @@ export async function analyzeDocumentBuffer(input: {
   fileName: string;
   fileType: string;
   categories: CategoryOption[];
+  transcript?: string;
 }): Promise<DocumentAnalysisOutcome> {
   const { buffer, fileName, categories } = input;
   const type = normalizedType(input.fileType);
@@ -208,7 +209,7 @@ export async function analyzeDocumentBuffer(input: {
   try {
     let result: CategorizedDocument | null = null;
     if (type.startsWith("audio/") || type.startsWith("video/")) {
-      result = await processMediaFile(buffer.toString("base64"), type, categories, fileName);
+      result = await processMediaFile(buffer.toString("base64"), type, categories, fileName, input.transcript);
     } else if (type === "application/pdf" && buffer.length > AI_SIZE_LIMIT) {
       const sample = await samplePdfPages(buffer, AI_SIZE_LIMIT);
       const sampleBase64 = sample.buffer.toString("base64");

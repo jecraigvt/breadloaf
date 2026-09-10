@@ -142,6 +142,16 @@ model ChecklistItem {
   @@index([list])
 }
 
+// Derived analysis of retained audio; never a replacement for its source text.
+model DictationAnalysis {
+  filePath       String   @id
+  transcriptHash String
+  displaySummary String
+  internalSummary String
+  connections    Json
+  analyzedAt     DateTime @default(now())
+}
+
 model MaintenanceRecord {
   id          String    @id @default(cuid())
   title       String

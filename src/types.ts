@@ -8,4 +8,4 @@ export type RoomWithStays = Prisma.RoomGetPayload<{
 
 export type DocumentWithCategory = Prisma.DocumentGetPayload<{
   include: { category: true };
-}>;
+}> & { displaySummary?: string | null };

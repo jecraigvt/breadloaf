@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { dictationContext } from "@/lib/dictation-intelligence";
+import { recordingSources } from "@/lib/dictation-analysis";
 import { hybridSearch, tokenizeSearchQuery, type SearchResult } from "@/lib/embeddings";
 import {
   formatArchiveHealthForBucky,
@@ -367,6 +369,11 @@ export async function buildBuckyContext(
       `- ${dateOnly(record.performedAt)}: ${record.title}${record.asset ? ` on ${record.asset.name}` : ""}${record.cost != null ? ` ($${record.cost.toFixed(2)})` : ""}`, "maintenance records")}`);
   }
 
+  const dictationNotes = await dictationContext([
+    ...[...documents, ...documentDirectory].filter((document) => document.fileType.startsWith("audio/")).map((document) => document.filePath),
+    ...[...memories, ...memoryDirectory].flatMap((memory) => memory.filePath ? [memory.filePath] : []),
+    ...maintenance.flatMap((record) => recordingSources(record.sourceRecordings).map((source) => source.filePath)),
+  ]);
   const relevantParts: string[] = [];
   const allAssets = new Map([...directAssets, ...assets].map((asset) => [asset.id, asset]));
   for (const asset of Array.from(allAssets.values())) {
@@ -379,13 +386,19 @@ export async function buildBuckyContext(
   }
   for (const memory of [...memoryDirectory, ...memories.filter((memory) => !memoryDirectory.some((listed) => listed.id === memory.id))]) {
     relevantParts.push(`[${memory.type.toUpperCase()} MEMORY ${memory.id}] ${memory.topic}${memory.subject ? `\nSubject: ${memory.subject}` : ""}${memory.location ? `\nLocation: ${memory.location}` : ""}\n${memory.content}${memory.source ? `\nSource: ${memory.source}` : ""}${memory.validFrom ? `\nEffective: ${dateOnly(memory.validFrom)}` : ""}`);
+    if (memory.filePath && dictationNotes.get(memory.filePath)) relevantParts.push(dictationNotes.get(memory.filePath)!);
   }
   for (const document of [...documentDirectory, ...documents.filter((document) => !documentDirectory.some((listed) => listed.id === document.id))]) {
     const chunks = matchedChunks(retrieved, "document", document.id);
     relevantParts.push(`[ARCHIVE DOCUMENT ${document.id}] ${document.title} [${document.category?.name || "Uncategorized"}]\n${document.aiSummary || document.description || "No summary"}${chunks.length ? `\nRelevant excerpts:\n${chunks.join("\n---\n")}` : ""}`);
+    if (dictationNotes.get(document.filePath)) relevantParts.push(dictationNotes.get(document.filePath)!);
   }
   for (const record of maintenance) {
     relevantParts.push(`[MAINTENANCE] ${dateOnly(record.performedAt)}: ${record.title}${record.asset ? ` on ${record.asset.name}` : ""}${record.description ? `\n${record.description}` : ""}${record.cost != null ? `\nCost: $${record.cost.toFixed(2)}` : ""}`);
+    for (const source of recordingSources(record.sourceRecordings)) {
+      relevantParts.push(`ORIGINAL DICTATION for maintenance ${record.id}:\n${source.transcript}`);
+      if (dictationNotes.get(source.filePath)) relevantParts.push(dictationNotes.get(source.filePath)!);
+    }
   }
   for (const expense of expenses) {
     relevantParts.push(`[EXPENSE] ${dateOnly(expense.date)}: $${expense.amount.toFixed(2)} ${expense.description} [${expense.category}], paid by ${expense.paidBy}${expense.vendor ? `; vendor ${expense.vendor}` : ""}`);

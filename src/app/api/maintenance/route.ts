@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { indexMaintenance } from "@/lib/embeddings";
+import { dictationDisplaySummaries } from "@/lib/dictation-intelligence";
+import { recordingSources } from "@/lib/dictation-analysis";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -13,7 +15,11 @@ export async function GET(request: NextRequest) {
     orderBy: { performedAt: "desc" },
   });
 
-  return NextResponse.json(records);
+  const summaries = await dictationDisplaySummaries(records.flatMap((record) => recordingSources(record.sourceRecordings).map((source) => source.filePath)));
+  return NextResponse.json(records.map((record) => ({
+    ...record,
+    displaySummary: summaries.get(recordingSources(record.sourceRecordings)[0]?.filePath) || null,
+  })));
 }
 
 export async function POST(request: NextRequest) {

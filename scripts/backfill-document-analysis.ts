@@ -260,6 +260,7 @@ async function main() {
           fileName: document.fileName,
           fileType: document.fileType,
           categories,
+          transcript: document.fileType.startsWith("audio/") ? document.aiExtractedText || undefined : undefined,
         });
     const result = outcome.result;
     const proposed = normalizeStoredAnalysis({
