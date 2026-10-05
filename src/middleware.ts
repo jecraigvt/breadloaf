@@ -49,12 +49,18 @@ export async function middleware(request: NextRequest) {
 
   // Public routes — no auth required.
   //
+  // The cocktail guide is shareable outside the family. Only its exact page
+  // paths and three static assets are public; the family hub stays gated.
+  //
   // The family tree is deliberately open so a first-time relative can find
   // themselves and claim a profile before they have been given a PIN. The tree API
   // withholds contact details, notes, and minors' surnames from unauthenticated
   // callers; the rest of /api/family (create, edit, delete) stays gated below.
   if (
     pathname === "/login" ||
+    pathname === "/smoothproof" ||
+    pathname === "/smoothproof/index.html" ||
+    /^\/smoothproof-assets\/(style\.css|new-york-sour\.webp|wine-float\.webp)$/.test(pathname) ||
     pathname === "/family" ||
     pathname === "/api/family/tree" ||
     pathname.startsWith("/api/auth") ||
