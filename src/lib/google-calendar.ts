@@ -92,9 +92,9 @@ export async function syncPendingCalendarStay(id: string) {
   return syncCalendarStay(syncStore, calendarProvider(calendar), id);
 }
 
-export async function retryPendingCalendarSync(limit = 20) {
+export async function retryPendingCalendarSync(limit = 20): Promise<{ attempted: number; synced: number; failed: number; error?: string }> {
   const calendar = getCalendarClient();
-  if (!calendar) return { attempted: 0, synced: 0 };
+  if (!calendar) return { attempted: 0, synced: 0, failed: 0, error: "Google Calendar is unavailable" };
   const now = new Date();
   // A database outage during release must not strand an otherwise synced row.
   await prisma.stay.updateMany({ where: { calendarSyncLeaseUntil: { lte: now } }, data: { calendarSyncLeaseUntil: null } });
@@ -103,14 +103,14 @@ export async function retryPendingCalendarSync(limit = 20) {
     orderBy: { calendarSyncAttemptedAt: { sort: "asc", nulls: "first" } }, take: limit,
     select: { id: true },
   });
-  let attempted = 0, synced = 0;
+  let attempted = 0, synced = 0, failed = 0;
   const provider = calendarProvider(calendar);
   for (const row of rows) {
     const result = await syncCalendarStay(syncStore, provider, row.id);
     attempted += Number(result.attempted); synced += Number(result.synced);
-    if (result.error) break; // An unavailable provider should not hold a page through every retry.
+    if (result.error) { failed++; break; } // An unavailable provider should not hold a page through every retry.
   }
-  return { attempted, synced };
+  return { attempted, synced, failed, ...(failed ? { error: "Saved visit changes could not be sent to Google Calendar; synchronization will retry." } : {}) };
 }
 
 // Compatibility for older callers; all operations first persist desired state.
@@ -136,12 +136,19 @@ export async function deleteCalendarEvent(googleEventId: string): Promise<boolea
   return (await syncPendingCalendarStay(row.id)).synced;
 }
 
-export async function syncFromGoogleCalendar(): Promise<{ created: number; updated: number; deleted: number; error?: string }> {
+export interface CalendarSyncSummary {
+  created: number; updated: number; deleted: number;
+  pushAttempted: number; pushSynced: number; pushFailed: number;
+  error?: string;
+}
+
+export async function syncFromGoogleCalendar(): Promise<CalendarSyncSummary> {
   const calendar = getCalendarClient();
-  const stats = { created: 0, updated: 0, deleted: 0 };
+  const stats = { created: 0, updated: 0, deleted: 0, pushAttempted: 0, pushSynced: 0, pushFailed: 0 };
   if (!calendar) return { ...stats, error: "Google Calendar is unavailable. Visits are saved here; synchronization will resume when it is connected." };
   try {
-    await retryPendingCalendarSync();
+    const pushed = await retryPendingCalendarSync();
+    stats.pushAttempted = pushed.attempted; stats.pushSynced = pushed.synced; stats.pushFailed = pushed.failed;
     const now = new Date();
     const windowStart = parseStayDate(propertyToday(now));
     windowStart.setUTCMonth(windowStart.getUTCMonth() - 3);
@@ -200,7 +207,7 @@ export async function syncFromGoogleCalendar(): Promise<{ created: number; updat
         data: { deletedAt: now, calendarSyncRevision: { increment: 1 } } });
       stats.deleted += removed.count;
     }
-    return stats;
+    return { ...stats, ...(pushed.error ? { error: pushed.error } : {}) };
   } catch {
     console.error("Calendar reconciliation failed; local visits and retry state were preserved");
     return { ...stats, error: "Google Calendar could not be reached. Saved visits remain available; synchronization will retry." };
