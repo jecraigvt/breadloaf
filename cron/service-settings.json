@@ -1,0 +1,18 @@
+{
+  "description": "Operator settings for the one isolated Railway cron service; not a legacy railway.json or project-wide IaC file",
+  "name": "breadloaf-scheduler",
+  "sourceRepository": "jecraigvt/breadloaf",
+  "sourceBranch": "main",
+  "rootDirectory": "/cron",
+  "builder": "DOCKERFILE",
+  "dockerfile": "Dockerfile",
+  "startCommand": "node runner.mjs",
+  "cronSchedule": "*/15 * * * *",
+  "restartPolicyType": "NEVER",
+  "replicas": 1,
+  "suggestedLimits": { "memoryMiB": 128, "vCPU": 0.25 },
+  "healthcheck": null,
+  "publicDomain": null,
+  "volume": null,
+  "runtimeVariables": ["SITE_HOUSEKEEPING_ENABLED", "ARCHIVE_BACKUP_ENABLED", "SITE_MAINTENANCE_TOKEN", "ARCHIVE_BACKUP_TOKEN"]
+}

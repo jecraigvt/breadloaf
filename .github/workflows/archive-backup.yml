@@ -1,8 +1,6 @@
 name: Weekly encrypted archive backup
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 10 * * 0'
 permissions: {}
 concurrency:
   group: archive-backup

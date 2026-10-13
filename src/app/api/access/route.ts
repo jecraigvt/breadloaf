@@ -4,6 +4,7 @@ import { accessPolicyResponse, lockVerifiedActorForAccessChange } from "@/lib/ac
 import { prisma } from "@/lib/prisma";
 import { normalizeSignInEmail } from "@/lib/sign-in-policy";
 import { z } from "zod";
+import { accessProfileLabels } from "@/lib/access-profile-label";
 
 const action = z.discriminatedUnion("action", [
   z.object({ action: z.literal("approve"), memberId: z.string().min(1).max(128), email: z.string().max(254), caretaker: z.boolean().optional() }).strict(),
@@ -18,10 +19,18 @@ export async function GET(request: NextRequest) {
   const actor = await getVerifiedActor(request);
   if (!actor?.isCurator) return NextResponse.json({ error: "A verified family caretaker is required." }, { status: 403 });
   const [members, requests] = await Promise.all([
-    prisma.familyMember.findMany({ where: { canClaim: true, isMinor: false, deceased: false }, orderBy: { name: "asc" }, select: { id: true, name: true, email: true, branch: true, accessApproved: true, isCurator: true } }),
+    prisma.familyMember.findMany({ where: { canClaim: true, isMinor: false, deceased: false }, orderBy: [{ name: "asc" }, { id: "asc" }], select: {
+      id: true, name: true, email: true, branch: true, accessApproved: true, isCurator: true, birthday: true,
+      relTo: { where: { type: "parent" }, select: { from: { select: { name: true } } } },
+    } }),
     prisma.familyAccessRequest.findMany({ where: { status: "pending" }, orderBy: { createdAt: "asc" }, take: 100 }),
   ]);
-  return NextResponse.json({ members, requests, actorId: actor.memberId }, { headers: { "Cache-Control": "no-store" } });
+  const labels = accessProfileLabels(members);
+  const choices = members.map(member => ({
+    id: member.id, name: member.name, email: member.email, branch: member.branch,
+    accessApproved: member.accessApproved, isCurator: member.isCurator, profileLabel: labels.get(member.id)!,
+  }));
+  return NextResponse.json({ members: choices, requests, actorId: actor.memberId }, { headers: { "Cache-Control": "no-store" } });
 }
 export async function PATCH(request: NextRequest) {
   const actor = await getVerifiedActor(request);

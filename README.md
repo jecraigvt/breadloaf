@@ -133,6 +133,11 @@ prisma migrate deploy && prisma db seed && next start
 - Encrypted database-and-original snapshots can be stored in the property Google Drive and verified by downloading the complete encrypted copy. A verified upload is distinct from a successful restore drill. Individual document labels are not automatically changed to claim recovery coverage.
 - Setup, scheduling, and restore instructions are in [`docs/archive-backup-schedule.md`](docs/archive-backup-schedule.md), [`docs/archive-drive.md`](docs/archive-drive.md), and [`docs/archive-recovery.md`](docs/archive-recovery.md).
 
+The isolated [Railway scheduler](cron/README.md) is the sole recurring owner of
+calendar/Mail Room housekeeping and weekly backups. GitHub housekeeping and
+backup workflows are manual diagnostics; routine work does not depend on site
+visits, Jeremy's computer, or repository activity.
+
 ## Corporation Vault
 
 - The vault has a separate shared passphrase and a 30-minute signed unlock session.
