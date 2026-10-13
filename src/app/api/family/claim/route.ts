@@ -10,6 +10,7 @@ import {
   revokeIdentitySession,
 } from "@/lib/actor";
 import { claimedViaForIdentityClaim } from "@/lib/identity-prompt";
+import { authClientKey, consumeAuthAttempt } from "@/lib/auth-rate-limit";
 
 /**
  * Claim an identity by tapping a face. The shared-PIN door is the security boundary,
@@ -53,6 +54,10 @@ export async function POST(request: NextRequest) {
   if (member.credential) {
     if (!pin) {
       return NextResponse.json({ error: "PIN required", pinRequired: true }, { status: 401 });
+    }
+    if (!(await consumeAuthAttempt(`profile-pin:${memberId}:${authClientKey(request)}`, 5, 15 * 60 * 1000))
+      || !(await consumeAuthAttempt(`profile-pin-member:${memberId}`, 20, 15 * 60 * 1000))) {
+      return NextResponse.json({ error: "Too many attempts. Try again later.", pinRequired: true }, { status: 429 });
     }
     const attempted = await hashIdentityToken(pin.trim());
     if (attempted !== member.credential.pinHash) {

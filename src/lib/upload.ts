@@ -3,6 +3,7 @@ import path from "path";
 import { generateId } from "./utils";
 import { sha256 } from "./archive-integrity";
 import { resolveSupportedFileType } from "./document-file-types";
+import { retainedExtension } from "./retained-file-security";
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
 
@@ -34,7 +35,7 @@ export async function saveUploadedFile(file: File) {
 
   await mkdir(UPLOAD_DIR, { recursive: true });
 
-  const ext = file.name.split(".").pop() || "jpg";
+  const ext = retainedExtension(file.name, resolvedType);
   const uniqueName = `${generateId()}.${ext}`;
   const filePath = path.join(UPLOAD_DIR, uniqueName);
 

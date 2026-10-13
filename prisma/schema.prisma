@@ -84,17 +84,23 @@ model Room {
 }
 
 model Stay {
-  id            String   @id @default(cuid())
-  guestName     String
-  roomId        String?
-  room          Room?    @relation(fields: [roomId], references: [id])
-  checkIn       DateTime
-  checkOut      DateTime
-  notes         String?
-  status        String   @default("confirmed") // confirmed, tentative, requested
-  googleEventId String?  @unique
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                      String    @id @default(cuid())
+  guestName               String
+  roomId                  String?
+  room                    Room?     @relation(fields: [roomId], references: [id])
+  checkIn                 DateTime
+  checkOut                DateTime
+  notes                   String?
+  status                  String    @default("confirmed") // confirmed, tentative, requested
+  googleEventId           String?   @unique
+  deletedAt               DateTime?
+  calendarSyncState       String    @default("pending")
+  calendarSyncError       String?
+  calendarSyncAttemptedAt DateTime?
+  calendarSyncLeaseUntil  DateTime?
+  calendarSyncRevision    Int       @default(0)
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   @@index([roomId])
   @@index([checkIn])
@@ -103,15 +109,32 @@ model Stay {
 
 // Processed inbound family emails (dedupe + audit trail)
 model EmailLog {
-  id         String   @id @default(cuid())
-  messageId  String   @unique
-  fromEmail  String
-  subject    String?
-  receivedAt DateTime
-  actions    String? // JSON summary of what was created (stays, docs, notes)
-  createdAt  DateTime @default(now())
+  id                   String    @id @default(cuid())
+  messageId            String    @unique
+  fromEmail            String
+  subject              String?
+  receivedAt           DateTime
+  actions              String? // JSON summary of what was created (stays, docs, notes)
+  createdAt            DateTime  @default(now())
+  status               String    @default("received")
+  attempts             Int       @default(0)
+  leaseToken           String?
+  leaseExpiresAt       DateTime?
+  nextAttemptAt        DateTime  @default(now())
+  lastError            String?
+  inboxUid             String?
+  inboxUidValidity     String?
+  senderName           String?
+  authenticationStatus String?
+  authenticationReason String?
+  reviewedBy           String?
+  reviewedAt           DateTime?
+  sourceChecksum       String?
+  processingPlan       Json?
 
   @@index([createdAt])
+  @@index([status, nextAttemptAt])
+  @@index([leaseExpiresAt])
 }
 
 model GroceryItem {
@@ -144,31 +167,31 @@ model ChecklistItem {
 
 // Derived analysis of retained audio; never a replacement for its source text.
 model DictationAnalysis {
-  filePath       String   @id
-  transcriptHash String
-  displaySummary String
+  filePath        String   @id
+  transcriptHash  String
+  displaySummary  String
   internalSummary String
-  connections    Json
-  analyzedAt     DateTime @default(now())
+  connections     Json
+  analyzedAt      DateTime @default(now())
 }
 
 model MaintenanceRecord {
-  id          String    @id @default(cuid())
-  title       String
-  description String?
-  category    String    @default("General")
-  performedBy String?
-  performedAt DateTime
-  nextDueAt   DateTime?
-  cost        Float?
+  id               String    @id @default(cuid())
+  title            String
+  description      String?
+  category         String    @default("General")
+  performedBy      String?
+  performedAt      DateTime
+  nextDueAt        DateTime?
+  cost             Float?
   // Immutable source evidence for maintenance dictated to Bucky. The normal
   // description is Bucky's concise summary; these retain the unedited machine
   // transcript and playable recording together.
   sourceRecordings Json?
-  assetId     String?
-  asset       Asset?    @relation(fields: [assetId], references: [id])
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  assetId          String?
+  asset            Asset?    @relation(fields: [assetId], references: [id])
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   @@index([category])
   @@index([performedAt])
@@ -227,11 +250,13 @@ model FamilyMember {
   claimedAt   DateTime?
   lastSeenAt  DateTime?
 
-  positions  PositionAssignment[]
-  relFrom    FamilyRelationship[] @relation("RelationshipFrom")
-  relTo      FamilyRelationship[] @relation("RelationshipTo")
-  sessions   FamilySession[]
-  credential FamilyCredential?
+  positions      PositionAssignment[]
+  relFrom        FamilyRelationship[] @relation("RelationshipFrom")
+  relTo          FamilyRelationship[] @relation("RelationshipTo")
+  sessions       FamilySession[]
+  credential     FamilyCredential?
+  signInLinks    FamilySignInLink[]
+  accessApproved Boolean              @default(false)
 
   @@index([branch])
   @@index([claimedAt])
@@ -274,16 +299,18 @@ model FamilyCredential {
 // Long-lived per-device identity. Rows are revoked, never deleted, so they double
 // as the audit trail for who claimed which profile and when.
 model FamilySession {
-  id         String       @id @default(cuid())
-  memberId   String
-  member     FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  tokenHash  String       @unique
-  userAgent  String?
-  claimedVia String? // tap | pin
-  createdAt  DateTime     @default(now())
-  lastUsedAt DateTime     @default(now())
-  expiresAt  DateTime
-  revokedAt  DateTime?
+  id            String       @id @default(cuid())
+  memberId      String
+  member        FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  tokenHash     String       @unique
+  userAgent     String?
+  claimedVia    String? // tap | pin | email
+  verifiedAt    DateTime?
+  verifiedEmail String?
+  createdAt     DateTime     @default(now())
+  lastUsedAt    DateTime     @default(now())
+  expiresAt     DateTime
+  revokedAt     DateTime?
 
   @@index([memberId])
   @@index([expiresAt])
@@ -505,26 +532,26 @@ model ArchiveVerification {
 
 // Durable work stays here; computers, API runners, and their sessions are replaceable.
 model BuckyJob {
-  id                String   @id @default(cuid())
-  kind              String
-  status            String   @default("queued")
-  request           Json
-  sourceDocumentId  String?
-  sourceVersion     String?
-  checkpoint        Json?
-  result            Json?
-  initiatedById     String?
-  initiatedByName   String?
-  priority          Int      @default(0)
-  fallbackAfter     DateTime
-  apiNotBefore      DateTime?
-  nextAttemptAt     DateTime @default(now())
-  generation        Int      @default(0)
-  dedupeKey         String?  @unique
-  lastError         String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  attempts          BuckyJobAttempt[]
+  id               String            @id @default(cuid())
+  kind             String
+  status           String            @default("queued")
+  request          Json
+  sourceDocumentId String?
+  sourceVersion    String?
+  checkpoint       Json?
+  result           Json?
+  initiatedById    String?
+  initiatedByName  String?
+  priority         Int               @default(0)
+  fallbackAfter    DateTime
+  apiNotBefore     DateTime?
+  nextAttemptAt    DateTime          @default(now())
+  generation       Int               @default(0)
+  dedupeKey        String?           @unique
+  lastError        String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  attempts         BuckyJobAttempt[]
 
   @@index([status, priority, nextAttemptAt])
   @@index([sourceDocumentId, createdAt])
@@ -532,35 +559,35 @@ model BuckyJob {
 }
 
 model BuckyWorker {
-  id             String   @id
+  id             String            @id
   label          String
-  tokenHash      String   @unique
+  tokenHash      String            @unique
   provider       String
   capabilities   Json
-  paused         Boolean  @default(false)
+  paused         Boolean           @default(false)
   lastSeenAt     DateTime?
   quotaRemaining Float?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
   attempts       BuckyJobAttempt[]
 }
 
 model BuckyJobAttempt {
-  id             String   @id @default(cuid())
+  id             String      @id @default(cuid())
   jobId          String
   workerId       String
   generation     Int
-  leaseToken     String   @unique
+  leaseToken     String      @unique
   leaseExpiresAt DateTime
-  status         String   @default("running")
-  reservedCents  Int      @default(0)
+  status         String      @default("running")
+  reservedCents  Int         @default(0)
   costCents      Int?
   budgetMonth    String?
   usage          Json?
   error          String?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime    @default(now())
   completedAt    DateTime?
-  job            BuckyJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job            BuckyJob    @relation(fields: [jobId], references: [id], onDelete: Cascade)
   worker         BuckyWorker @relation(fields: [workerId], references: [id])
 
   @@unique([jobId, generation])
@@ -574,4 +601,79 @@ model BuckyApiBudget {
   spentCents    Int      @default(0)
   reservedCents Int      @default(0)
   updatedAt     DateTime @updatedAt
+}
+
+model FamilySignInLink {
+  id          String       @id @default(cuid())
+  memberId    String
+  member      FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  email       String
+  tokenHash   String       @unique
+  expiresAt   DateTime
+  usedAt      DateTime?
+  destination String       @default("/")
+  createdAt   DateTime     @default(now())
+
+  @@index([memberId, createdAt])
+  @@index([expiresAt])
+}
+
+model AuthRateLimit {
+  key          String   @id
+  count        Int      @default(0)
+  windowEndsAt DateTime
+
+  @@index([windowEndsAt])
+}
+
+model ChecklistRun {
+  id         String   @id @default(cuid())
+  list       String
+  archivedAt DateTime @default(now())
+  archivedBy String?
+  items      Json
+
+  @@index([list, archivedAt])
+}
+
+model FamilyAccessRequest {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model EmailIntakeAction {
+  id          String   @id @default(cuid())
+  actionKey   String   @unique
+  messageId   String
+  kind        String
+  entityId    String?
+  completedAt DateTime @default(now())
+
+  @@index([messageId])
+}
+
+model EmailMailboxState {
+  id             String   @id
+  uidValidity    String
+  lastScannedUid String   @default("0")
+  updatedAt      DateTime @updatedAt
+}
+
+model ArchiveBackupState {
+  id             String    @id
+  state          String    @default("idle")
+  leaseToken     String?
+  leaseExpiresAt DateTime?
+  startedAt      DateTime?
+  lastSuccessAt  DateTime?
+  lastFailureAt  DateTime?
+  lastError      String?
+  latestReceipt  Json?
+  updatedAt      DateTime  @updatedAt
 }

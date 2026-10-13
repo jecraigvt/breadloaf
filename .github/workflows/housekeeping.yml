@@ -1,0 +1,24 @@
+name: Family site housekeeping
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+permissions: {}
+concurrency:
+  group: family-site-housekeeping
+  cancel-in-progress: false
+jobs:
+  reconcile:
+    if: vars.SITE_HOUSEKEEPING_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Process retained mail and reconcile visits
+        env:
+          SITE_MAINTENANCE_TOKEN: ${{ secrets.SITE_MAINTENANCE_TOKEN }}
+        run: |
+          test -n "$SITE_MAINTENANCE_TOKEN"
+          curl --fail --silent --show-error --max-time 240 \
+            --request POST \
+            --header "Authorization: Bearer $SITE_MAINTENANCE_TOKEN" \
+            https://breadloafhill.com/api/operations/run

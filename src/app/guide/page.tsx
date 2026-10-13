@@ -27,6 +27,7 @@ interface GuideEntry {
   placeholder?: boolean;
   address?: string;
   phone?: string;
+  source?: string;
 }
 
 const categoryConfig: Record<EntryCategory, { label: string; icon: React.ReactNode; color: string; bg: string; pill: string; pillActive: string }> = {
@@ -85,11 +86,12 @@ const entries: GuideEntry[] = [
   },
   {
     name: "Texas Falls",
-    category: "swimming",
-    description: "Scenic gorge with cascading waterfalls in the Green Mountain National Forest. Great for wading — swimming is limited.",
+    category: "hikes",
+    description: "Waterfall overlooks, a nature trail, and a picnic area. Swimming is not permitted; enjoy the falls from the paths and bridge.",
     distance: "~8 miles",
     driveTime: "15 min",
     address: "Texas Falls Rd, Hancock, VT 05748",
+    source: "https://www.fs.usda.gov/Internet/FSE_DOCUMENTS/fseprd581105.pdf",
   },
   {
     name: "Middlebury Gorge",
@@ -98,12 +100,6 @@ const entries: GuideEntry[] = [
     distance: "~6 miles",
     driveTime: "12 min",
     address: "Middlebury Gorge, Ripton, VT",
-  },
-  {
-    name: "Your family favorite spot",
-    category: "swimming",
-    description: "Know a secret swimming hole? Add it here!",
-    placeholder: true,
   },
 
   // Hikes
@@ -309,7 +305,7 @@ export default function GuidePage() {
     <div>
       <Header
         title="Local Guide"
-        subtitle="Our favorite places around Breadloaf Hill"
+        subtitle="Places around Breadloaf Hill"
       />
 
       <div className="max-w-5xl mx-auto px-4 py-6">
@@ -387,6 +383,7 @@ export default function GuidePage() {
                     >
                       {entry.description}
                     </p>
+                    {entry.source && <a href={entry.source} target="_blank" rel="noopener noreferrer" className="inline-block mt-2 text-sm text-green-800 underline">Forest Service visitor information</a>}
                     {(entry.distance || entry.driveTime) && (
                       <div className="flex items-center gap-3 mt-2">
                         {entry.distance && (
@@ -441,7 +438,7 @@ export default function GuidePage() {
             <a href="/bulletin" className="text-green-700 hover:underline">
               Family Board
             </a>{" "}
-            and we&apos;ll add it here.
+            for the family to see.
           </p>
         </div>
       </div>

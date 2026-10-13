@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { syncFromGoogleCalendar } from "@/lib/google-calendar";
-import { pollInboxInBackground } from "@/lib/email-processor";
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowRight, BookOpen, Clock3, Upload, Users } from "lucide-react";
 import { Masthead } from "@/components/layout/masthead";
 import { HubLeadTile } from "@/components/home/hub-lead-tile";
@@ -19,14 +18,13 @@ const PHOTO_STRIP = [
 ];
 
 export default async function HomePage() {
-  await syncFromGoogleCalendar().catch(() => {});
-  pollInboxInBackground();
   const now = new Date();
+  const recentNoteCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const [docCount, bulletinMessages, stayCount, nextStay, openQuestions] = await Promise.all([
     prisma.document.count({ where: { deletedAt: null, accessScope: "family" } }),
-    prisma.bulletinMessage.findMany({ orderBy: [{ pinned: "desc" }, { createdAt: "desc" }], take: 2 }),
-    prisma.stay.count({ where: { checkOut: { gte: now } } }).catch(() => 0),
-    prisma.stay.findFirst({ where: { checkOut: { gte: now } }, orderBy: { checkIn: "asc" }, include: { room: true } }).catch(() => null),
+    prisma.bulletinMessage.findMany({ where: { OR: [{ pinned: true }, { createdAt: { gte: recentNoteCutoff } }] }, orderBy: [{ pinned: "desc" }, { createdAt: "desc" }], take: 2 }),
+    prisma.stay.count({ where: { deletedAt: null, checkOut: { gte: now } } }).catch(() => 0),
+    prisma.stay.findFirst({ where: { deletedAt: null, checkOut: { gte: now } }, orderBy: { checkIn: "asc" }, include: { room: true } }).catch(() => null),
     prisma.buckyQuestion.count({ where: { status: "open" } }).catch(() => 0),
   ]);
   const month = now.toLocaleDateString("en-US", { month: "long", timeZone: "America/New_York" });
@@ -39,6 +37,14 @@ export default async function HomePage() {
         <Link href="/" className="wordmark" aria-label="Breadloaf Hill home">Breadloaf Hill<span className="fg-wordmark-dot">.</span></Link>
         <span className="ctr">Est. 1974<span className="fg-brand-caption"> / The family field guide</span></span>
       </header>
+      <nav className="fg-home-actions" aria-label="Everyday tasks">
+        <Link href="/calendar">Plan a visit <ArrowRight size={16} aria-hidden="true" /></Link>
+        <Link href="/stays">Choose a room <ArrowRight size={16} aria-hidden="true" /></Link>
+        <Link href="/grocery">Shopping list <ArrowRight size={16} aria-hidden="true" /></Link>
+        <Link href="/checklists">Open or close the house <ArrowRight size={16} aria-hidden="true" /></Link>
+        <Link href="/documents">Find a document <ArrowRight size={16} aria-hidden="true" /></Link>
+        <Link href="/emergency" className="fg-emergency-link">Emergency & address <ArrowRight size={16} aria-hidden="true" /></Link>
+      </nav>
       <Masthead />
       <div className="colophon fg-colophon">
         <div><p className="k">On the hill</p><p className="v">{today}<span className="u">Ripton, Vermont</span></p></div>
@@ -51,11 +57,11 @@ export default async function HomePage() {
       <div className="fg-home-body">
         <div className="fg-home-grid">
           <section aria-label="The family hub">
-            <div className="chapter-intro fg-chapter-intro"><p className="number">The family field guide / {month}</p><h2 className="lede">A familiar place.<br /><em>A few new possibilities.</em></h2></div>
+            <div className="chapter-intro fg-chapter-intro"><p className="number">The family field guide / {month}</p><h2 className="lede">Plan a visit.<br /><em>Keep the house ready.</em></h2></div>
             <div className="tiles tiles-hub fg-hub-tiles">
               <HubLeadTile lbl="I" sub="Ask · act · file documents" href="/assistant" />
-              <Link className="tile fg-photo-tile" href="/calendar"><div className="img"><img src="/photos/hero-mountains.jpg" alt="The Green Mountains beyond the house" /><span className="fig">FIG. 01</span></div><div className="meta"><p className="lbl">II / Plan a visit</p><h3 className="nm">Calendar</h3><p className="fg-tile-description">See who’s coming</p><ArrowRight size={20} aria-hidden="true" /></div></Link>
-              <Link className="tile fg-photo-tile" href="/stays"><div className="img"><img src="/photos/house-interior.jpg" alt="The warm wood interior of the house" /><span className="fig">FIG. 02</span></div><div className="meta"><p className="lbl">III / Settle in</p><h3 className="nm">Rooms</h3><p className="fg-tile-description">Find your place to stay</p><ArrowRight size={20} aria-hidden="true" /></div></Link>
+              <Link className="tile fg-photo-tile" href="/calendar"><div className="img"><Image src="/photos/hero-mountains.jpg" alt="The Green Mountains beyond the house" fill sizes="(max-width: 649px) 50vw, 500px" /><span className="fig">FIG. 01</span></div><div className="meta"><p className="lbl">II / Plan a visit</p><h3 className="nm">Calendar</h3><p className="fg-tile-description">See who’s coming</p><ArrowRight size={20} aria-hidden="true" /></div></Link>
+              <Link className="tile fg-photo-tile" href="/stays"><div className="img"><Image src="/photos/house-interior.jpg" alt="The warm wood interior of the house" fill sizes="(max-width: 649px) 50vw, 500px" /><span className="fig">FIG. 02</span></div><div className="meta"><p className="lbl">III / Settle in</p><h3 className="nm">Rooms</h3><p className="fg-tile-description">Find your place to stay</p><ArrowRight size={20} aria-hidden="true" /></div></Link>
             </div>
             <div className="fg-quick-links"><Link href="/upload"><Upload size={18} aria-hidden="true" />Add to Archive</Link><Link href="/bucky/jobs"><Clock3 size={18} aria-hidden="true" />Bucky’s tasks</Link></div>
           </section>
@@ -76,7 +82,7 @@ export default async function HomePage() {
         </div>
         <section className="fg-board-section" aria-labelledby="home-board-title">
           <div className="section-head fg-section-head"><h2 id="home-board-title" className="lt">From the <em>Board</em></h2><Link href="/bulletin" className="rt">All notes <ArrowRight size={15} aria-hidden="true" /></Link></div>
-          <div className="fg-board-notes">{bulletinMessages.length === 0 ? <p className="fg-empty-board">No notes on the board yet. <Link href="/bulletin">Leave one for the family →</Link></p> : bulletinMessages.map((message) => <article key={message.id} className={`note ${message.pinned ? "pinned" : ""}`}><div className="avatar" aria-hidden="true">{message.author.charAt(0).toUpperCase()}</div><div><p className="body">{message.content}</p><p className="note-meta">{message.author} · {formatDate(message.createdAt)}{message.pinned ? " · Pinned" : ""}</p></div></article>)}</div>
+          <div className="fg-board-notes">{bulletinMessages.length === 0 ? <p className="fg-empty-board">No recent notices. <Link href="/bulletin">Read earlier notes or leave one for the family →</Link></p> : bulletinMessages.map((message) => <article key={message.id} className={`note ${message.pinned ? "pinned" : ""}`}><div className="avatar" aria-hidden="true">{message.author.charAt(0).toUpperCase()}</div><div><p className="body">{message.content}</p><p className="note-meta">{message.author} · {formatDate(message.createdAt)}{message.pinned ? " · Pinned" : ""}</p></div></article>)}</div>
         </section>
         <section aria-labelledby="home-photos-title">
           <div className="section-head fg-section-head"><h2 id="home-photos-title" className="lt">Life on the <em>hill</em></h2><a href={ICLOUD_ALBUM} target="_blank" rel="noopener noreferrer" className="rt">Family album ↗</a></div>

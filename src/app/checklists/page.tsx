@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Header } from "@/components/layout/header";
+import { requestSavedState } from "@/lib/saved-state";
 import {
   CheckSquare,
   Square,
@@ -33,6 +34,8 @@ interface ChecklistItem {
   createdAt: string;
 }
 
+interface ChecklistRun { id: string; archivedAt: string; archivedBy: string | null; items: ChecklistItem[]; }
+
 const SECTIONS = [
   "Water System",
   "Heating",
@@ -53,6 +56,9 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
 
 function formatDateTime(date: string) {
   return new Date(date).toLocaleString("en-US", {
+    year: "numeric",
+    timeZone: "America/New_York",
+    timeZoneName: "short",
     month: "short",
     day: "numeric",
     hour: "numeric",
@@ -74,30 +80,40 @@ export default function ChecklistsPage() {
   const [newItemSection, setNewItemSection] = useState("General");
   const [adding, setAdding] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState<Set<string>>(new Set());
+  const [history, setHistory] = useState<ChecklistRun[]>([]);
+  const pending = useRef(new Set<string>());
+  const activeList = useRef(activeTab);
+  activeList.current = activeTab;
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
     new Set()
   );
 
-  useEffect(() => {
-    fetchItems();
+  const fetchItems = useCallback(async () => {
+    const list = activeTab;
+    setLoading(true);
+    try {
+      const [saved, runs] = await Promise.all([
+        requestSavedState<ChecklistItem[]>(`/api/checklists?list=${list}`, { cache: "no-store" }),
+        requestSavedState<ChecklistRun[]>(`/api/checklists/history?list=${list}`, { cache: "no-store" }),
+      ]);
+      if (activeList.current === list) { setItems(saved); setHistory(runs); setError(""); }
+    } catch { if (activeList.current === list) setError("The checklist could not be loaded. Try again."); }
+    finally { if (activeList.current === list) setLoading(false); }
   }, [activeTab]);
 
-  const fetchItems = async () => {
-    setLoading(true);
-    const res = await fetch(`/api/checklists?list=${activeTab}`);
-    if (res.ok) {
-      setItems(await res.json());
-    }
-    setLoading(false);
-  };
+  useEffect(() => { setItems([]); setHistory([]); void fetchItems(); }, [fetchItems]);
 
   const toggleItem = async (item: ChecklistItem) => {
+    if (pending.current.has(item.id) || resetting) return;
     if (!item.checked && !username.trim()) {
-      alert("Please enter your name first.");
+      setError("Enter your name so the family knows who completed the task.");
       return;
     }
 
     localStorage.setItem("breadloaf-username", username);
+    pending.current.add(item.id); setBusy(new Set(pending.current)); setError("");
 
     // Optimistic update
     setItems((prev) =>
@@ -113,21 +129,28 @@ export default function ChecklistsPage() {
       )
     );
 
-    await fetch(`/api/checklists/${item.id}`, {
+    try {
+      const saved = await requestSavedState<ChecklistItem>(`/api/checklists/${item.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         checked: !item.checked,
         checkedBy: username.trim(),
       }),
-    });
+      });
+      setItems(previous => previous.map(row => row.id === item.id ? saved : row));
+    } catch {
+      setItems(previous => previous.map(row => row.id === item.id ? item : row));
+      setError(`Could not save ${item.name}. Its previous state has been restored.`);
+    } finally { pending.current.delete(item.id); setBusy(new Set(pending.current)); }
   };
 
   const addItem = async () => {
-    if (!newItemName.trim()) return;
+    if (!newItemName.trim() || adding || resetting) return;
     setAdding(true);
-
-    const res = await fetch("/api/checklists", {
+    setError("");
+    try {
+      await requestSavedState("/api/checklists", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -135,41 +158,45 @@ export default function ChecklistsPage() {
         list: activeTab,
         section: newItemSection,
       }),
-    });
-
-    if (res.ok) {
+      });
       setNewItemName("");
       setShowAddForm(false);
-      fetchItems();
-    }
-    setAdding(false);
+      await fetchItems();
+    } catch { setError("The new task was not saved. Your text is still here; try again."); }
+    finally { setAdding(false); }
   };
 
   const deleteItem = async (id: string) => {
+    if (pending.current.has(id) || resetting) return;
     if (!confirm("Delete this checklist item?")) return;
-    await fetch(`/api/checklists/${id}`, { method: "DELETE" });
-    setItems((prev) => prev.filter((i) => i.id !== id));
+    pending.current.add(id); setBusy(new Set(pending.current)); setError("");
+    try {
+      await requestSavedState(`/api/checklists/${id}`, { method: "DELETE" });
+      setItems((prev) => prev.filter((i) => i.id !== id));
+    } catch { setError("The task could not be deleted. It remains on the checklist."); }
+    finally { pending.current.delete(id); setBusy(new Set(pending.current)); }
   };
 
   const resetAll = async () => {
+    if (resetting || pending.current.size || adding) return;
     if (
       !confirm(
-        `Reset all ${activeTab} checklist items? This will uncheck everything for a new season.`
+        `Save this ${activeTab} checklist to history and start a new season? Completed tasks, names, and dates will remain in history.`
       )
     )
       return;
 
     setResetting(true);
-    const res = await fetch("/api/checklists/reset", {
+    setError("");
+    try {
+      await requestSavedState("/api/checklists/reset", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ list: activeTab }),
-    });
-
-    if (res.ok) {
-      fetchItems();
-    }
-    setResetting(false);
+      body: JSON.stringify({ list: activeTab, archivedBy: username.trim() || null }),
+      });
+      await fetchItems();
+    } catch { setError("A new season could not be started. The current checklist is unchanged."); }
+    finally { setResetting(false); }
   };
 
   const toggleSection = (section: string) => {
@@ -216,6 +243,7 @@ export default function ChecklistsPage() {
       />
 
       <div className="max-w-5xl mx-auto px-4 py-4 space-y-4">
+        {error && <div role="alert" className="p-3 border border-red-200 rounded-lg text-red-800"><p>{error}</p>{!items.length && <button className="underline mt-2" onClick={() => void fetchItems()}>Try again</button>}</div>}
         {/* Username input */}
         <div className="flex items-center gap-3">
           <User size={16} className="text-stone-400" />
@@ -227,6 +255,7 @@ export default function ChecklistsPage() {
               localStorage.setItem("breadloaf-username", e.target.value);
             }}
             placeholder="Your name"
+            aria-label="Your name for completed tasks"
             className="w-40 px-3 py-2 rounded-lg border border-stone-300 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
           />
         </div>
@@ -234,6 +263,8 @@ export default function ChecklistsPage() {
         {/* Tabs */}
         <div className="flex gap-2">
           <button
+            disabled={resetting || busy.size > 0 || adding}
+            aria-pressed={activeTab === "opening"}
             onClick={() => setActiveTab("opening")}
             className={`flex-1 py-3 px-4 rounded-xl font-medium text-sm transition-colors ${
               activeTab === "opening"
@@ -244,6 +275,8 @@ export default function ChecklistsPage() {
             Opening
           </button>
           <button
+            disabled={resetting || busy.size > 0 || adding}
+            aria-pressed={activeTab === "closing"}
             onClick={() => setActiveTab("closing")}
             className={`flex-1 py-3 px-4 rounded-xl font-medium text-sm transition-colors ${
               activeTab === "closing"
@@ -287,7 +320,7 @@ export default function ChecklistsPage() {
           {totalItems > 0 && (
             <button
               onClick={resetAll}
-              disabled={resetting}
+              disabled={resetting || busy.size > 0 || adding || loading}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-stone-600 text-sm font-medium border border-stone-200 hover:bg-stone-50 transition-colors disabled:opacity-50"
             >
               {resetting ? (
@@ -295,7 +328,7 @@ export default function ChecklistsPage() {
               ) : (
                 <RotateCcw size={16} />
               )}
-              Reset All
+              Start a new season
             </button>
           )}
         </div>
@@ -358,7 +391,7 @@ export default function ChecklistsPage() {
               />
             ))}
           </div>
-        ) : items.length === 0 ? (
+        ) : items.length === 0 && !error ? (
           <div className="text-center py-12">
             <CheckSquare size={48} className="mx-auto text-stone-300 mb-3" />
             <p className="text-stone-500 font-medium">No checklist items yet</p>
@@ -382,6 +415,7 @@ export default function ChecklistsPage() {
                 >
                   {/* Section header */}
                   <button
+                    aria-expanded={!isCollapsed}
                     onClick={() => toggleSection(section)}
                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-stone-50 transition-colors"
                   >
@@ -412,8 +446,12 @@ export default function ChecklistsPage() {
                           }`}
                         >
                           <button
+                            role="checkbox"
+                            aria-checked={item.checked}
+                            aria-label={`${item.checked ? "Uncheck" : "Complete"}: ${item.name}`}
+                            disabled={busy.has(item.id) || resetting}
                             onClick={() => toggleItem(item)}
-                            className="mt-0.5 flex-shrink-0"
+                            className="mt-0.5 w-10 h-10 flex items-center justify-center flex-shrink-0 disabled:opacity-50"
                           >
                             {item.checked ? (
                               <CheckSquare
@@ -453,8 +491,10 @@ export default function ChecklistsPage() {
                             )}
                           </div>
                           <button
+                            aria-label={`Delete ${item.name}`}
+                            disabled={busy.has(item.id) || resetting}
                             onClick={() => deleteItem(item.id)}
-                            className="p-1 rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
+                            className="p-3 rounded-lg text-stone-500 hover:text-red-700 hover:bg-red-50 transition-colors flex-shrink-0 disabled:opacity-50"
                           >
                             <Trash2 size={14} />
                           </button>
@@ -467,6 +507,7 @@ export default function ChecklistsPage() {
             })}
           </div>
         )}
+        {history.length > 0 && <section aria-label="Previous seasons" className="space-y-3"><h2 className="text-lg font-semibold">Previous seasons</h2>{history.map(run => <details key={run.id} className="p-4 bg-white border border-stone-200 rounded-lg"><summary className="cursor-pointer">{formatDateTime(run.archivedAt)} · {run.items.filter(item => item.checked).length}/{run.items.length} complete{run.archivedBy ? ` · saved by ${run.archivedBy}` : ""}</summary><ul className="mt-3 space-y-2">{run.items.map(item => <li key={item.id} className="text-sm">{item.checked ? "✓" : "○"} {item.name}{item.checkedBy ? ` — ${item.checkedBy}` : ""}{item.checkedAt ? ` · ${formatDateTime(item.checkedAt)}` : ""}</li>)}</ul></details>)}</section>}
       </div>
     </div>
   );

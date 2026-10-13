@@ -1,5 +1,6 @@
 import { zodTextFormat } from "openai/helpers/zod";
 import { prisma } from "@/lib/prisma";
+import { filterScopedDerivedRows } from "@/lib/derived-source-access";
 import { MODELS } from "@/lib/ai-models";
 import { getOpenAIClient, withRetry } from "@/lib/openai-client";
 import { sha256 } from "@/lib/archive-integrity";
@@ -12,12 +13,13 @@ import {
 async function loadSources(keys: string[]): Promise<DictationSource[]> {
   const ids = (type: string) => keys.filter((key) => key.startsWith(`${type}:`)).map((key) => key.slice(type.length + 1));
   const now = new Date();
-  const [documents, maintenance, memories] = await Promise.all([
+  const [documents, unfilteredMaintenance, unfilteredMemories] = await Promise.all([
     prisma.document.findMany({ where: { id: { in: ids("document") }, deletedAt: null, accessScope: "family" } }),
     prisma.maintenanceRecord.findMany({ where: { id: { in: ids("maintenance") } } }),
     prisma.jarvisMemory.findMany({ where: { id: { in: ids("memory") }, status: "active", accessScope: "family",
       AND: [{ OR: [{ validFrom: null }, { validFrom: { lte: now } }] }, { OR: [{ validUntil: null }, { validUntil: { gte: now } }] }] } }),
   ]);
+  const [maintenance, memories] = await Promise.all([filterScopedDerivedRows(unfilteredMaintenance), filterScopedDerivedRows(unfilteredMemories)]);
   return [
     ...documents.map((doc) => ({ key: `document:${doc.id}`, title: doc.title, url: `/documents/${doc.id}`,
       updatedAt: doc.updatedAt.toISOString(), text: doc.aiExtractedText || doc.description || doc.aiSummary || "" })),
@@ -77,7 +79,7 @@ export async function tryAnalyzeRetainedDictation(input: { filePath: string; tra
 /** Family-facing routes deliberately select only the single display sentence. */
 export async function dictationDisplaySummaries(filePaths: string[]) {
   if (!filePaths.length) return new Map<string, string>();
-  const rows = await prisma.dictationAnalysis.findMany({ where: { filePath: { in: filePaths } }, select: { filePath: true, displaySummary: true } });
+  const rows = await filterScopedDerivedRows(await prisma.dictationAnalysis.findMany({ where: { filePath: { in: filePaths } }, select: { filePath: true, displaySummary: true, connections: true } }));
   return new Map(rows.map((row) => [row.filePath, row.displaySummary]));
 }
 
@@ -85,14 +87,14 @@ export async function dictationDisplaySummaries(filePaths: string[]) {
  * at answer time so a removed/restricted source cannot survive in a stale vector. */
 export async function dictationIndexText(filePaths: string[]) {
   if (!filePaths.length) return new Map<string, string>();
-  const rows = await prisma.dictationAnalysis.findMany({ where: { filePath: { in: filePaths } }, select: { filePath: true, internalSummary: true } });
+  const rows = await filterScopedDerivedRows(await prisma.dictationAnalysis.findMany({ where: { filePath: { in: filePaths } }, select: { filePath: true, internalSummary: true, connections: true } }));
   return new Map(rows.map((row) => [row.filePath, `Bucky's derived summary of this recording (not the transcript):\n${row.internalSummary}`]));
 }
 
 /** Only use with paths of sources already authorized for Bucky's current context. */
 export async function dictationContext(filePaths: string[]): Promise<Map<string, string>> {
   if (!filePaths.length) return new Map();
-  const rows = await prisma.dictationAnalysis.findMany({ where: { filePath: { in: filePaths } } });
+  const rows = await filterScopedDerivedRows(await prisma.dictationAnalysis.findMany({ where: { filePath: { in: filePaths } } }));
   const connections = rows.flatMap((row) => {
     const parsed = DictationAnalysisSchema.safeParse(row);
     return parsed.success ? parsed.data.connections : [];

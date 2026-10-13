@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { MODELS } from "@/lib/ai";
 import { resolveDocumentTitle } from "@/lib/document-title";
 import { getOpenAIClient, withRetry } from "@/lib/openai-client";
+import { safeExternalFetch, safeLinkUrl, UnsafeExternalUrlError } from "@/lib/safe-external-fetch";
+import { requestAccessContext, accessPolicyResponse } from "@/lib/access-policy";
 
 const LinkAnalysisSchema = z.object({
   title: z.string(),
@@ -16,11 +18,13 @@ const LinkAnalysisSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    await requestAccessContext(request);
     const { url } = await request.json();
 
-    if (!url) {
+    if (typeof url !== "string") {
       return NextResponse.json({ error: "URL required" }, { status: 400 });
     }
+    safeLinkUrl(url);
 
     // Fetch the page
     let pageTitle = "";
@@ -29,13 +33,7 @@ export async function POST(request: NextRequest) {
     const imageUrls: string[] = [];
 
     try {
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (compatible; BreadloafHill/1.0; +https://breadloafhill.com)",
-        },
-        signal: AbortSignal.timeout(10000),
-      });
+      const res = await safeExternalFetch(url, { maxBytes: 2 * 1024 * 1024, timeoutMs: 10000 });
 
       if (res.ok) {
         const html = await res.text();
@@ -107,7 +105,8 @@ export async function POST(request: NextRequest) {
           .trim()
           .slice(0, 8000);
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof UnsafeExternalUrlError) throw error;
       // URL fetch failed — continue with just the URL itself
     }
 
@@ -131,9 +130,7 @@ export async function POST(request: NextRequest) {
         // Fetch up to 3 images and describe them
         const imagePartsPromises = imageUrls.slice(0, 3).map(async (imgUrl) => {
           try {
-            const imgRes = await fetch(imgUrl, {
-              signal: AbortSignal.timeout(5000),
-            });
+            const imgRes = await safeExternalFetch(imgUrl, { maxBytes: 4 * 1024 * 1024, timeoutMs: 5000 });
             if (!imgRes.ok) return null;
             const contentType = imgRes.headers.get("content-type") || "";
             if (!contentType.startsWith("image/")) return null;
@@ -253,6 +250,9 @@ Be thorough — extract every useful detail. The family assistant needs this to 
       pageText: allExtractedText,
     });
   } catch (error) {
+    const denied = accessPolicyResponse(error);
+    if (denied) return denied;
+    if (error instanceof UnsafeExternalUrlError) return NextResponse.json({ error: error.message }, { status: 400 });
     console.error("Analyze link error:", error);
     return NextResponse.json(
       { error: "Failed to analyze link" },

@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  createCalendarFeedToken,
-  getAuthCookieName,
-  getFamilyFromAuthToken,
-} from "@/lib/auth";
+import { createCalendarFeedToken } from "@/lib/auth";
+import { getDoorFamily } from "@/lib/actor";
 
 export async function GET(request: NextRequest) {
-  const family = await getFamilyFromAuthToken(
-    request.cookies.get(getAuthCookieName())?.value
-  );
+  const family = await getDoorFamily(request);
 
   if (!family) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -22,5 +17,5 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ token });
+  return NextResponse.json({ token }, { headers: { "Cache-Control": "private, no-store" } });
 }

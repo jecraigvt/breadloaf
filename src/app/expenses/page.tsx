@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { requestSavedState } from "@/lib/saved-state";
+import { propertyTodayDateKey } from "@/lib/maintenance-contract";
+import { formatMaintenanceDate } from "@/lib/maintenance-dates";
 import { Header } from "@/components/layout/header";
 import {
   Plus,
@@ -11,8 +14,6 @@ import {
   TrendingUp,
   Users,
   PieChart,
-  ArrowUpRight,
-  ArrowDownRight,
   Calendar,
   Filter,
 } from "lucide-react";
@@ -39,8 +40,6 @@ interface Summary {
   byCategory: Record<string, number>;
   byType: Record<string, number>;
   byPayer: Record<string, number>;
-  perFamilyShare: number;
-  familyBalances: Record<string, { paid: number; owes: number; balance: number }>;
   availableYears: number[];
 }
 
@@ -68,10 +67,13 @@ const CATEGORY_EMOJI: Record<string, string> = Object.fromEntries(
 );
 
 export default function ExpensesPage() {
-  const [view, setView] = useState<ViewMode>("dashboard");
+  const [view, setView] = useState<ViewMode>("list");
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const loadRevision = useRef(0);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [filterCategory, setFilterCategory] = useState("");
   const [filterPaidBy, setFilterPaidBy] = useState("");
@@ -80,7 +82,7 @@ export default function ExpensesPage() {
   // Add form
   const [showAdd, setShowAdd] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [formDate, setFormDate] = useState(new Date().toISOString().split("T")[0]);
+  const [formDate, setFormDate] = useState(propertyTodayDateKey());
   const [formAmount, setFormAmount] = useState("");
   const [formDesc, setFormDesc] = useState("");
   const [formCategory, setFormCategory] = useState("other");
@@ -90,20 +92,21 @@ export default function ExpensesPage() {
   const [formNotes, setFormNotes] = useState("");
 
   const fetchData = useCallback(async () => {
+    const revision = ++loadRevision.current;
     setLoading(true);
     const params = new URLSearchParams({ year: String(selectedYear) });
     if (filterCategory) params.set("category", filterCategory);
     if (filterPaidBy) params.set("paidBy", filterPaidBy);
     if (filterType) params.set("type", filterType);
 
-    const [expRes, sumRes] = await Promise.all([
-      fetch(`/api/expenses?${params.toString()}`),
-      fetch(`/api/expenses/summary?year=${selectedYear}`),
-    ]);
-
-    if (expRes.ok) setExpenses(await expRes.json());
-    if (sumRes.ok) setSummary(await sumRes.json());
-    setLoading(false);
+    try {
+      const [saved, totals] = await Promise.all([
+        requestSavedState<Expense[]>(`/api/expenses?${params.toString()}`, { cache: "no-store" }),
+        requestSavedState<Summary>(`/api/expenses/summary?year=${selectedYear}`, { cache: "no-store" }),
+      ]);
+      if (revision === loadRevision.current) { setExpenses(saved); setSummary(totals); setError(""); }
+    } catch { if (revision === loadRevision.current) setError("The expense ledger could not be loaded. Try again."); }
+    finally { if (revision === loadRevision.current) setLoading(false); }
   }, [selectedYear, filterCategory, filterPaidBy, filterType]);
 
   useEffect(() => {
@@ -113,8 +116,9 @@ export default function ExpensesPage() {
   const addExpense = async () => {
     if (!formAmount || !formDesc || adding) return;
     setAdding(true);
+    setError("");
     try {
-      const res = await fetch("/api/expenses", {
+      await requestSavedState("/api/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -128,25 +132,22 @@ export default function ExpensesPage() {
           notes: formNotes || undefined,
         }),
       });
-      if (res.ok) {
         setFormAmount(""); setFormDesc(""); setFormVendor(""); setFormNotes("");
         setShowAdd(false);
-        fetchData();
-      }
-    } catch {
-      // error
-    }
+        await fetchData();
+    } catch (error) { setError(error instanceof Error ? error.message : "The expense was not saved. Try again."); }
     setAdding(false);
   };
 
   const deleteExpense = async (id: string) => {
-    setExpenses((prev) => prev.filter((e) => e.id !== id));
+    if (deletingId || !confirm("Delete this expense from the ledger?")) return;
+    setDeletingId(id); setError("");
     try {
-      await fetch(`/api/expenses/${id}`, { method: "DELETE" });
-      fetchData();
-    } catch {
-      fetchData();
-    }
+      await requestSavedState(`/api/expenses/${id}`, { method: "DELETE" });
+      setExpenses((prev) => prev.filter((e) => e.id !== id));
+      await fetchData();
+    } catch { setError("The expense could not be deleted. It remains in the ledger."); }
+    finally { setDeletingId(null); }
   };
 
   const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -154,12 +155,14 @@ export default function ExpensesPage() {
   const availableYears = summary?.availableYears?.length
     ? summary.availableYears
     : [new Date().getFullYear()];
+  const knownPayers = Array.from(new Set([...FAMILIES, ...Object.keys(summary?.byPayer || {})]));
 
   return (
     <div className="min-h-screen bg-stone-50">
-      <Header title="Finances" subtitle="S-Corp expense tracking & family splits" />
+      <Header title="Expense Ledger" subtitle="Recorded property spending and who paid" />
 
       <div className="max-w-5xl mx-auto px-4 py-4 pb-24 space-y-4">
+        {error && <div role="alert" className="p-3 border border-red-200 rounded-lg text-red-800"><p>{error}</p><button className="underline mt-2" onClick={() => void fetchData()}>Reload ledger</button></div>}
         {/* Controls bar */}
         <div className="flex items-center gap-2 flex-wrap">
           {/* Year selector */}
@@ -185,7 +188,7 @@ export default function ExpensesPage() {
               }`}
             >
               <PieChart size={14} className="inline mr-1" />
-              Dashboard
+              Summary
             </button>
             <button
               onClick={() => setView("list")}
@@ -252,12 +255,12 @@ export default function ExpensesPage() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-stone-500 mb-1">Paid By</label>
-                <select value={formPaidBy} onChange={(e) => setFormPaidBy(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-stone-200 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
-                  {FAMILIES.map((f) => (
+                <input list="expense-payers" aria-label="Who paid this expense" value={formPaidBy} onChange={(e) => setFormPaidBy(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-stone-200 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                <datalist id="expense-payers">
+                  {knownPayers.map((f) => (
                     <option key={f} value={f}>{f}</option>
                   ))}
-                </select>
+                </datalist>
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -313,8 +316,8 @@ export default function ExpensesPage() {
                     <Users size={16} className="text-blue-700" />
                   </div>
                 </div>
-                <p className="text-xl font-bold text-stone-800">{fmt(summary.perFamilyShare)}</p>
-                <p className="text-xs text-stone-400 mt-0.5">Per family (1/4)</p>
+                <p className="text-xl font-bold text-stone-800">{summary.expenseCount}</p>
+                <p className="text-xs text-stone-400 mt-0.5">Recorded expenses</p>
               </div>
               <div className="bg-white rounded-xl border border-stone-200 p-4">
                 <div className="flex items-center gap-2 mb-2">
@@ -336,37 +339,11 @@ export default function ExpensesPage() {
               </div>
             </div>
 
-            {/* Family balances */}
-            <div className="bg-white rounded-xl border border-stone-200 p-4">
-              <h3 className="text-sm font-semibold text-stone-700 mb-3 flex items-center gap-2">
-                <Users size={16} className="text-stone-400" />
-                Family Balances
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {["Tom", "Jim", "Sandy", "Greg"].map((name) => {
-                  const bal = summary.familyBalances[name];
-                  if (!bal) return null;
-                  const isOver = bal.balance > 0;
-                  const isUnder = bal.balance < 0;
-                  return (
-                    <div key={name} className="rounded-xl bg-stone-50 p-3">
-                      <p className="text-sm font-semibold text-stone-700">{name}</p>
-                      <p className="text-xs text-stone-400 mt-1">Paid: {fmt(bal.paid)}</p>
-                      <p className="text-xs text-stone-400">Share: {fmt(bal.owes)}</p>
-                      <div className={`flex items-center gap-1 mt-2 text-sm font-bold ${
-                        isOver ? "text-green-600" : isUnder ? "text-red-500" : "text-stone-500"
-                      }`}>
-                        {isOver ? <ArrowUpRight size={14} /> : isUnder ? <ArrowDownRight size={14} /> : null}
-                        {isOver ? `+${fmt(bal.balance)}` : fmt(bal.balance)}
-                      </div>
-                      <p className="text-[10px] text-stone-400">
-                        {isOver ? "Owed back" : isUnder ? "Owes" : "Even"}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            <section className="bg-white rounded-xl border border-stone-200 p-4" aria-label="Recorded payments">
+              <h3 className="text-sm font-semibold text-stone-700 mb-3">Recorded payments by payer</h3>
+              <dl className="space-y-2">{Object.entries(summary.byPayer).map(([payer, paid]) => <div key={payer} className="flex justify-between gap-3"><dt>{payer}</dt><dd>{fmt(paid)}</dd></div>)}</dl>
+              <p className="text-xs text-stone-500 mt-3">These are payments in the ledger. Reimbursements and amounts owed are not calculated.</p>
+            </section>
 
             {/* By category breakdown */}
             <div className="bg-white rounded-xl border border-stone-200 p-4">
@@ -443,7 +420,7 @@ export default function ExpensesPage() {
               <select value={filterPaidBy} onChange={(e) => setFilterPaidBy(e.target.value)}
                 className="px-3 py-2 rounded-xl border border-stone-200 bg-white text-sm text-stone-600 focus:outline-none focus:ring-2 focus:ring-green-500">
                 <option value="">All Payers</option>
-                {FAMILIES.map((f) => (
+                {knownPayers.map((f) => (
                   <option key={f} value={f}>{f}</option>
                 ))}
               </select>
@@ -517,7 +494,7 @@ function ExpenseRow({
           {e.vendor && <span className="text-xs text-stone-400 hidden sm:inline">{e.vendor}</span>}
         </div>
         <div className="flex items-center gap-2 text-xs text-stone-400 mt-0.5">
-          <span>{new Date(e.date).toLocaleDateString()}</span>
+          <span>{formatMaintenanceDate(e.date)}</span>
           <span>{e.paidBy}</span>
           {showCategory && (
             <span className="bg-stone-100 rounded-full px-1.5 py-0.5">{e.category}</span>

@@ -7,6 +7,7 @@ import { configuredCents } from "@/lib/bucky-job-policy";
 import { queueBackgroundUpload, queueExistingDocument, validateBackgroundFile } from "@/lib/bucky-background-documents";
 import { readWorkerBody, workerRouteError } from "@/lib/bucky-worker-auth";
 import { jobDocumentIds } from "@/lib/bucky-job-handlers";
+import { isPrivilegedActor } from "@/lib/access-policy";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ jobs: visibleJobs, workers,
       budget: { spentCents: storedBudget?.spentCents ?? 0, reservedCents: storedBudget?.reservedCents ?? 0,
         limitCents: configuredCents(process.env.BUCKY_BACKGROUND_API_BUDGET_CENTS, 300) },
-      canManage: !!(actor?.isCurator || actor?.isBoardMember),
+      canManage: isPrivilegedActor(actor),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return workerRouteError(error); }
 }
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest) {
       for (const id of input.sourceDocumentIds) jobs.push(await queueExistingDocument(id, actor));
       return NextResponse.json({ jobs }, { status: 202 });
     }
-    if (input.kind === "site_improvement" && !actor?.isCurator && !actor?.isBoardMember) throw new BuckyJobError("Choose your curator or board identity to request website changes", 403);
+    if (input.kind === "site_improvement" && !isPrivilegedActor(actor)) throw new BuckyJobError("Verify your curator or board identity to request website changes", 403);
     let ids: string[] = [];
     if (input.kind === "archive_review") {
       ids = input.sourceDocumentIds ?? (await prisma.document.findMany({ where: { deletedAt: null, accessScope: "family" }, orderBy: { updatedAt: "desc" }, select: { id: true }, take: 50 })).map((d) => d.id);

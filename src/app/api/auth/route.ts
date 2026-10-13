@@ -1,121 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  createAuthToken,
-  getAuthCookieName,
-  getLegacyAuthCookieName,
-  getFamilyFromAuthToken,
-  getFamilyPins,
-} from "@/lib/auth";
+import { createAuthToken, getAuthCookieName, getFamilyPins } from "@/lib/auth";
+import { getCurrentActor, getDoorFamily, getIdentityCookieName, revokeIdentitySession } from "@/lib/actor";
+import { clearFamilyDeviceCookies, clearLegacyDoorCookies, authCookieDomain } from "@/lib/auth-cookies";
+import { emailSignInEnabled, REMEMBERED_TOKEN_PREFIX } from "@/lib/sign-in-policy";
+import { consumeAuthAttempt, authClientKey } from "@/lib/auth-rate-limit";
+import { familyEmailConfigured } from "@/lib/family-sign-in-email";
 
-// Expire any legacy "breadloaf_auth" cookie at BOTH scopes it may have been
-// set under (host-only from old code, and domain-scoped). A leftover host-only
-// copy shadows the renamed cookie and causes an infinite login loop, so we
-// actively clear it whenever we set or clear the session.
-function clearLegacyCookie(response: NextResponse, request: NextRequest): void {
-  const secure = process.env.NODE_ENV === "production";
-  const base = `${getLegacyAuthCookieName()}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`;
-  response.headers.append("Set-Cookie", base); // host-only
-  const domain = cookieDomain(request);
-  if (domain) response.headers.append("Set-Cookie", `${base}; Domain=${domain}`);
-}
-
-const LOGIN_WINDOW_MS = 15 * 60 * 1000;
-const MAX_LOGIN_ATTEMPTS = 8;
-const loginAttempts = new Map<string, { count: number; resetAt: number }>();
-
-function clientKey(request: NextRequest): string {
-  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-}
-
-function attemptState(request: NextRequest) {
-  const key = clientKey(request);
-  const now = Date.now();
-  const current = loginAttempts.get(key);
-  if (!current || current.resetAt <= now) {
-    const fresh = { count: 0, resetAt: now + LOGIN_WINDOW_MS };
-    loginAttempts.set(key, fresh);
-    return { key, state: fresh };
-  }
-  return { key, state: current };
-}
-
-// Share the session across www.breadloafhill.com and the bare domain —
-// they're separate hosts, so a host-only cookie set on one 401s the other.
-function cookieDomain(request: NextRequest): string | undefined {
-  const host = request.headers.get("host") || "";
-  return host.endsWith("breadloafhill.com") ? ".breadloafhill.com" : undefined;
-}
-
-// POST — Login: validate PIN, set cookie
+function pinAvailable() { return Boolean(process.env.FAMILY_PINS) && (!emailSignInEnabled() || process.env.FAMILY_PIN_FALLBACK === "true"); }
 export async function POST(request: NextRequest) {
+  if (!pinAvailable()) return NextResponse.json({ error: "Use Send sign-in link to open Breadloaf Hill." }, { status: 410 });
   try {
-    const { key, state } = attemptState(request);
-    if (state.count >= MAX_LOGIN_ATTEMPTS) {
-      return NextResponse.json(
-        { error: "Too many attempts. Try again in a few minutes." },
-        { status: 429, headers: { "Retry-After": String(Math.ceil((state.resetAt - Date.now()) / 1000)) } }
-      );
-    }
+    if (!await consumeAuthAttempt(`pin:${authClientKey(request)}`, 8, 15 * 60 * 1000)) return NextResponse.json({ error: "Too many attempts. Try again in a few minutes." }, { status: 429, headers: { "Retry-After": "900" } });
     const { pin } = await request.json();
-
-    if (!pin) {
-      return NextResponse.json({ error: "PIN required" }, { status: 400 });
-    }
-
-    const pinMap = getFamilyPins();
-    const family = pinMap[String(pin)];
-
-    if (!family) {
-      state.count += 1;
-      loginAttempts.set(key, state);
-      return NextResponse.json({ error: "Invalid PIN" }, { status: 401 });
-    }
-
+    const family = getFamilyPins()[String(pin)];
+    if (!family) return NextResponse.json({ error: "That PIN was not recognized." }, { status: 401 });
     const token = await createAuthToken(family);
-    if (!token) return NextResponse.json({ error: "Login is not configured" }, { status: 500 });
-    loginAttempts.delete(key);
-
+    if (!token) return NextResponse.json({ error: "Sign-in is not configured." }, { status: 503 });
     const response = NextResponse.json({ family });
-    response.cookies.set(getAuthCookieName(), token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 30,
-      path: "/",
-      domain: cookieDomain(request),
-    });
-    clearLegacyCookie(response, request);
-
+    response.cookies.set(getAuthCookieName(), token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 60 * 60 * 24 * 30, path: "/", domain: authCookieDomain(request) });
+    clearLegacyDoorCookies(response, request);
     return response;
-  } catch {
-    return NextResponse.json({ error: "Login failed" }, { status: 500 });
-  }
+  } catch { return NextResponse.json({ error: "Sign-in is temporarily unavailable." }, { status: 503 }); }
 }
-
-// GET — Check auth status
 export async function GET(request: NextRequest) {
-  const family = await getFamilyFromAuthToken(
-    request.cookies.get(getAuthCookieName())?.value
-  );
-
-  if (family) {
-    return NextResponse.json({ authenticated: true, family });
-  }
-
-  return NextResponse.json({ authenticated: false }, { status: 401 });
+  const family = await getDoorFamily(request);
+  const actor = family ? await getCurrentActor(request) : null;
+  return NextResponse.json({ authenticated: Boolean(family), family, actor, emailEnabled: emailSignInEnabled(), emailConfigured: familyEmailConfigured(), pinAvailable: pinAvailable() }, { status: family ? 200 : 401, headers: { "Cache-Control": "no-store" } });
 }
-
-// DELETE — Logout
 export async function DELETE(request: NextRequest) {
+  const door = request.cookies.get(getAuthCookieName())?.value;
+  const identity = request.cookies.get(getIdentityCookieName())?.value;
+  const tokens = new Set([door?.startsWith(REMEMBERED_TOKEN_PREFIX) ? door.slice(REMEMBERED_TOKEN_PREFIX.length) : null, identity].filter((token): token is string => Boolean(token)));
+  for (const token of Array.from(tokens)) await revokeIdentitySession(token);
   const response = NextResponse.json({ success: true });
-  response.cookies.set(getAuthCookieName(), "", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 0,
-    path: "/",
-    domain: cookieDomain(request),
-  });
-  clearLegacyCookie(response, request);
+  clearFamilyDeviceCookies(response, request);
   return response;
 }

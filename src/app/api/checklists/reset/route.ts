@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { archiveChecklistAndReset } from "@/lib/checklist-history";
+import { getCurrentActor } from "@/lib/actor";
 
 export async function POST(request: NextRequest) {
   try {
-    const { list } = await request.json();
+    const { list, archivedBy } = await request.json();
 
     if (!list || !["opening", "closing"].includes(list)) {
       return NextResponse.json(
@@ -12,16 +14,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await prisma.checklistItem.updateMany({
-      where: { list },
-      data: {
-        checked: false,
-        checkedBy: null,
-        checkedAt: null,
-      },
-    });
-
-    return NextResponse.json({ success: true });
+    const actor = await getCurrentActor(request);
+    const author = actor?.displayName || (typeof archivedBy === "string" ? archivedBy.trim().slice(0, 100) || null : null);
+    const run = await archiveChecklistAndReset(prisma, list, author);
+    return NextResponse.json({ success: true, runId: run.id });
   } catch (error) {
     console.error("Checklist reset error:", error);
     return NextResponse.json(

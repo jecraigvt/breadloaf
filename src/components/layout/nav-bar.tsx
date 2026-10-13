@@ -44,8 +44,8 @@ const navItems = [
     ),
   },
   {
-    href: "/bulletin",
-    label: "Board",
+    href: "/more",
+    label: "Tools",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
         <path d="M4 4h12a3 3 0 0 1 3 3v14H7a3 3 0 0 1-3-3z" />
@@ -66,7 +66,9 @@ export function NavBar() {
           const isActive =
             item.href === "/"
               ? pathname === "/"
-              : pathname.startsWith(item.href);
+              : item.href === "/more"
+                ? ["/more", "/grocery", "/checklists", "/maintenance", "/expenses", "/documents", "/upload", "/accounts", "/emergency", "/dinners", "/bulletin", "/bucky", "/narrate", "/family"].some(path => pathname.startsWith(path))
+                : pathname.startsWith(item.href);
 
           return (
             <Link

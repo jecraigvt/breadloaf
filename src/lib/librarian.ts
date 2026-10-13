@@ -1,12 +1,12 @@
 import { createHash } from "crypto";
 import { readFile } from "fs/promises";
-import path from "path";
 import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { slugifyCategory } from "@/lib/document-categories";
 import { MODELS } from "@/lib/ai";
 import { getOpenAIClient, withRetry } from "@/lib/openai-client";
+import { containedRetainedPath } from "@/lib/retained-file-security";
 
 // The librarian reviews the whole filing system and proposes a
 // reorganization plan. Nothing is applied without explicit approval —
@@ -52,13 +52,20 @@ const LibrarianPlanSchema = z.object({
 
 const MAX_OPERATIONS = 40;
 
+export function parseLibrarianPlan(value: unknown): LibrarianPlan {
+  return LibrarianPlanSchema.extend({
+    duplicates: z.array(z.object({ keepId: z.string().max(128), removeIds: z.array(z.string().max(128)).max(100), title: z.string().max(1000) })).max(40).default([]),
+  }).parse(value);
+}
+
 export async function generateLibrarianPlan(): Promise<LibrarianPlan> {
   const categories = await prisma.category.findMany({
-    include: { _count: { select: { documents: { where: { deletedAt: null } } } } },
+    where: { documents: { none: { accessScope: { not: "family" } } } },
+    include: { _count: { select: { documents: { where: { deletedAt: null, accessScope: "family" } } } } },
     orderBy: { name: "asc" },
   });
   const documents = await prisma.document.findMany({
-    where: { deletedAt: null },
+    where: { deletedAt: null, accessScope: "family" },
     select: {
       id: true,
       title: true,
@@ -143,7 +150,7 @@ Return ONLY valid JSON (no markdown fences):
 
 async function hashDocumentFile(filePath: string): Promise<string | null> {
   try {
-    const full = path.join(process.cwd(), "public", filePath);
+    const full = await containedRetainedPath(filePath);
     const buffer = await readFile(full);
     return createHash("sha256").update(buffer).digest("hex");
   } catch {
@@ -153,7 +160,7 @@ async function hashDocumentFile(filePath: string): Promise<string | null> {
 
 export async function findDuplicateDocuments(): Promise<LibrarianPlan["duplicates"]> {
   const docs = await prisma.document.findMany({
-    where: { deletedAt: null },
+    where: { deletedAt: null, accessScope: "family" },
     select: { id: true, title: true, filePath: true, fileSize: true, categoryId: true, createdAt: true },
     orderBy: { createdAt: "asc" },
   });
@@ -293,9 +300,10 @@ export async function applyLibrarianPlan(plan: LibrarianPlan): Promise<{
 }> {
   // Re-validate against current DB state (plan may be stale)
   const categories = await prisma.category.findMany({
+    where: { documents: { none: { accessScope: { not: "family" } } } },
     select: { id: true, slug: true, name: true },
   });
-  const documents = await prisma.document.findMany({ where: { deletedAt: null }, select: { id: true } });
+  const documents = await prisma.document.findMany({ where: { deletedAt: null, accessScope: "family" }, select: { id: true } });
   const validated = validatePlan(plan, categories, documents);
 
   const byName = new Map(categories.map((c) => [c.name.toLowerCase(), c]));
@@ -346,7 +354,7 @@ export async function applyLibrarianPlan(plan: LibrarianPlan): Promise<{
     const into = bySlug.get(m.intoSlug);
     if (!from || !into) continue;
     await prisma.document.updateMany({
-      where: { categoryId: from.id },
+      where: { categoryId: from.id, deletedAt: null, accessScope: "family" },
       data: { categoryId: into.id },
     });
     const remaining = await prisma.document.count({ where: { categoryId: from.id } });
@@ -380,9 +388,9 @@ export async function applyLibrarianPlan(plan: LibrarianPlan): Promise<{
   for (const dup of plan.duplicates ?? []) {
     const keep = await prisma.document.findUnique({
       where: { id: dup.keepId },
-      select: { id: true, filePath: true },
+      select: { id: true, filePath: true, accessScope: true, deletedAt: true },
     });
-    if (!keep) continue;
+    if (!keep || keep.accessScope !== "family" || keep.deletedAt) continue;
     const keepHash = await hashDocumentFile(keep.filePath);
     if (!keepHash) continue;
 
@@ -390,9 +398,9 @@ export async function applyLibrarianPlan(plan: LibrarianPlan): Promise<{
       if (removeId === dup.keepId) continue;
       const doomed = await prisma.document.findUnique({
         where: { id: removeId },
-        select: { id: true, filePath: true },
+        select: { id: true, filePath: true, accessScope: true, deletedAt: true },
       });
-      if (!doomed) continue;
+      if (!doomed || doomed.accessScope !== "family" || doomed.deletedAt) continue;
       const doomedHash = await hashDocumentFile(doomed.filePath);
       if (!doomedHash || doomedHash !== keepHash) continue; // changed since plan — leave it
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Pause, Play } from "lucide-react";
+import Image from "next/image";
 
 const HERO_PHOTOS = [
   { src: "/photos/hero-rainbow.jpg", caption: "A rainbow over the meadow at Breadloaf Hill" },
@@ -15,6 +16,8 @@ export function Masthead() {
   const [idx, setIdx] = useState(0);
   const [paused, setPaused] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(true);
+  const [loaded, setLoaded] = useState<Set<number>>(new Set([0]));
+  useEffect(() => { setLoaded(previous => new Set(previous).add(idx)); }, [idx]);
   useEffect(() => {
     const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
     const update = () => setReducedMotion(preference.matches);
@@ -31,10 +34,10 @@ export function Masthead() {
     <section className="masthead fg-masthead" aria-label="Our place at Breadloaf Hill">
       <div className="photo-stack">
         {HERO_PHOTOS.map((photo, index) => (
-          <img key={photo.src} src={photo.src} alt={index === idx ? photo.caption : ""}
+          loaded.has(index) && <Image key={photo.src} src={photo.src} alt={index === idx ? photo.caption : ""}
             aria-hidden={index !== idx} style={{ opacity: index === idx ? 1 : 0 }}
             className={index === 1 ? "fg-house-photo" : undefined}
-            fetchPriority={index === 0 ? "high" : "auto"} />
+            fill sizes="(max-width: 1199px) 100vw, 1400px" priority={index === 0} />
         ))}
       </div>
       <div className="scrim" />

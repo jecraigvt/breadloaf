@@ -1,0 +1,98 @@
+name: Verify application
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: breadloaf_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:test@127.0.0.1:5432/breadloaf_test
+      BUCKY_JOB_TEST_DATABASE_URL: postgresql://postgres:test@127.0.0.1:5432/breadloaf_test
+      BUCKY_HANDLER_TEST_DATABASE_URL: postgresql://postgres:test@127.0.0.1:5432/breadloaf_test
+      CHECKLIST_TEST_DATABASE_URL: postgresql://postgres:test@127.0.0.1:5432/breadloaf_test
+      STAY_TEST_DATABASE_URL: postgresql://postgres:test@127.0.0.1:5432/breadloaf_test
+      FAMILY_AUTH_TEST_DATABASE_URL: postgresql://postgres:test@127.0.0.1:5432/breadloaf_test
+      EMAIL_WORKFLOW_TEST_DATABASE_URL: postgresql://postgres:test@127.0.0.1:5432/breadloaf_test
+      AUTH_SECRET: disposable-ci-secret-only
+      FAMILY_PINS: Test:2468
+      NEXT_TELEMETRY_DISABLED: '1'
+      GOOGLE_SERVICE_ACCOUNT_KEY: ''
+      GOOGLE_CALENDAR_ID: ''
+      OPENAI_API_KEY: ''
+      GOOGLE_AI_API_KEY: ''
+      GMAIL_APP_PASSWORD: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      # db push bootstraps only this disposable database. Historical migration
+      # ordering cannot initialize an empty database; focused tests exercise the
+      # actual queue and analysis-state migrations separately.
+      - run: psql "$DATABASE_URL" -c 'CREATE EXTENSION IF NOT EXISTS vector'
+      - run: npx prisma db push
+      - run: npx prisma db seed
+      - name: Unit and API contract tests
+        run: npm test
+        env:
+          BUCKY_JOB_TEST_DATABASE_URL: ''
+          BUCKY_HANDLER_TEST_DATABASE_URL: ''
+          CHECKLIST_TEST_DATABASE_URL: ''
+          STAY_TEST_DATABASE_URL: ''
+          FAMILY_AUTH_TEST_DATABASE_URL: ''
+          EMAIL_WORKFLOW_TEST_DATABASE_URL: ''
+      - name: Database integration tests in sequence
+        run: npx tsx --test --test-concurrency=1 src/lib/*.integration.test.ts src/lib/document-analysis-migration.test.ts
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm run build
+  runtime-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:18.6-trixie
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: breadloaf_runtime_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build the actual PostgreSQL18 and Node22 app runtime
+        run: docker build --target runtime --tag breadloaf-runtime-verify .
+      - name: Verify native runtime tools without production credentials
+        run: >-
+          docker run --rm --entrypoint sh breadloaf-runtime-verify -c
+          'node --version && pg_dump --version && pg_restore --version && node -e "require(\"@prisma/client\"); require(\"@napi-rs/canvas\")"'
+      - name: Verify the generated Prisma engine really connects from the image
+        run: >-
+          docker run --rm --network host
+          --env DATABASE_URL=postgresql://postgres:test@127.0.0.1:5432/breadloaf_runtime_test
+          --entrypoint node breadloaf-runtime-verify -e
+          'const {PrismaClient}=require("@prisma/client"); const db=new PrismaClient(); db.$queryRawUnsafe("SELECT 1").then(()=>console.log("Runtime PostgreSQL connection verified")).catch(()=>{process.exitCode=1}).finally(()=>db.$disconnect())'

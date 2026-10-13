@@ -72,7 +72,7 @@ export async function sendBuckyQuestionNotification(input: {
     subject: person ? `Bucky has a question for ${person}` : "Bucky has a family question",
     text: `${greeting}\n\nBucky needs a clarification from the family. Sign in to Breadloaf Hill and open the Questions tab:\n${questionsUrl}\n\nThe question itself stays inside the family site.`,
     html: `<p>${escapeHtml(greeting)}</p><p>Bucky needs a clarification from the family.</p><p><a href="${questionsUrl}">Open Bucky's Questions tab</a></p><p>The question itself stays inside the family site.</p>`,
-    headers: { "X-Breadloaf-Question-ID": input.questionId },
+    headers: { "X-Breadloaf-Question-ID": input.questionId, "X-Breadloaf-Notification": "bucky-question", "Auto-Submitted": "auto-generated" },
   });
 
   return { status: "sent", recipientCount: recipients.length };

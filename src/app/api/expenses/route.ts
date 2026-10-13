@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { indexExpense } from "@/lib/embeddings";
+import { expenseInputSchema } from "@/lib/expense-ledger";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -27,31 +28,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { date, amount, description, category, type, paidBy, vendor, documentId, notes } = body;
-
-    if (!date || amount === undefined || !description) {
-      return NextResponse.json(
-        { error: "date, amount, and description are required" },
-        { status: 400 }
-      );
-    }
-
-    const expenseDate = new Date(date);
-    const fiscalYear = expenseDate.getFullYear();
+    const parsed = expenseInputSchema.safeParse(await request.json());
+    if (!parsed.success) return NextResponse.json({ error: "Enter a valid date, nonnegative amount, and description." }, { status: 400 });
 
     const expense = await prisma.expense.create({
       data: {
-        date: expenseDate,
-        amount: parseFloat(String(amount)),
-        description,
-        category: category || "other",
-        type: type || "operating",
-        paidBy: paidBy || "Shared",
-        vendor: vendor || undefined,
-        documentId: documentId || undefined,
-        notes: notes || undefined,
-        fiscalYear,
+        ...parsed.data,
+        fiscalYear: parsed.data.date.getUTCFullYear(),
       },
     });
     void indexExpense(expense.id);

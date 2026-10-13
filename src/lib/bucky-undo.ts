@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { indexDocument } from "@/lib/embeddings";
 import { isUndoSupportedAction } from "@/lib/bucky-ledger";
 import { z } from "zod";
+import { assertDocumentAccess, isPrivilegedActor, AccessPolicyError, type AccessContext } from "@/lib/access-policy";
 
 type JsonObject = Record<string, unknown>;
 
@@ -129,13 +130,15 @@ async function undoBackgroundDocumentAnalysis(tx: Prisma.TransactionClient, befo
 async function undoDocumentCategory(
   tx: Prisma.TransactionClient,
   before: JsonObject,
-  after: JsonObject
+  after: JsonObject,
+  access?: AccessContext
 ) {
   const documentId = nullableString(after.documentId);
   if (!documentId) throw new BuckyUndoError("The document undo snapshot is incomplete.", 409);
 
   const document = await tx.document.findUnique({ where: { id: documentId } });
   if (!document || document.deletedAt) throw new BuckyUndoError("The document no longer exists.", 409);
+  if (access) assertDocumentAccess(document.accessScope, access);
   if (document.categoryId !== nullableString(after.categoryId)) {
     throw new BuckyUndoError("The document was changed again after this action, so it was not overwritten.", 409);
   }
@@ -231,7 +234,7 @@ async function undoPosition(
   return {};
 }
 
-export async function undoBuckyLedgerEntry(entryId: string, revertedBy: string) {
+export async function undoBuckyLedgerEntry(entryId: string, revertedBy: string, access?: AccessContext, authorizeRoleChange?: (tx: Prisma.TransactionClient) => Promise<void>) {
   let documentId: string | undefined;
   const result = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT "id" FROM "BuckyLedgerEntry" WHERE "id" = ${entryId} FOR UPDATE`;
@@ -245,8 +248,10 @@ export async function undoBuckyLedgerEntry(entryId: string, revertedBy: string) 
     const before = objectValue(entry.beforeState);
     const after = objectValue(entry.afterState);
     if (entry.actionType === "set_document_category") {
-      ({ documentId } = await undoDocumentCategory(tx, before, after));
+      ({ documentId } = await undoDocumentCategory(tx, before, after, access));
     } else if (entry.actionType === "update_position") {
+      if (authorizeRoleChange) await authorizeRoleChange(tx);
+      if (access && !isPrivilegedActor(access.actor)) throw new AccessPolicyError("A verified curator or board member is required", 403);
       await undoPosition(tx, before, after);
     } else if (entry.actionType === "background_document_analysis") {
       await undoBackgroundDocumentAnalysis(tx, before, after, entry.sourceType === "background_job" ? entry.sourceId : null);

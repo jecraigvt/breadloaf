@@ -2,6 +2,7 @@ import { access, mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { sha256 } from "@/lib/archive-integrity";
 import { resolveSupportedFileType } from "@/lib/document-file-types";
+import { retainedExtension } from "@/lib/retained-file-security";
 
 export const STORED_FILE_SIZE_LIMIT = 100 * 1024 * 1024;
 
@@ -24,25 +25,8 @@ export interface StoreFileBufferOptions {
   uploadRoot?: string;
 }
 
-const MIME_EXTENSIONS: Record<string, string> = {
-  "audio/mp4": "m4a",
-  "audio/x-m4a": "m4a",
-  "audio/m4a": "m4a",
-  "audio/mpeg": "mp3",
-  "audio/mp3": "mp3",
-  "audio/wav": "wav",
-  "audio/x-wav": "wav",
-  "audio/ogg": "ogg",
-  "audio/webm": "webm",
-  "video/mp4": "mp4",
-  "video/quicktime": "mov",
-  "video/webm": "webm",
-};
-
 function safeExtension(fileName: string, fileType: string): string {
-  const extension = path.extname(fileName).slice(1).toLowerCase();
-  if (/^[a-z0-9]{1,12}$/.test(extension)) return extension;
-  return MIME_EXTENSIONS[fileType] ?? "bin";
+  return retainedExtension(fileName, fileType);
 }
 
 async function fileExists(filePath: string): Promise<boolean> {

@@ -345,8 +345,10 @@ export async function confirmFamilyChangeProposal(input: {
   questionId: string;
   minorDecisions: FamilyMinorDecisions;
   confirmedBy: string;
+  authorize?: (tx: Prisma.TransactionClient) => Promise<void>;
 }): Promise<ConfirmedFamilyChange> {
   return prisma.$transaction(async (tx) => {
+    if (input.authorize) await input.authorize(tx);
     const claimed = await tx.buckyQuestion.updateMany({
       where: {
         id: input.questionId,
@@ -389,6 +391,8 @@ export async function confirmFamilyChangeProposal(input: {
 
     const correctedPeople: Array<{ id: string; target: string }> = [];
     for (const correction of plan.corrections) {
+      const current = members.find(member => member.id === correction.memberId);
+      if (current?.accessApproved && correction.changes.deceased === true) throw new FamilyChangeValidationError("Revoke approved access in Access settings before marking this person deceased");
       const data: Prisma.FamilyMemberUpdateInput = { ...correction.changes };
       if (correction.changes.deceased === true) data.canClaim = false;
       await tx.familyMember.update({ where: { id: correction.memberId }, data });

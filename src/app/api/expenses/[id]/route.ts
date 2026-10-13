@@ -1,24 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { indexExpense, removeFromIndex } from "@/lib/embeddings";
+import { expensePatchSchema } from "@/lib/expense-ledger";
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const body = await request.json();
-    const { date, ...rest } = body;
-
-    const data: Record<string, unknown> = { ...rest };
-    if (date) {
-      data.date = new Date(date);
-      data.fiscalYear = new Date(date).getFullYear();
-    }
-    if (data.amount) data.amount = parseFloat(String(data.amount));
+    const { id } = await params;
+    const parsed = expensePatchSchema.safeParse(await request.json());
+    if (!parsed.success) return NextResponse.json({ error: "Invalid expense change." }, { status: 400 });
+    const data = { ...parsed.data, ...(parsed.data.date ? { fiscalYear: parsed.data.date.getUTCFullYear() } : {}) };
 
     const expense = await prisma.expense.update({
-      where: { id: params.id },
+      where: { id },
       data,
     });
     void indexExpense(expense.id);
@@ -32,11 +28,12 @@ export async function PATCH(
 
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await prisma.expense.delete({ where: { id: params.id } });
-    void removeFromIndex("expense", params.id).catch((error) =>
+    const { id } = await params;
+    await prisma.expense.delete({ where: { id } });
+    void removeFromIndex("expense", id).catch((error) =>
       console.error("Expense index cleanup failed:", error)
     );
     return NextResponse.json({ success: true });

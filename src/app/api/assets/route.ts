@@ -1,22 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { indexAsset } from "@/lib/embeddings";
+import { requestAccessContext, accessibleDocumentScopes, accessPolicyResponse } from "@/lib/access-policy";
+import { filterScopedDerivedRows } from "@/lib/derived-source-access";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+ try {
+  const scopes = accessibleDocumentScopes(await requestAccessContext(request));
   const assets = await prisma.asset.findMany({
     where: { status: "active" },
     orderBy: [{ category: "asc" }, { name: "asc" }],
     include: {
-      records: { orderBy: { performedAt: "desc" }, take: 5 },
+      records: { orderBy: { performedAt: "desc" } },
       documents: {
+        where: { deletedAt: null, accessScope: { in: scopes } },
         select: { id: true, title: true },
         orderBy: { createdAt: "desc" },
         take: 5,
       },
-      _count: { select: { records: true, documents: true } },
+      _count: { select: { documents: { where: { deletedAt: null, accessScope: { in: scopes } } } } },
     },
   });
-  return NextResponse.json(assets);
+  const visibleRecords = await filterScopedDerivedRows(assets.flatMap(asset => asset.records), scopes);
+  const visibleIds = new Set(visibleRecords.map(record => record.id));
+  return NextResponse.json(assets.map(asset => {
+    const records = asset.records.filter(record => visibleIds.has(record.id));
+    return { ...asset, records: records.slice(0, 5), _count: { documents: asset._count.documents, records: records.length } };
+  }));
+ } catch (error) {
+  const denied = accessPolicyResponse(error);
+  return denied || NextResponse.json({ error: "Unable to load property systems" }, { status: 500 });
+ }
 }
 
 export async function POST(request: NextRequest) {

@@ -1,21 +1,17 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthCookieName, getFamilyFromAuthToken } from "@/lib/auth";
+import { createIdentityToken, hashIdentityToken } from "@/lib/identity-token";
+import { rememberedFamilySession } from "@/lib/family-access";
+import { REMEMBERED_TOKEN_PREFIX, emailSignInEnabled } from "@/lib/sign-in-policy";
+export { createIdentityToken, hashIdentityToken } from "@/lib/identity-token";
 
 /**
  * Who is acting, resolved server-side.
  *
- * Two independent layers, deliberately:
- *
- *  1. The DOOR — the existing shared FAMILY_PINS cookie. This is the security
- *     boundary; it is what keeps strangers out, and it is unchanged.
- *  2. IDENTITY — which family member this device belongs to, claimed by tapping a
- *     face in the tree. Inside the family this is a convenience claim, not a secret,
- *     so v1 has no per-person credential at all.
- *
- * Because the door already stops outsiders, identity can be frictionless now and
- * hardened later per person: setting a FamilyCredential locks that one profile so
- * re-tapping it requires the PIN, while everyone else keeps tapping. No flag day.
+ * Approved email links create a verified, revocable device session for both the
+ * family door and personal identity. Legacy PIN access remains a rollout bridge;
+ * a face tap supplies attribution only and never grants caretaker or board roles.
  *
  * Attribution must come from here — never from a name in a request body or from
  * localStorage["breadloaf-username"].
@@ -33,6 +29,7 @@ export interface ActorContext {
   boardRole: string | null;
   isBoardMember: boolean;
   isCurator: boolean;
+  verified?: boolean;
 }
 
 export function getIdentityCookieName(): string {
@@ -49,33 +46,14 @@ export function getIdentityLifetimeMs(): number {
 
 /** Has this device been through the shared-PIN door? Returns the branch label. */
 export async function getDoorFamily(request: NextRequest): Promise<string | null> {
+  const token = request.cookies.get(getAuthCookieName())?.value;
+  if (token?.startsWith(REMEMBERED_TOKEN_PREFIX)) {
+    const session = await rememberedFamilySession(token);
+    return session?.member.branch || (session ? "Family" : null);
+  }
   // Local dev runs without FAMILY_PINS; middleware already allows it through.
-  if (!process.env.FAMILY_PINS) return "local-dev";
-  return getFamilyFromAuthToken(request.cookies.get(getAuthCookieName())?.value);
-}
-
-function toBase64Url(bytes: Uint8Array): string {
-  let binary = "";
-  for (let index = 0; index < bytes.length; index++) binary += String.fromCharCode(bytes[index]);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-export function createIdentityToken(): string {
-  return toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
-}
-
-/** Tokens are stored hashed so a database read cannot resurrect a live session. */
-export async function hashIdentityToken(token: string): Promise<string> {
-  const secret = process.env.AUTH_SECRET || process.env.FAMILY_PINS || "breadloaf";
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(token));
-  return toBase64Url(new Uint8Array(signature));
+  if (!process.env.FAMILY_PINS && !emailSignInEnabled() && process.env.NODE_ENV !== "production") return "local-dev";
+  return getFamilyFromAuthToken(token);
 }
 
 /**
@@ -83,7 +61,9 @@ export async function hashIdentityToken(token: string): Promise<string> {
  * identity yet — callers decide whether that is fatal.
  */
 export async function getCurrentActor(request: NextRequest): Promise<ActorContext | null> {
-  const token = request.cookies.get(IDENTITY_COOKIE_NAME)?.value;
+  const doorToken = request.cookies.get(getAuthCookieName())?.value;
+  const token = doorToken?.startsWith(REMEMBERED_TOKEN_PREFIX)
+    ? doorToken.slice(REMEMBERED_TOKEN_PREFIX.length) : request.cookies.get(IDENTITY_COOKIE_NAME)?.value;
   if (!token) return null;
 
   const tokenHash = await hashIdentityToken(token);
@@ -94,6 +74,12 @@ export async function getCurrentActor(request: NextRequest): Promise<ActorContex
 
   if (!session || session.revokedAt || session.expiresAt <= new Date()) return null;
 
+  const member = session.member;
+  const verified = Boolean(session.verifiedAt && member.accessApproved && session.verifiedEmail &&
+    session.verifiedEmail.trim().toLowerCase() === member.email?.trim().toLowerCase() &&
+    member.canClaim && !member.isMinor && !member.deceased);
+  if (doorToken?.startsWith(REMEMBERED_TOKEN_PREFIX) && !verified) return null;
+
   // Touched at most once an hour so an ordinary page load is not a write.
   const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
   if (session.lastUsedAt < hourAgo) {
@@ -103,16 +89,22 @@ export async function getCurrentActor(request: NextRequest): Promise<ActorContex
     });
   }
 
-  const member = session.member;
   return {
     memberId: member.id,
     displayName: member.displayName?.trim() || member.name.split(" ")[0],
     fullName: member.name,
     branch: member.branch,
     boardRole: member.boardRole,
-    isBoardMember: member.isBoardMember,
-    isCurator: member.isCurator,
+    isBoardMember: verified && member.isBoardMember,
+    isCurator: verified && member.isCurator,
+    verified,
   };
+}
+
+/** Administrative authority comes from verified email enrollment, never a face tap. */
+export async function getVerifiedActor(request: NextRequest): Promise<ActorContext | null> {
+  const actor = await getCurrentActor(request);
+  return actor?.verified ? actor : null;
 }
 
 /** Issue a long-lived identity session. Returns the raw token for the cookie. */

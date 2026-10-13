@@ -47,6 +47,7 @@ test("creates a provenance-linked memory from a human answer", async () => {
   let createdData: Record<string, unknown> | undefined;
   const created = memory({ id: "memory-new" });
   const tx = {
+    document: { findMany: async () => [{ id: "document-1", accessScope: "family", deletedAt: null }] },
     jarvisMemory: {
       findFirst: async () => null,
       create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -77,6 +78,7 @@ test("a corrected answer supersedes the prior question memory", async () => {
   const replacement = memory({ id: "memory-2", content: "new content" });
   let updateArgs: unknown;
   const tx = {
+    document: { findMany: async () => [{ id: "document-1", accessScope: "family", deletedAt: null }] },
     jarvisMemory: {
       findFirst: async () => existing,
       create: async () => replacement,
@@ -104,4 +106,13 @@ test("automated archive filing answers are not promoted", () => {
   assert.equal(shouldPromoteQuestionAnswer({ questionType: "archive", answer: "Filed under Photos" } as BuckyQuestion), false);
   assert.equal(shouldPromoteQuestionAnswer({ questionType: "archive", answer: "That's Bill in 1962" } as BuckyQuestion), true);
   assert.equal(shouldPromoteQuestionAnswer({ questionType: "clarification", answer: "" } as BuckyQuestion), false);
+});
+
+test("an answer to a restricted source inherits board authority instead of becoming family memory", async () => {
+  let createdData: Record<string, unknown> | undefined;
+  const tx = { document: { findMany: async () => [{ id: "document-1", accessScope: "board", deletedAt: null }] }, jarvisMemory: {
+    findFirst: async () => null, create: async ({ data }: { data: Record<string, unknown> }) => { createdData = data; return memory({ accessScope: "board" }); },
+  } } as unknown as Prisma.TransactionClient;
+  const result = await promoteQuestionAnswerToMemory(tx, { question, answer: "synthetic restricted answer", answeredBy: "Synthetic caretaker" });
+  assert.equal(createdData?.accessScope, "board"); assert.equal(result.memory.accessScope, "board");
 });
