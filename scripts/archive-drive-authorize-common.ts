@@ -96,7 +96,7 @@ export async function prepareAuthorizedDriveFolder(transport: DriveTransport, sc
 }
 
 /** New dedicated directory only, so restriction never alters an existing unrelated folder. */
-export async function preparePrivateOAuthOutput(output: string) {
+export async function preparePrivateOAuthOutput<T = DriveAuthorizationReceipt>(output: string) {
   if (!path.isAbsolute(output) || !safeArchivePath(path.basename(output)) || !output.endsWith(".json")) throw new Error("Choose an absolute .json output path in a new dedicated private directory.");
   const directory = path.dirname(output), parent = await realpath(path.dirname(directory));
   if (!safeArchivePath(path.basename(directory))) throw new Error("Choose a safe dedicated private directory name.");
@@ -114,7 +114,7 @@ export async function preparePrivateOAuthOutput(output: string) {
   } catch (error) { await rmdir(resolvedDirectory); throw error; }
   let saved = false;
   return { path: path.join(resolvedDirectory, path.basename(output)),
-    async save(receipt: DriveAuthorizationReceipt) {
+    async save(receipt: T) {
       await writeFile(path.join(resolvedDirectory, path.basename(output)), JSON.stringify(receipt, null, 2) + "\n", { flag: "wx", mode: 0o600 }); saved = true;
     },
     async removeIfEmpty() { if (!saved) await rmdir(resolvedDirectory).catch(() => {}); } };

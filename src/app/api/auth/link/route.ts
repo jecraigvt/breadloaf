@@ -4,6 +4,7 @@ import { consumeAuthAttempt, authClientKey } from "@/lib/auth-rate-limit";
 import { familyEmailConfigured, sendFamilySignInEmail } from "@/lib/family-sign-in-email";
 import { emailSignInEnabled, normalizeSignInEmail } from "@/lib/sign-in-policy";
 import { prisma } from "@/lib/prisma";
+import { MailDeliveryBudgetError } from "@/lib/mail-delivery";
 
 const genericMessage = "If this email is approved for Breadloaf Hill, a sign-in link is on its way. Check your inbox and spam folder.";
 export async function POST(request: NextRequest) {
@@ -18,8 +19,9 @@ export async function POST(request: NextRequest) {
     const link = await issueFamilySignInLink(email, body?.from);
     if (link) {
       try { await sendFamilySignInEmail(email, link.token, link.memberName); }
-      catch {
+      catch (error) {
         await prisma.familySignInLink.update({ where: { id: link.id }, data: { usedAt: new Date() } });
+        if (error instanceof MailDeliveryBudgetError) return NextResponse.json({ error: "Email delivery has reached its daily limit. Please try again tomorrow or contact the family caretaker." }, { status: 429, headers: { "Retry-After": "86400", "Cache-Control": "no-store" } });
         console.error("Family sign-in delivery failed");
         return NextResponse.json({ error: "We could not send your sign-in email. Please try again shortly or contact the family caretaker." }, { status: 503, headers: { "Cache-Control": "no-store" } });
       }

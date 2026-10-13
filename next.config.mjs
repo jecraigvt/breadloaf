@@ -2,6 +2,10 @@
 const nextConfig = {
   serverExternalPackages: ["pdfjs-dist", "@napi-rs/canvas", "@prisma/client"],
   images: { localPatterns: [{ pathname: "/photos/**" }, { pathname: "/icon-*.png" }, { pathname: "/apple-touch-icon.png" }] },
+  async redirects() {
+    // Keep old www bookmarks on the same origin as sign-in links and forms.
+    return [{ source: "/:path*", has: [{ type: "host", value: "www\\.breadloafhill\\.com" }], destination: "https://breadloafhill.com/:path*", permanent: true }];
+  },
   async headers() {
     const policy = ["default-src 'self'", `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
       "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob: https:", "media-src 'self' blob:",

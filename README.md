@@ -36,6 +36,9 @@ GOOGLE_AI_API_KEY="..."
 GOOGLE_SERVICE_ACCOUNT_KEY='{"type":"service_account",...}'
 GOOGLE_CALENDAR_ID="..."
 GMAIL_APP_PASSWORD="..."
+GMAIL_SEND_CLIENT_ID="..."
+GMAIL_SEND_CLIENT_SECRET="..."
+GMAIL_SEND_REFRESH_TOKEN="..."
 AUTH_SECRET="a-long-random-value"
 FAMILY_EMAIL_SIGN_IN_ENABLED="true"
 BUCKY_NOTIFICATION_EMAILS="fallback@example.com"
@@ -95,13 +98,16 @@ prisma migrate deploy && prisma db seed && next start
 - `GOOGLE_SERVICE_ACCOUNT_KEY`: full JSON service account key for Google Calendar
 - `GOOGLE_CALENDAR_ID`: Breadloaf Hill Stays calendar ID
 - `FAMILY_EMAIL_SIGN_IN_ENABLED`: enables approved-family email sign-in
-- `GMAIL_APP_PASSWORD`: app password for the existing `breadloafhillsite@gmail.com` inbox and Bucky notifications
+- `GMAIL_APP_PASSWORD`: app password for Mail Room IMAP intake from `breadloafhillsite@gmail.com`; outbound Railway mail uses the separate HTTPS connection below
+- `GMAIL_SEND_CLIENT_ID`, `GMAIL_SEND_CLIENT_SECRET`, `GMAIL_SEND_REFRESH_TOKEN`: separate send-only Gmail OAuth credentials for sign-in links, caretaker requests, and Bucky notifications
+- `GMAIL_SEND_DAILY_BUDGET`: shared live-send attempt limit per 24-hour window, integer 1–100; defaults to 100, counts failures, and excludes local fake SMTP
 - `AUTH_SECRET`: required stable random secret used for authentication; do not rotate it during the email-access rollout
 - `CALENDAR_FEED_SECRET`: optional separate secret for signed calendar subscription URLs
 - `BUCKY_NOTIFICATION_EMAILS`: comma-separated fallback recipients when a question has no named person or that person has no saved email
 - `APP_URL`: canonical public site URL used for authentication, redirects, and notification links
 - `SITE_MAINTENANCE_TOKEN`: separate bearer credential for scheduled calendar and Mail Room work
 - Backup variables and activation gates are documented in [`docs/archive-backup-schedule.md`](docs/archive-backup-schedule.md)
+- Railway Hobby blocks SMTP. Configure outbound HTTPS mail using [`docs/gmail-site-mail.md`](docs/gmail-site-mail.md) and [`docs/gmail-send-authorization.md`](docs/gmail-send-authorization.md)
 
 ## Calendar Notes
 
@@ -141,7 +147,7 @@ prisma migrate deploy && prisma db seed && next start
 - When Bucky creates a persistent question, the named family member receives an email if their Family Directory record includes an address.
 - Questions without a known recipient use `BUCKY_NOTIFICATION_EMAILS`.
 - Notification messages contain only a sign-in link. Question text and document details remain inside the authenticated site.
-- Outbound notifications use the existing `breadloafhillsite@gmail.com` app password, so no additional email-service account is required.
+- Outbound notifications use the property mailbox's separate send-only Gmail HTTPS OAuth connection, shared with family sign-in and caretaker mail. The IMAP app password remains for Mail Room intake.
 - Notifications are skipped without failing Bucky's work when Gmail is not configured or temporarily unavailable.
 
 ## Bucky Memory and Oversight
