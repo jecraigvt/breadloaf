@@ -33,16 +33,24 @@ Before activation, configure the user OAuth values and fixed folder from the Dri
 runbook, `ARCHIVE_BACKUP_PASSPHRASE`, and an independently generated
 `ARCHIVE_BACKUP_TOKEN` of at least 43 URL-safe characters. The token must differ
 from family authentication, worker and housekeeping credentials. Store the same
-token in the GitHub secret and Railway variable; do not put it in commands/logs.
+token on the web service and isolated Railway scheduler; do not put it in
+commands/logs. The existing GitHub secret remains available for manual diagnostics.
 
-Set Railway `ARCHIVE_BACKUP_ENABLED=true` only after OAuth is ready. For the first
-manual workflow run, temporarily enable the GitHub repository variable
-`ARCHIVE_BACKUP_ENABLED=true`. Keep that weekly gate enabled only after the run
-has produced a verified independent copy and an operator has completed the full
-restore drill; turn it off again while recovery evidence is incomplete. Both
-gates default to off when absent. The workflow schedules
-Sunday 10:00 UTC and may also be started manually once gated on. It receives only
-the scoped backup token, not database, Drive or encryption credentials.
+Set the web service's `ARCHIVE_BACKUP_ENABLED=true` only after OAuth is ready.
+For a deliberate manual workflow run, temporarily enable the GitHub repository
+variable `ARCHIVE_BACKUP_ENABLED=true`; its workflow has no automatic schedule.
+Activate the separate Railway scheduler's backup lane only after a run has
+produced a verified independent copy and an operator has completed the full
+restore drill. Leave that lane off while recovery evidence is incomplete.
+
+[The durable Railway scheduler](../cron/README.md) is the sole automatic owner.
+It ticks every 15 minutes and checks eligibility after Sunday 10:00 UTC, catches
+missed runs, and monitors the durable result without keeping a long process
+alive. Its weekly boundary and the server's six-day minimum suppress duplicate
+copies; failed/interrupted copies have a six-hour retry cooldown. Activation
+gates default to off when absent. The scheduler receives only the two separate
+housekeeping/backup bearer credentials, never database, Drive, Gmail, or encryption
+credentials. GitHub manual diagnostics still receive only the backup token.
 
 ## Lease and honest status
 

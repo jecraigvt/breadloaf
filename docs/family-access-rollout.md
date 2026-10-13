@@ -59,9 +59,13 @@ script, handles recovery. Face taps and typed names provide attribution only.
    calendar signing value in `CALENDAR_FEED_SECRET` before removing `FAMILY_PINS`,
    so existing subscribed calendar URLs remain valid. Calendar feed tokens are
    independent read-only credentials.
-7. Configure the strong scoped `SITE_MAINTENANCE_TOKEN` in Railway and GitHub, then
-   enable `SITE_HOUSEKEEPING_ENABLED`. The 15-minute workflow calls the operation
-   endpoint without needing a family session. Inspect its first successful run.
+7. Configure the strong scoped `SITE_MAINTENANCE_TOKEN` on the web service and the
+   isolated Railway scheduler, then activate its `SITE_HOUSEKEEPING_ENABLED` lane.
+   Follow [the durable scheduler settings](../cron/README.md). Its 15-minute cron
+   calls the operation endpoint without a family session or repository activity.
+   Inspect the first completed run and actual mailbox/calendar state. The GitHub
+   housekeeping workflow retains its existing token/gate for manual diagnostics;
+   it has no automatic schedule.
 
 The site remains private when production access configuration is absent.
 Emergency, Guide, Weather, install icons, and the existing public cocktail guide
