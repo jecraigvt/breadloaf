@@ -27,7 +27,7 @@ separate from activating its two lanes.
 | Start command | `node runner.mjs` |
 | Cron schedule | `*/15 * * * *` (UTC) |
 | Restart policy / replicas | `NEVER`, one replica |
-| Suggested replica limits | CPU `0.25`, memory `134217728` bytes (128 MiB) |
+| Suggested replica limits | CPU `0.25`, memory `128000000` bytes (128 MB decimal) |
 | Domain / healthcheck / volume | None |
 
 The image contains only the two dependency-free `.mjs` runtime files and the
@@ -39,6 +39,10 @@ Railway's service metadata calls the builder `RAILPACK`; the explicit Dockerfile
 path triggers Dockerfile detection. The direct `ServiceInstanceUpdateInput`
 GraphQL API does not accept `DOCKERFILE` as a builder enum. Preserve the builder
 and set the source root and Dockerfile path instead.
+
+For the direct limits API, use `memoryGB: 0.128` and `vCPUs: 0.25`. This produces
+an integer byte limit; fractional-byte roundoff from a 128 MiB conversion breaks
+the current CLI's environment-configuration parser. Verify the limits readback.
 
 The JSON template describes operator settings; it is not a legacy `railway.json`
 or project-wide IaC declaration. Railway's current documentation says new services

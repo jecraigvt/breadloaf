@@ -11,7 +11,7 @@
   "cronSchedule": "*/15 * * * *",
   "restartPolicyType": "NEVER",
   "replicas": 1,
-  "suggestedLimits": { "memoryMiB": 128, "vCPU": 0.25 },
+  "suggestedLimits": { "memoryBytes": 128000000, "vCPU": 0.25 },
   "healthcheck": null,
   "publicDomain": null,
   "volume": null,
