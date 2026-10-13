@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import nodemailer from "nodemailer";
+import { mailDeliveryConfigured, sendPropertyEmail } from "@/lib/mail-delivery";
 
 type NotificationStatus = "sent" | "not_configured" | "no_recipients";
 
@@ -48,8 +48,7 @@ export async function sendBuckyQuestionNotification(input: {
   questionId: string;
   targetPerson?: string;
 }): Promise<QuestionNotificationResult> {
-  const appPassword = process.env.GMAIL_APP_PASSWORD?.replace(/\s+/g, "");
-  if (!appPassword) return { status: "not_configured", recipientCount: 0 };
+  if (!mailDeliveryConfigured()) return { status: "not_configured", recipientCount: 0 };
 
   const recipients = await recipientsFor(input.targetPerson);
   if (recipients.length === 0) return { status: "no_recipients", recipientCount: 0 };
@@ -57,17 +56,8 @@ export async function sendBuckyQuestionNotification(input: {
   const person = input.targetPerson?.trim();
   const greeting = person ? `Hi ${person},` : "Hello,";
   const questionsUrl = `${siteUrl()}/assistant?tab=questions`;
-  const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
-    auth: {
-      user: "breadloafhillsite@gmail.com",
-      pass: appPassword,
-    },
-  });
-  await transporter.sendMail({
-    from: "Bucky at Breadloaf Hill <breadloafhillsite@gmail.com>",
+  await sendPropertyEmail({
+    displayName: "Bucky at Breadloaf Hill",
     to: recipients,
     subject: person ? `Bucky has a question for ${person}` : "Bucky has a family question",
     text: `${greeting}\n\nBucky needs a clarification from the family. Sign in to Breadloaf Hill and open the Questions tab:\n${questionsUrl}\n\nThe question itself stays inside the family site.`,

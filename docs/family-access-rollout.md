@@ -46,9 +46,12 @@ script, handles recovery. Face taps and typed names provide attribution only.
 3. Provision Jeremy's supplied email on his existing curator profile. Verify the
    directory's approved adults and missing/shared-address list.
 4. Set `APP_URL=https://breadloafhill.com` and
-   `FAMILY_EMAIL_SIGN_IN_ENABLED=true`. Retain the current `AUTH_SECRET`. Gmail
-   delivery uses the existing property mailbox's app password over TLS; the local
-   test SMTP setting must never be set on Railway.
+   `FAMILY_EMAIL_SIGN_IN_ENABLED=true`. Retain the current `AUTH_SECRET`. Configure
+   the property mailbox's separate Gmail HTTPS connection following
+   [site mail operation](gmail-site-mail.md) and [mail authorization](gmail-send-authorization.md).
+   Railway Hobby blocks outbound SMTP. Set all three `GMAIL_SEND_*` credentials
+   together; keep `GMAIL_APP_PASSWORD` for Mail Room IMAP intake. The local test
+   SMTP setting must never be set on Railway.
 5. Send the requested first sign-in link to Jeremy and verify delivery. Confirm
    sign-in, remembered navigation, caretaker settings, and forgetting a disposable
    device. No test record or paid AI request is needed on production.
@@ -116,3 +119,10 @@ Do not force incompatible major upgrades merely to erase an audit count.
 
 Deployment, actual Gmail delivery, Google Calendar integration, and independent
 backup activation must each be verified separately from local code completion.
+
+Outbound mail shares a PostgreSQL-backed 24-hour attempt budget across sign-in,
+caretaker requests, and Bucky notifications. `GMAIL_SEND_DAILY_BUDGET` defaults to
+100 and accepts integers from 1 to 100. Failed live attempts consume a slot;
+local fake SMTP does not. A delivery failure returns an honest error and invalidates
+that sign-in link. A budget rejection returns 429 instead of claiming mail is on
+its way. See the mail runbook for grant recovery and delivery checks.
