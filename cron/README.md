@@ -35,6 +35,11 @@ official Node 22 runtime. It installs no packages and starts no server, database
 worker, migration, or seed. Keep the source root at `/cron`, so the web app's
 Dockerfile and source never become the scheduler build context.
 
+Railway's service metadata calls the builder `RAILPACK`; the explicit Dockerfile
+path triggers Dockerfile detection. The direct `ServiceInstanceUpdateInput`
+GraphQL API does not accept `DOCKERFILE` as a builder enum. Preserve the builder
+and set the source root and Dockerfile path instead.
+
 The JSON template describes operator settings; it is not a legacy `railway.json`
 or project-wide IaC declaration. Railway's current documentation says new services
 cannot opt into deprecated Config as Code. Apply these settings to this service
