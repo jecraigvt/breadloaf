@@ -70,7 +70,7 @@ export async function fileDocumentFromBuffer(
   // (e.g. the same receipt both emailed in and attached in chat).
   const checksum = sha256(buffer);
   const existingCopy = await prisma.document.findFirst({
-    where: { checksum, deletedAt: null },
+    where: { checksum, deletedAt: null, accessScope: "family" },
     include: { category: true },
   });
   if (existingCopy) {

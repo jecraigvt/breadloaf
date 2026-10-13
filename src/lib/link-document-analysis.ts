@@ -1,14 +1,12 @@
 import { categorizeText, type CategoryOption } from "@/lib/ai";
 import type { DocumentAnalysisOutcome } from "@/lib/document-analysis";
+import { safeExternalFetch, safeLinkUrl } from "@/lib/safe-external-fetch";
 
 const MAX_LINK_BYTES = 2 * 1024 * 1024;
 const MAX_LINK_CHARS = 20000;
 
 export function linkedDocumentFetchUrl(value: string): URL {
-  const url = new URL(value);
-  if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new Error(`Unsupported link protocol: ${url.protocol}`);
-  }
+  const url = safeLinkUrl(value);
   const googleDoc = url.hostname === "docs.google.com"
     ? url.pathname.match(/^\/document\/d\/([^/]+)/)
     : null;
@@ -46,13 +44,7 @@ export async function fetchLinkedDocumentText(value: string): Promise<{
   fetchedUrl: string;
 }> {
   const url = linkedDocumentFetchUrl(value);
-  const response = await fetch(url, {
-    redirect: "follow",
-    headers: {
-      "User-Agent": "Mozilla/5.0 (compatible; BreadloafHill/1.0; +https://breadloafhill.com)",
-    },
-    signal: AbortSignal.timeout(15000),
-  });
+  const response = await safeExternalFetch(url, { maxBytes: MAX_LINK_BYTES, timeoutMs: 15000 });
   if (!response.ok) throw new Error(`Link fetch returned HTTP ${response.status}`);
   const contentLength = Number(response.headers.get("content-length") || 0);
   if (contentLength > MAX_LINK_BYTES) {

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { filterScopedDerivedRows } from "@/lib/derived-source-access";
 import { dictationContext } from "@/lib/dictation-intelligence";
 import { recordingSources } from "@/lib/dictation-analysis";
 import { hybridSearch, tokenizeSearchQuery, type SearchResult } from "@/lib/embeddings";
@@ -111,7 +112,6 @@ export async function buildBuckyContext(
   const currentYear = now.getFullYear();
   const terms = tokenizeSearchQuery(query);
   const explicitYear = query.match(/\b(20\d{2}|19\d{2})\b/)?.[1];
-  const wantsPantry = /\b(pantry|in stock|supplies|do we have|inventory)\b/i.test(query);
   const wantsExpenses = /\b(expense|spent|spend|cost|budget|paid|financial|dollars?|\$)\b/i.test(query);
   const wantsStays = /\b(stay|staying|visit|visiting|coming|calendar|room|available)\b/i.test(query);
   const wantsMaintenance = /\b(maintenance|repair|repaired|service|serviced|replace|replaced|fixed)\b/i.test(query);
@@ -137,22 +137,21 @@ export async function buildBuckyContext(
     groceryItems,
     upcomingDinners,
     currentPositions,
-    openQuestions,
+    unfilteredOpenQuestions,
     expenseSummary,
     counts,
     archiveCategories,
     retrieved,
-    pantryItems,
     recentExpenses,
-    recentMaintenance,
+    unfilteredRecentMaintenance,
     directAssets,
     directFamily,
-    memoryDirectory,
+    unfilteredMemoryDirectory,
     documentDirectory,
     archiveHealth,
   ] = await Promise.all([
     prisma.stay.findMany({
-      where: { checkOut: { gte: stayStart }, checkIn: { lt: stayEnd } },
+      where: { deletedAt: null, checkOut: { gte: stayStart }, checkIn: { lt: stayEnd } },
       include: { room: true },
       orderBy: { checkIn: "asc" },
       take: 31,
@@ -168,7 +167,7 @@ export async function buildBuckyContext(
     prisma.expense.aggregate({ where: { fiscalYear: financialSummaryYear }, _sum: { amount: true }, _count: true }),
     Promise.all([
       prisma.document.count({ where: { deletedAt: null, accessScope: "family" } }),
-      prisma.jarvisMemory.count({
+      prisma.jarvisMemory.findMany({
         where: {
           status: "active",
           accessScope: "family",
@@ -177,9 +176,10 @@ export async function buildBuckyContext(
             { OR: [{ validUntil: null }, { validUntil: { gte: now } }] },
           ],
         },
-      }),
+        select: { accessScope: true, sourceType: true, sourceId: true, filePath: true },
+      }).then(async rows => (await filterScopedDerivedRows(rows)).length),
       prisma.asset.count({ where: { status: "active" } }),
-      prisma.maintenanceRecord.count(),
+      prisma.maintenanceRecord.findMany({ select: { sourceRecordings: true } }).then(async rows => (await filterScopedDerivedRows(rows)).length),
       prisma.expense.count(),
       prisma.document.count({
         where: {
@@ -207,9 +207,6 @@ export async function buildBuckyContext(
         hybridSearch(retrievalQuery, 18, KNOWLEDGE_SOURCE_TYPES)
       )
     ).then((resultSets) => mergeRetrievedKnowledge(resultSets, 18)),
-    wantsPantry
-      ? prisma.pantryItem.findMany({ orderBy: [{ category: "asc" }, { name: "asc" }], take: 41 })
-      : Promise.resolve([]),
     wantsExpenses
       ? prisma.expense.findMany({
           where: requestedExpenseYear ? { fiscalYear: requestedExpenseYear } : undefined,
@@ -290,7 +287,7 @@ export async function buildBuckyContext(
   const retrievedMaintenanceIds = uniqueSourceIds(retrieved, "maintenance");
   const retrievedExpenseIds = uniqueSourceIds(retrieved, "expense");
 
-  const [documents, memories, assets, maintenance, expenses] = await Promise.all([
+  const [documents, unfilteredMemories, assets, unfilteredMaintenance, expenses] = await Promise.all([
     prisma.document.findMany({
       where: { id: { in: retrievedDocumentIds }, deletedAt: null, accessScope: "family" },
       include: { category: true },
@@ -316,6 +313,12 @@ export async function buildBuckyContext(
     }),
     prisma.expense.findMany({ where: { id: { in: retrievedExpenseIds } } }),
   ]);
+
+  const [openQuestions, memories, memoryDirectory, recentMaintenance, maintenance] = await Promise.all([
+    filterScopedDerivedRows(unfilteredOpenQuestions), filterScopedDerivedRows(unfilteredMemories), filterScopedDerivedRows(unfilteredMemoryDirectory),
+    filterScopedDerivedRows(unfilteredRecentMaintenance), filterScopedDerivedRows(unfilteredMaintenance),
+  ]);
+  for (const asset of [...directAssets, ...assets]) asset.records = await filterScopedDerivedRows(asset.records);
 
   if (memories.length > 0) {
     await prisma.jarvisMemory.updateMany({
@@ -356,10 +359,7 @@ export async function buildBuckyContext(
     `FINANCIAL SUMMARY (${financialSummaryYear}):\n- $${expenseSummary._sum.amount?.toFixed(2) || "0.00"} across ${expenseSummary._count} expenses`,
   ];
 
-  if (pantryItems.length) {
-    operationalParts.push(`PANTRY (loaded for this request):\n${boundedLines(pantryItems, 40, (item) =>
-      `- ${item.name}: ${item.quantity}${item.unit ? ` ${item.unit}` : ""} [${item.category}]`, "pantry items")}`);
-  }
+  operationalParts.push("PANTRY: Inventory tracking is retired; stored quantities are not current. Use the shopping list for things to buy.");
   if (recentExpenses.length) {
     operationalParts.push(`EXPENSES${requestedExpenseYear ? ` FOR ${requestedExpenseYear}` : ""} (loaded for this request):\n${boundedLines(recentExpenses, 15, (expense) =>
       `- ${dateOnly(expense.date)}: $${expense.amount.toFixed(2)} ${expense.description} [${expense.category}], paid by ${expense.paidBy}`, "expenses")}`);

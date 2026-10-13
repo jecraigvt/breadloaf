@@ -6,6 +6,7 @@ import type { IdentityChoice } from "@/lib/identity-prompt";
 interface ActorSummary {
   memberId: string;
   displayName: string;
+  verified?: boolean;
 }
 
 interface IdentityStatus {
@@ -88,9 +89,10 @@ export function IdentityGate() {
   const changeIdentity = async () => {
     setBusy(true);
     setError(null);
-    const response = await fetch("/api/family/claim", { method: "DELETE" });
+    const response = await fetch(status?.actor?.verified ? "/api/auth" : "/api/family/claim", { method: "DELETE" });
     setBusy(false);
     if (!response.ok) return;
+    if (status?.actor?.verified) { window.location.assign("/login"); return; }
     setShowAll(false);
     setMemberId("");
     await loadStatus();

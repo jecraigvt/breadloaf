@@ -3,7 +3,7 @@ import test from "node:test";
 import type { ActorContext } from "./actor";
 import { getAssistantBackgroundWorkStatus, queueAssistantBackgroundWork } from "./bucky-background-assistant";
 
-const actor: ActorContext = { memberId: "member-1", displayName: "Jeremy", fullName: "Jeremy Craig", branch: "Tom", boardRole: null, isBoardMember: false, isCurator: true };
+const actor: ActorContext = { memberId: "member-1", displayName: "Jeremy", fullName: "Jeremy Craig", branch: "Tom", boardRole: null, isBoardMember: false, isCurator: true, verified: true };
 const job = { id: "job-1", kind: "document_analysis", status: "queued", request: { title: "Minutes", sourceDocumentIds: ["doc-1"] }, sourceDocumentId: "doc-1", fallbackAfter: new Date("2026-09-06T12:00:00Z") };
 const noWrites = {
   familyDocuments: async () => [{ id: "doc-1" }],
@@ -16,6 +16,8 @@ test("chat cannot grant website authority through model arguments or a claimed n
   const result = await queueAssistantBackgroundWork({ kind: "site_improvement", instructions: "Improve the calendar", actor, username: "Jeremy", isCurator: true }, null, noWrites);
   assert.equal(result.success, false);
   assert.match(String(result.error), /signed-in curator or board identity/);
+  const tapped = await queueAssistantBackgroundWork({ kind: "site_improvement", instructions: "Improve the calendar" }, { ...actor, verified: false }, noWrites);
+  assert.equal(tapped.success, false);
 });
 
 test("document background analysis needs an exact source ID and uses only the server actor", async () => {

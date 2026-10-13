@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveUploadedFile } from "@/lib/upload";
+import { requestAccessContext, accessPolicyResponse } from "@/lib/access-policy";
 
 export async function POST(request: NextRequest) {
   try {
+    await requestAccessContext(request);
     const formData = await request.formData();
     const file = formData.get("file") as File;
 
@@ -14,6 +16,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error) {
+    const denied = accessPolicyResponse(error);
+    if (denied) return denied;
     const message = error instanceof Error ? error.message : "Upload failed";
     return NextResponse.json({ error: message }, { status: 400 });
   }

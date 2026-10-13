@@ -3,6 +3,7 @@ import { getOpenAIClient, withRetry } from "@/lib/openai-client";
 import { Prisma } from "@prisma/client";
 import { dictationIndexText } from "@/lib/dictation-intelligence";
 import { recordingSources } from "@/lib/dictation-analysis";
+import { filterScopedDerivedRows } from "@/lib/derived-source-access";
 
 export const EMBEDDING_MODEL = "text-embedding-3-small";
 
@@ -456,6 +457,7 @@ export async function indexMemory(memoryId: string, options: IndexOptions = {}) 
       await removeFromIndex("memory", memoryId);
       return;
     }
+    if (!(await filterScopedDerivedRows([memory])).length) { await removeFromIndex("memory", memoryId); return; }
     const notes = memory.filePath ? await dictationIndexText([memory.filePath]) : new Map<string, string>();
     await embedAndStore(
       "memory",
@@ -476,7 +478,7 @@ export async function indexAsset(assetId: string, options: IndexOptions = {}) {
       await removeFromIndex("asset", assetId);
       return;
     }
-    const recentWork = asset.records.map((record) =>
+    const recentWork = (await filterScopedDerivedRows(asset.records)).map((record) =>
       `${record.performedAt.toISOString().slice(0, 10)}: ${record.title}${record.description ? ` - ${record.description}` : ""}`
     );
     await embedAndStore(
@@ -504,7 +506,7 @@ export async function indexMaintenance(recordId: string, options: IndexOptions =
       where: { id: recordId },
       include: { asset: true },
     });
-    if (!record) {
+    if (!record || !(await filterScopedDerivedRows([record])).length) {
       await removeFromIndex("maintenance", recordId);
       return;
     }

@@ -47,6 +47,11 @@ import { createFamilyChangeProposal } from "@/lib/family-change";
 import { transcribeAudioBufferWithGemini } from "@/lib/gemini-transcription";
 import type { ActorContext } from "@/lib/actor";
 import { getAssistantBackgroundWorkStatus, queueAssistantBackgroundWork } from "@/lib/bucky-background-assistant";
+import { isPrivilegedActor, AccessPolicyError } from "@/lib/access-policy";
+import { filterScopedDerivedRows } from "@/lib/derived-source-access";
+import { maintenanceInputSchema, MAINTENANCE_CATEGORIES, propertyTodayDateKey } from "@/lib/maintenance-contract";
+import { expenseInputSchema } from "@/lib/expense-ledger";
+import { validateStayInput, StayInputError } from "@/lib/stay-input";
 
 export { MODELS } from "@/lib/ai-models";
 
@@ -636,8 +641,12 @@ const assistantToolDeclarations: Array<{
             },
             category: {
               type: "string",
-              description:
-                "Category: plumbing, electrical, structural, grounds, appliance, seasonal, other",
+              enum: [...MAINTENANCE_CATEGORIES],
+              description: "Maintenance category",
+            },
+            performedAt: {
+              type: "string",
+              description: "Actual date the work was performed, YYYY-MM-DD. Ask when it is unknown; never substitute today's date for historical work.",
             },
             performedBy: {
               type: "string",
@@ -653,7 +662,7 @@ const assistantToolDeclarations: Array<{
                 "Name of the property system/equipment this work was done on (e.g. 'Well & Water System', 'Generator'), if it maps to one. Links the record to that system's history.",
             },
           },
-          required: ["title"],
+          required: ["title", "performedAt"],
         },
       },
       {
@@ -835,7 +844,7 @@ const assistantToolDeclarations: Array<{
               description: "Vendor or company name if known",
             },
           },
-          required: ["date", "amount", "description"],
+          required: ["date", "amount", "description", "paidBy"],
         },
       },
       {
@@ -1089,7 +1098,7 @@ const assistantToolDeclarations: Array<{
       },
 ];
 
-const assistantTools: OpenAI.Responses.Tool[] = assistantToolDeclarations.map((tool) => ({
+const assistantTools: OpenAI.Responses.Tool[] = assistantToolDeclarations.filter((tool) => tool.name !== "add_pantry_item").map((tool) => ({
   type: "function",
   strict: false,
   ...tool,
@@ -1126,7 +1135,7 @@ function boundedNumber(value: unknown, fallback: number): number {
 }
 
 // Execute a function call from the assistant
-async function executeToolFunction(
+export async function executeToolFunction(
   name: string,
   args: Record<string, unknown>,
   username?: string,
@@ -1151,15 +1160,10 @@ async function executeToolFunction(
       };
     }
     case "create_stay": {
-      const guestName = (args.guestName as string)?.trim();
-      const checkIn = new Date(args.checkIn as string);
-      const checkOut = new Date(args.checkOut as string);
-      if (!guestName || isNaN(checkIn.getTime()) || isNaN(checkOut.getTime())) {
-        return { success: false, error: "guestName, checkIn, and checkOut are required" };
-      }
-      if (checkOut <= checkIn) {
-        return { success: false, error: "checkOut must be after checkIn" };
-      }
+      let input;
+      try { input = validateStayInput({ guestName: args.guestName, checkIn: args.checkIn, checkOut: args.checkOut, notes: args.notes }); }
+      catch (error) { return { success: false, error: error instanceof Error ? error.message : "Invalid visit dates" }; }
+      const { guestName, checkIn, checkOut } = input;
 
       const duplicate = await findOverlappingStay(guestName, checkIn, checkOut);
       if (duplicate) {
@@ -1180,18 +1184,26 @@ async function executeToolFunction(
         const room = await prisma.room.findFirst({
           where: { name: { contains: (args.roomName as string).trim(), mode: "insensitive" } },
         });
-        roomId = room?.id ?? null;
+        if (!room) return { success: false, error: "That room could not be found. Ask the family to choose a room or decide later." };
+        roomId = room.id;
       }
 
-      const stay = await createStayWithCalendarSync({
+      let stay;
+      try { stay = await createStayWithCalendarSync({
         guestName,
         checkIn,
         checkOut,
         roomId,
         notes: (args.notes as string)?.trim() || (username ? `Added by Bucky for ${username}` : "Added by Bucky"),
-      });
+      }); } catch (error) {
+        if (error instanceof StayInputError) return { success: false, error: error.message, conflicts: error.conflicts, note: "Use Rooms to confirm sharing; do not silently override another family's room." };
+        throw error;
+      }
       return {
         success: true,
+        alreadyExisted: Boolean(stay.alreadyExisted),
+        calendarSyncState: stay.calendarSyncState,
+        note: stay.calendarSyncState === "synced" ? "Saved and synced to Google Calendar." : "Saved on Breadloaf Hill; Google Calendar sync is still pending. Do not claim it is already in Google Calendar.",
         stay: {
           id: stay.id,
           guestName: stay.guestName,
@@ -1205,18 +1217,18 @@ async function executeToolFunction(
       const asset = args.assetName
         ? await findAssetByName(args.assetName as string)
         : null;
+      const parsed = maintenanceInputSchema.safeParse({
+        title: args.title, description: args.description, category: args.category,
+        performedAt: args.performedAt, performedBy: args.performedBy || username,
+        cost: args.cost, assetId: asset?.id,
+      });
+      if (!parsed.success) return { success: false, error: "Ask for the actual work date (YYYY-MM-DD) and a valid nonnegative cost before logging this maintenance." };
       const record = await prisma.maintenanceRecord.create({
         data: {
-          title: args.title as string,
-          description: (args.description as string) || undefined,
-          category: (args.category as string) || undefined,
-          performedBy: (args.performedBy as string) || username || undefined,
-          performedAt: new Date(),
-          cost: args.cost ? parseFloat(String(args.cost)) : undefined,
+          ...parsed.data,
           sourceRecordings: toolContext?.voiceRecordings?.length
             ? toolContext.voiceRecordings as unknown as Prisma.InputJsonValue
             : undefined,
-          assetId: asset?.id,
         },
       });
       void indexMaintenance(record.id);
@@ -1303,7 +1315,7 @@ async function executeToolFunction(
         return { success: false, error: "documentId and categoryName are required" };
       }
       const documentExists = await prisma.document.findFirst({
-        where: { id: documentId, deletedAt: null },
+        where: { id: documentId, deletedAt: null, accessScope: "family" },
         select: { id: true },
       });
       if (!documentExists) return { success: false, error: "Document not found" };
@@ -1350,7 +1362,7 @@ async function executeToolFunction(
           where: { id: documentId },
           include: { category: true },
         });
-        if (!document || document.deletedAt) throw new Error("Document no longer exists");
+        if (!document || document.deletedAt || document.accessScope !== "family") throw new Error("Family document no longer available");
 
         await tx.document.update({
           where: { id: document.id },
@@ -1431,21 +1443,7 @@ async function executeToolFunction(
       };
     }
     case "add_pantry_item": {
-      const item = await prisma.pantryItem.create({
-        data: {
-          name: args.name as string,
-          category: (args.category as string) || undefined,
-          quantity: args.quantity
-            ? parseInt(String(args.quantity))
-            : undefined,
-          unit: (args.unit as string) || undefined,
-          updatedBy: username || undefined,
-        },
-      });
-      return {
-        success: true,
-        item: { id: item.id, name: item.name },
-      };
+      return { success: false, error: "Pantry inventory is retired. The shopping list is available for things the family needs to buy." };
     }
     case "save_memory": {
       const topic = String(args.topic || "").trim();
@@ -1467,15 +1465,16 @@ async function executeToolFunction(
         return { success: false, error: "validUntil must be on or after validFrom" };
       }
       // Same-topic changes create a new active version and preserve history.
-      const topicMatches = await prisma.jarvisMemory.findMany({
+      const topicMatches = await filterScopedDerivedRows(await prisma.jarvisMemory.findMany({
         where: {
           topic: { equals: topic, mode: "insensitive" },
           scope: memoryScope,
           status: "active",
+          accessScope: "family",
         },
         orderBy: { updatedAt: "desc" },
         take: 10,
-      });
+      }));
       const existing = subject
         ? topicMatches.find((memory) => memory.subject?.toLowerCase() === subject.toLowerCase())
         : topicMatches.find((memory) => !memory.subject) ||
@@ -1559,17 +1558,16 @@ async function executeToolFunction(
       };
     }
     case "add_expense": {
-      const expenseDate = new Date(args.date as string);
+      if (typeof args.paidBy !== "string" || !args.paidBy.trim()) return { success: false, error: "Ask who paid this bill before recording it. Shared does not identify an unknown payer." };
+      const parsed = expenseInputSchema.safeParse({
+        date: args.date, amount: args.amount, description: args.description,
+        category: args.category, type: args.type, paidBy: args.paidBy, vendor: args.vendor,
+      });
+      if (!parsed.success) return { success: false, error: "Use a valid expense date (YYYY-MM-DD), nonnegative amount with at most two decimal places, and the actual payer when known. Ask about missing details." };
       const expense = await prisma.expense.create({
         data: {
-          date: expenseDate,
-          amount: parseFloat(String(args.amount)),
-          description: args.description as string,
-          category: (args.category as string) || "other",
-          type: (args.type as string) || "operating",
-          paidBy: (args.paidBy as string) || username || "Shared",
-          vendor: (args.vendor as string) || undefined,
-          fiscalYear: expenseDate.getFullYear(),
+          ...parsed.data,
+          fiscalYear: parsed.data.date.getUTCFullYear(),
         },
       });
       void indexExpense(expense.id);
@@ -1628,14 +1626,20 @@ async function executeToolFunction(
       }, username);
     }
     case "update_position": {
+      if (!isPrivilegedActor(toolContext?.actor) || !toolContext?.authorizeFamilyChange) return { success: false, error: "Changing family positions requires a current verified caretaker or board session." };
       const personName = String(args.personName || "").trim();
       const position = String(args.position || "").trim();
-      const effectiveAt = new Date(`${args.effectiveDate}T12:00:00`);
+      const date = maintenanceInputSchema.shape.performedAt.safeParse(args.effectiveDate);
+      if (!date.success) return { success: false, error: "Use a valid effectiveDate in YYYY-MM-DD format." };
+      const effectiveAt = date.data;
       if (!personName || !position || Number.isNaN(effectiveAt.getTime())) {
         return { success: false, error: "personName, position, and a valid effectiveDate are required" };
       }
 
+      try {
       const change = await prisma.$transaction(async (tx) => {
+        const currentActor = await toolContext.authorizeFamilyChange!(tx);
+        if (!isPrivilegedActor(currentActor)) throw new AccessPolicyError("Your caretaker or board access has changed.", 403);
         const member = await tx.familyMember.findFirst({
           where: { name: { equals: personName, mode: "insensitive" } },
         });
@@ -1679,7 +1683,7 @@ async function executeToolFunction(
                 .filter((role) => role && role.toLowerCase() !== position.toLowerCase());
               await tx.familyMember.update({
                 where: { id: previousMember.id },
-                data: { boardRole: remainingRoles.join(", ") || null },
+                data: { boardRole: remainingRoles.join(", ") || null, isBoardMember: remainingRoles.length > 0 },
               });
             }
           }
@@ -1745,6 +1749,10 @@ async function executeToolFunction(
           reversible: !change.unchanged,
         },
       };
+      } catch (error) {
+        if (error instanceof AccessPolicyError) return { success: false, error: error.message };
+        throw error;
+      }
     }
     default:
       return { error: `Unknown function: ${name}` };
@@ -1761,6 +1769,8 @@ export interface AssistantToolContext {
   voiceRecordings?: AssistantVoiceRecording[];
   // Resolved from authenticated server cookies; never accepted from a model tool argument.
   actor?: ActorContext | null;
+  // Request-bound verification after acquiring the shared family-access lock.
+  authorizeFamilyChange?: (tx: Prisma.TransactionClient) => Promise<ActorContext>;
 }
 
 export async function chatWithAssistant(
@@ -1787,7 +1797,7 @@ PERSONALITY: You're modeled on Wash, the pilot from Firefly — quick-witted, pl
 
 Your job is to make sure anyone in the family can get the information they need — whether it's about upcoming visits, property finances, where things are, what maintenance has been done, corporate documents, or local recommendations. You know the property, the people, the documents, the expenses, and the day-to-day operations. You are thorough, specific, and proactive — if you have relevant info, share it even if they didn't explicitly ask.
 
-Today's date is ${new Date().toLocaleDateString()}.
+Today's date at the property is ${propertyTodayDateKey()}.
 ${username ? `The current user is: ${username}` : ""}
 
 OPERATIONAL CONTEXT (the bounded front desk, always current):
@@ -1800,14 +1810,14 @@ RELEVANT LONG-TERM KNOWLEDGE (loaded specifically for this request):
 ${context.relevantKnowledge}
 
 MEMORY STORAGE RULES:
-- Use native operational records for stays, groceries, pantry, dinners, maintenance, and expenses; do not duplicate those records into memory.
+- Use native operational records for stays, groceries, dinners, maintenance, and expenses; do not duplicate those records into memory. Pantry inventory is retired: old quantities are stale and must not be treated as current stock.
 - Use save_asset for facts, quirks, warnings, and procedures tied to a physical property system.
 - Use save_memory for durable preferences, decisions, relationships, and reusable procedures that do not belong to one physical system.
 - A permanent archive file remains a document. A quick voice note may already be saved as a memory by intake routing; never duplicate it when the system note says it is saved.
 - Treat retrieved summaries as navigation. For consequential answers, name the underlying document, record, or source supplied in the context.
 
 PROPERTY OWNERSHIP:
-The property is owned by an S-Corp with four equal shareholders: Tom Craig, Jim Craig, Sandy Craig, and Greg Craig. All expenses are split equally (25% each).
+The property is owned by an S-Corp with four equal shareholders: Tom Craig, Jim Craig, Sandy Craig, and Greg Craig. The expense ledger records spending and who paid; a reimbursement policy is not configured. Never infer amounts owed or reimbursements from ownership percentages or the Shared payer label.
 
 WHAT YOU CAN DO:
 
@@ -1816,15 +1826,14 @@ WHAT YOU CAN DO:
    - Room assignments: Suggest rooms based on group size, bed types, and availability
    - Documents: Search the archive for tax records, insurance policies, deeds, contracts, etc.
    - Maintenance history: "When was the roof last repaired?", "What maintenance is due?"
-   - Expenses & finances: "How much have we spent this year?", "What's each family's share?", "What did we spend on utilities?"
-   - Pantry & supplies: "What's in the pantry?", "Do we have coffee?", "What's on the shopping list?"
+   - Expenses & finances: "How much have we spent this year?", "Who paid for the roof?", "What did we spend on utilities?"
+   - Shopping: "What's on the shopping list?". Inventory is not maintained; ask someone at the house about current stock.
    - Dinner schedule: "Who's cooking tonight?", "What nights are open this week?"
    - Property info: Address, room details, local recommendations
 
 2. TAKE ACTIONS using your tools:
    - Add stays/visits to the calendar (e.g., "We'll be up August 3-8" — creates the stay and syncs it to the family Google Calendar; if a matching stay already overlaps those dates you'll be told, so you don't create duplicates)
    - Add items to the grocery/shopping list (e.g., "Add paper towels and milk")
-   - Add items to the pantry inventory (e.g., "We have 6 cans of black beans")
    - Log maintenance records (e.g., "The plumber fixed the upstairs bathroom today, cost $350")
    - Log property expenses with S-Corp tracking (e.g., "Tom paid $1200 for the new water heater")
    - Post messages to the family bulletin board (e.g., "Post that the driveway needs plowing")
@@ -1860,7 +1869,7 @@ WHAT YOU CAN DO:
    - Track expenses by category (utilities, maintenance, insurance, taxes, improvements, supplies, professional services)
    - Classify expenses as operating vs. capital
    - Track who paid for what (Tom, Jim, Sandy, Greg, or Shared)
-   - Answer questions about the 4-way family split
+   - Report recorded spending by payer and category. Ask for a reimbursement policy before calculating debts.
 
 7. SERVE AS THE FAMILY SECRETARY:
    - When a direct instruction or approved/final meeting record clearly changes a position, use update_position and cite the source
@@ -1896,7 +1905,7 @@ Guidelines:
 - When no archive document is loaded for a request, say clearly that archive retrieval found no match. If suggesting where to browse next, name only exact existing categories from ARCHIVE CATEGORIES in the knowledge directory, with their counts when useful. Never invent, rename, or imply the existence of a category that is not in that list.
 - If you don't have info, say so clearly and suggest how to get it (scan a document, add an expense, post to the board)
 - When multiple family members might need info, give the complete picture — you serve all 4 branches
-- For financial questions, always mention the per-family share and who has paid what
+- For financial questions, report recorded spending and who paid. Do not calculate amounts owed until the family defines its reimbursement policy.
 - Keep a warm, familiar tone — you know these people and this property`;
 
   const lastMessage = messages[messages.length - 1];

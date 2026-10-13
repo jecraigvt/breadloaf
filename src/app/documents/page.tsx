@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Header } from "@/components/layout/header";
 import { Search, Grid, List, FolderOpen, Tag, Calendar, Sparkles, Loader2, X, ArrowRight, Trash2, ArchiveRestore, CircleCheck, TriangleAlert, Clock3 } from "lucide-react";
 import Link from "next/link";
@@ -9,6 +9,7 @@ import { formatDate } from "@/lib/utils";
 import type { ArchiveHealth } from "@/lib/archive-health";
 import { archiveVerificationStalenessMessage, archiveAnalysisIssueMessage } from "@/lib/archive-health-shared";
 import { dictationDisplaySummary } from "@/lib/dictation-analysis";
+import { requestSavedState } from "@/lib/saved-state";
 import "../fieldguide-archive.css";
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -57,48 +58,88 @@ export default function DocumentsPage() {
   const [showDeleted, setShowDeleted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [archiveHealth, setArchiveHealth] = useState<ArchiveHealth | null>(null);
+  const [totalDocuments, setTotalDocuments] = useState<number | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [listError, setListError] = useState<{ message: string; append: boolean } | null>(null);
+  const [metadataError, setMetadataError] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingDocuments, setPendingDocuments] = useState<Set<string>>(new Set());
+  const requestVersion = useRef(0);
+  const activeRequest = useRef<AbortController | null>(null);
+  const nextOffset = useRef(0);
 
-  useEffect(() => {
-    fetchDocuments();
-    fetchCategories();
-    fetchUncategorizedCount();
-    fetchArchiveHealth();
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => fetchDocuments(), 300);
-    return () => clearTimeout(timer);
-  }, [search, selectedCategory, showDeleted]);
-
-  const fetchDocuments = async () => {
+  const fetchDocuments = useCallback(async (append = false) => {
+    const version = ++requestVersion.current;
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    if (append) setLoadingMore(true); else setLoading(true);
+    setListError(null);
     const params = new URLSearchParams();
     if (search) params.set("q", search);
     if (selectedCategory) params.set("category", selectedCategory);
     if (showDeleted) params.set("deleted", "true");
-
-    const res = await fetch(`/api/documents?${params}`);
-    if (res.ok) {
-      const data = await res.json();
-      setDocuments(data);
+    params.set("limit", "50");
+    const requestedOffset = append ? nextOffset.current : 0;
+    params.set("offset", String(requestedOffset));
+    try {
+      const res = await fetch(`/api/documents?${params}`, { signal: controller.signal });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !Array.isArray(data)) throw new Error(data?.error || "Could not load documents. Please try again.");
+      const total = Number(res.headers.get("X-Total-Count"));
+      const offset = Number(res.headers.get("X-Next-Offset"));
+      if (res.headers.get("X-Total-Count") === null || res.headers.get("X-Next-Offset") === null || !Number.isSafeInteger(total) || total < 0 || !Number.isSafeInteger(offset) || offset !== requestedOffset + data.length) throw new Error("The archive did not confirm this page. Please try again.");
+      if (version !== requestVersion.current || controller.signal.aborted) return;
+      setDocuments(previous => append ? [...previous, ...data.filter(doc => !previous.some(existing => existing.id === doc.id))] : data);
+      setTotalDocuments(total);
+      nextOffset.current = offset;
+      setHasMore(res.headers.get("X-Has-More") === "true");
+    } catch (error) {
+      if (version === requestVersion.current && !controller.signal.aborted) setListError({ message: error instanceof Error ? error.message : "Could not load documents. Please try again.", append });
+    } finally {
+      if (version === requestVersion.current && !controller.signal.aborted) { setLoading(false); setLoadingMore(false); }
     }
-    setLoading(false);
-  };
+  }, [search, selectedCategory, showDeleted]);
+  const currentFetchDocuments = useRef(fetchDocuments);
+  useEffect(() => { currentFetchDocuments.current = fetchDocuments; }, [fetchDocuments]);
 
-  const fetchCategories = async () => {
+  const fetchCategories = useCallback(async () => {
     const res = await fetch("/api/documents?categoriesOnly=true");
-    if (res.ok) {
-      const data = await res.json();
-      setCategories(data);
-    }
-  };
+    if (!res.ok) throw new Error("Categories unavailable");
+    const data = await res.json();
+    if (!Array.isArray(data)) throw new Error("Categories unavailable");
+    setCategories(data);
+  }, []);
 
-  const fetchUncategorizedCount = async () => {
-    const res = await fetch("/api/documents?category=uncategorized");
-    if (res.ok) {
-      const data = await res.json();
-      setUncategorizedCount(data.length);
-    }
-  };
+  const fetchUncategorizedCount = useCallback(async () => {
+    const res = await fetch("/api/documents?category=uncategorized&limit=1");
+    const count = Number(res.headers.get("X-Total-Count"));
+    if (!res.ok || res.headers.get("X-Total-Count") === null || !Number.isSafeInteger(count)) throw new Error("Review count unavailable");
+    setUncategorizedCount(count);
+  }, []);
+
+  const fetchArchiveHealth = useCallback(async () => {
+    const res = await fetch("/api/documents?healthOnly=true");
+    if (!res.ok) throw new Error("Archive health unavailable");
+    setArchiveHealth(await res.json());
+  }, []);
+
+  const refreshMetadata = useCallback(async () => {
+    const results = await Promise.allSettled([fetchCategories(), fetchUncategorizedCount(), fetchArchiveHealth()]);
+    setMetadataError(results.some(result => result.status === "rejected"));
+  }, [fetchCategories, fetchUncategorizedCount, fetchArchiveHealth]);
+
+  useEffect(() => { void refreshMetadata(); }, [refreshMetadata]);
+
+  useEffect(() => {
+    ++requestVersion.current;
+    activeRequest.current?.abort();
+    setDocuments([]); setTotalDocuments(null); setHasMore(false); setListError(null);
+    setLoading(true); setLoadingMore(false); nextOffset.current = 0;
+    const timer = setTimeout(() => void fetchDocuments(), search ? 300 : 0);
+    return () => { clearTimeout(timer); activeRequest.current?.abort(); };
+  }, [fetchDocuments, search]);
 
   // ─── Librarian ────────────────────────────────────────────────
   const [librarianState, setLibrarianState] = useState<"idle" | "planning" | "reviewing" | "applying">("idle");
@@ -144,9 +185,8 @@ export default function DocumentsPage() {
       );
       setPlan(null);
       setLibrarianState("idle");
-      fetchDocuments();
-      fetchCategories();
-      fetchUncategorizedCount();
+      void currentFetchDocuments.current();
+      void refreshMetadata();
     } catch {
       setLibrarianMessage("Applying the plan failed — nothing may have changed. Try again.");
       setLibrarianState("reviewing");
@@ -157,37 +197,23 @@ export default function DocumentsPage() {
     categories.find((c) => c.slug === slug)?.name || slug;
 
   const assignCategory = async (docId: string, categoryId: string) => {
-    if (!categoryId) return;
-    const res = await fetch(`/api/documents/${docId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ categoryId }),
-    });
-    if (res.ok) {
-      fetchDocuments();
-      fetchCategories();
-      fetchUncategorizedCount();
-    }
-  };
-
-  const fetchArchiveHealth = async () => {
-    const res = await fetch("/api/documents?healthOnly=true");
-    if (res.ok) {
-      setArchiveHealth(await res.json());
-    }
+    if (!categoryId || pendingDocuments.has(docId)) return;
+    setPendingDocuments(previous => new Set(previous).add(docId)); setActionError(null);
+    try {
+      await requestSavedState(`/api/documents/${docId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ categoryId }) });
+      await currentFetchDocuments.current(); await refreshMetadata();
+    } catch (error) { setActionError(error instanceof Error ? error.message : "The category could not be saved."); }
+    finally { setPendingDocuments(previous => { const next = new Set(previous); next.delete(docId); return next; }); }
   };
 
   const restoreDocument = async (docId: string) => {
-    const response = await fetch(`/api/documents/${docId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "restore" }),
-    });
-    if (response.ok) {
-      await fetchDocuments();
-      await fetchCategories();
-      await fetchUncategorizedCount();
-    }
+    if (pendingDocuments.has(docId)) return;
+    setPendingDocuments(previous => new Set(previous).add(docId)); setActionError(null);
+    try {
+      await requestSavedState(`/api/documents/${docId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "restore" }) });
+      await currentFetchDocuments.current(); await refreshMetadata();
+    } catch (error) { setActionError(error instanceof Error ? error.message : "The document could not be restored."); }
+    finally { setPendingDocuments(previous => { const next = new Set(previous); next.delete(docId); return next; }); }
   };
 
   return (
@@ -270,6 +296,7 @@ export default function DocumentsPage() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search documents..."
             aria-label="Search documents"
+            maxLength={300}
             className="w-full pl-10 pr-4 py-3 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
           />
         </div>
@@ -334,7 +361,7 @@ export default function DocumentsPage() {
         {/* View Toggle + Librarian */}
         <div className="fg-archive-toolbar">
           <span className="text-sm text-stone-500">
-            {documents.length} document{documents.length !== 1 ? "s" : ""}
+            {loading ? "Loading documents…" : totalDocuments === null ? "Documents unavailable" : `Showing ${documents.length} of ${totalDocuments} document${totalDocuments !== 1 ? "s" : ""}`}
           </span>
           <div className="fg-archive-tools">
             <button
@@ -396,6 +423,10 @@ export default function DocumentsPage() {
             )}
           </div>
         </div>
+
+        {metadataError && <p role="status" className="text-sm text-amber-800">Some category counts or archive health could not load. <button type="button" className="underline" onClick={() => void refreshMetadata()}>Retry details</button></p>}
+        {listError && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><p>{listError.message}</p><button type="button" className="underline mt-2" onClick={() => void fetchDocuments(listError.append)}>Try again</button></div>}
+        {actionError && <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{actionError}</p>}
 
         {librarianMessage && (
           <div className="flex items-center justify-between bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 text-sm text-purple-800">
@@ -546,7 +577,7 @@ export default function DocumentsPage() {
               <div key={i} className="bg-stone-100 rounded-xl h-48 animate-pulse" />
             ))}
           </div>
-        ) : documents.length === 0 ? (
+        ) : listError && !listError.append ? null : documents.length === 0 ? (
           <div className="fg-archive-empty text-center py-12">
             <FolderOpen size={48} className="mx-auto text-stone-300 mb-3" />
             <p className="text-stone-500 font-medium">{showDeleted ? "Recently Deleted is empty" : "No documents found"}</p>
@@ -577,6 +608,7 @@ export default function DocumentsPage() {
                 </div>
                 <button
                   onClick={() => void restoreDocument(doc.id)}
+                  disabled={pendingDocuments.has(doc.id)}
                   className="flex items-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs font-medium text-green-800 hover:bg-green-100"
                 >
                   <ArchiveRestore size={14} /> Restore
@@ -624,7 +656,8 @@ export default function DocumentsPage() {
                     <select
                       defaultValue=""
                       aria-label={`File ${doc.title} under category`}
-                      onChange={(e) => void assignCategory(doc.id, e.target.value)}
+                      onChange={(e) => { const select = e.currentTarget; void assignCategory(doc.id, select.value).finally(() => { select.value = ""; }); }}
+                      disabled={pendingDocuments.has(doc.id)}
                       className="mt-1 w-full px-2 py-1 rounded-lg border border-amber-300 bg-amber-50 text-xs text-amber-800"
                     >
                       <option value="" disabled>
@@ -685,7 +718,8 @@ export default function DocumentsPage() {
                   <select
                     defaultValue=""
                     aria-label={`File ${doc.title} under category`}
-                    onChange={(e) => void assignCategory(doc.id, e.target.value)}
+                    onChange={(e) => { const select = e.currentTarget; void assignCategory(doc.id, select.value).finally(() => { select.value = ""; }); }}
+                    disabled={pendingDocuments.has(doc.id)}
                     className="w-full px-2 py-1 rounded-lg border border-amber-300 bg-amber-50 text-xs text-amber-800"
                   >
                     <option value="" disabled>File under…</option>
@@ -697,6 +731,7 @@ export default function DocumentsPage() {
             ))}
           </div>
         )}
+        {!loading && hasMore && (!listError || listError.append) && <div className="flex justify-center"><button type="button" className="btn-quiet flex items-center gap-2" disabled={loadingMore} onClick={() => void fetchDocuments(true)}>{loadingMore && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}{loadingMore ? "Loading more…" : "Load more documents"}</button></div>}
       </div>
     </div>
   );

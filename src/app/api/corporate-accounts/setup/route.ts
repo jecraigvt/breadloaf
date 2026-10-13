@@ -8,8 +8,8 @@ import {
   getAccountsVaultCookieName,
   hashAccountsVaultPassword,
 } from "@/lib/accounts-vault-auth";
-import { getAuthCookieName, getFamilyFromAuthToken } from "@/lib/auth";
 import { recordBuckyLedgerEntry } from "@/lib/bucky-ledger";
+import { requirePrivilegedActor, accessPolicyResponse } from "@/lib/access-policy";
 
 function cookieDomain(request: NextRequest): string | undefined {
   return request.nextUrl.hostname.toLowerCase().endsWith("breadloafhill.com")
@@ -18,6 +18,9 @@ function cookieDomain(request: NextRequest): string | undefined {
 }
 
 export async function POST(request: NextRequest) {
+ let actor;
+ try { actor = await requirePrivilegedActor(request); }
+ catch (error) { return accessPolicyResponse(error) || NextResponse.json({ error: "Unable to verify permission" }, { status: 503 }); }
   if (await accountsVaultConfigured()) {
     return NextResponse.json({ error: "Corporation vault is already configured" }, { status: 409 });
   }
@@ -27,9 +30,7 @@ export async function POST(request: NextRequest) {
   if (password.length < 14) {
     return NextResponse.json({ error: "Use a passphrase of at least 14 characters" }, { status: 400 });
   }
-  const changedBy =
-    (await getFamilyFromAuthToken(request.cookies.get(getAuthCookieName())?.value)) ||
-    "Family member";
+  const changedBy = actor.fullName;
 
   try {
     await prisma.vaultConfiguration.create({

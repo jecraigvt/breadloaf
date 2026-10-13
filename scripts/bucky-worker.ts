@@ -110,7 +110,14 @@ async function main() {
   }
   if (action === "--status") {
     const state = await readFile(path.join(workerDirectory, "status.json"), "utf8").catch(() => '{"state":"not started"}');
-    console.log(state); return;
+    const saved = JSON.parse(state) as Record<string, unknown>;
+    let processRunning = false;
+    if (typeof saved.pid === "number" && Number.isInteger(saved.pid) && saved.pid > 0) {
+      try { process.kill(saved.pid, 0); processRunning = true; }
+      catch (error) { processRunning = (error as NodeJS.ErrnoException).code === "EPERM"; }
+    }
+    const updatedAt = typeof saved.updatedAt === "string" ? Date.parse(saved.updatedAt) : NaN;
+    console.log(JSON.stringify({ ...saved, processRunning, statusStale: !Number.isFinite(updatedAt) || Date.now() - updatedAt > 180_000 }, null, 2)); return;
   }
   let config = await loadConfig();
   if (action === "--doctor") {

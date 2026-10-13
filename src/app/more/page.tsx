@@ -11,21 +11,21 @@ interface Destination {
 }
 
 const DESTINATIONS: Destination[] = [
-  { name: "Supplies", sub: "Pantry and shopping list", href: "/grocery" },
+  { name: "Emergency", sub: "Call 911 and find the property address", href: "/emergency" },
+  { name: "Shopping List", sub: "What to bring for the next visit", href: "/grocery" },
+  { name: "Checklists", sub: "Opening, closing, and previous seasons", href: "/checklists" },
+  { name: "Maintenance", sub: "Property work and history", href: "/maintenance" },
+  { name: "Archive", sub: "Find the family’s documents", href: "/documents" },
   { name: "Dinners", sub: "Who's cooking tonight", href: "/dinners" },
   { name: "Local Guide", sub: "Swims, hikes, and restaurants", href: "/guide" },
   { name: "Weather", sub: "Forecast on the hill", href: "/weather" },
-  { name: "Finances", sub: "S-Corp expenses and splits", href: "/expenses" },
+  { name: "Expense Ledger", sub: "Recorded spending and who paid", href: "/expenses" },
   { name: "Family Album", sub: "Family photographs on iCloud", href: ICLOUD_ALBUM, external: true },
-  { name: "Checklists", sub: "Opening and closing", href: "/checklists" },
-  { name: "Emergency", sub: "Contacts and tap-to-call", href: "/emergency" },
-  { name: "Archive", sub: "Documents and auto-filing", href: "/documents" },
   { name: "Corporation Accounts", sub: "Utilities and access", href: "/accounts" },
   { name: "Bulletin Board", sub: "Family notes", href: "/bulletin" },
-  { name: "Maintenance", sub: "Property work and history", href: "/maintenance" },
   { name: "Add Documents", sub: "Scan, upload, or link a file", href: "/upload" },
   { name: "Bucky’s tasks", sub: "Follow background work and results", href: "/bucky/jobs" },
-  { name: "Catalogue by Voice", sub: "Record boxes and objects item by item", href: "/narrate" },
+  { name: "Family Access", sub: "Remembered devices and approved emails", href: "/access" },
 ];
 
 export default function MorePage() {

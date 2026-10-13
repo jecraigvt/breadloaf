@@ -17,6 +17,9 @@
     "db:seed": "npx tsx prisma/seed.ts",
     "db:reset": "npx prisma migrate reset",
     "archive:verify": "npm run archive:verify:checksums && npm run archive:verify:roundtrip",
+    "archive:backup": "tsx scripts/archive-backup.ts",
+    "archive:backup:drive": "tsx scripts/archive-drive.ts",
+    "archive:restore": "tsx scripts/archive-restore.ts",
     "archive:verify:checksums": "npx tsx scripts/verify-archive.ts",
     "archive:verify:roundtrip": "npx tsx scripts/verify-archive-retrieval.ts",
     "archive:verify:golden": "npx tsx scripts/verify-archive-golden.ts",
@@ -39,10 +42,10 @@
     "imapflow": "^1.4.6",
     "jszip": "^3.10.1",
     "lucide-react": "^0.577.0",
-    "mailparser": "^3.9.14",
+    "mailparser": "^3.9.38",
     "mammoth": "^1.12.0",
-    "next": "14.2.35",
-    "nodemailer": "^9.0.3",
+    "next": "^15.5.27",
+    "nodemailer": "^10.1.0",
     "openai": "^7.4.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "4.10.38",
@@ -58,6 +61,11 @@
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^4.4.3"
   },
+  "overrides": {
+    "postcss": "$postcss",
+    "@prisma/config": { "deepmerge-ts": "8.0.2" },
+    "exceljs": { "uuid": "11.1.1" }
+  },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
@@ -68,8 +76,8 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "eslint": "^8",
-    "eslint-config-next": "14.2.35",
-    "postcss": "^8",
+    "eslint-config-next": "^15.5.27",
+    "postcss": "8.5.30",
     "tailwindcss": "^3.4.1",
     "tsx": "^4.21.0",
     "typescript": "^5"

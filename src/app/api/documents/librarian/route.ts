@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateLibrarianPlan, applyLibrarianPlan } from "@/lib/librarian";
+import { generateLibrarianPlan, applyLibrarianPlan, parseLibrarianPlan } from "@/lib/librarian";
+import { requestAccessContext, requirePrivilegedActor, accessPolicyResponse } from "@/lib/access-policy";
+import { ZodError } from "zod";
 
 // The librarian: AI review of the document filing system.
 // POST { action: "plan" }              → proposed reorganization (nothing changes)
@@ -7,6 +9,7 @@ import { generateLibrarianPlan, applyLibrarianPlan } from "@/lib/librarian";
 
 export async function POST(request: NextRequest) {
   try {
+    await requestAccessContext(request);
     const body = await request.json();
 
     if (body.action === "plan") {
@@ -15,7 +18,8 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.action === "apply" && body.plan) {
-      const result = await applyLibrarianPlan(body.plan);
+      await requirePrivilegedActor(request);
+      const result = await applyLibrarianPlan(parseLibrarianPlan(body.plan));
       return NextResponse.json(result);
     }
 
@@ -24,6 +28,9 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   } catch (error) {
+    const denied = accessPolicyResponse(error);
+    if (denied) return denied;
+    if (error instanceof ZodError) return NextResponse.json({ error: "Invalid filing plan" }, { status: 400 });
     console.error("Librarian error:", error);
     const msg = String(error);
     if (msg.includes("429") || msg.toLowerCase().includes("quota")) {

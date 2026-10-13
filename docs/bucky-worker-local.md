@@ -56,6 +56,16 @@ The worker starts no inference if ChatGPT authentication cannot be confirmed, qu
 
 ## Recovery and source handling
 
+The worker now discovers the current native Codex executable inside the desktop
+app's managed installation on each account check and model turn. A desktop app
+update therefore does not strand it on a removed version directory. Existing
+configurations pointing to old managed paths recover automatically; custom
+runtime paths remain explicit. `--doctor` reports the resolved `runtimePath`
+and distinguishes `runtime-unavailable` from an unavailable quota reading.
+`--status` also reports whether its recorded process still exists and whether
+the status is stale. A ready account check does not mean the scheduled task is
+running; check both before starting work. No credential rotation is required.
+
 Every claimed attempt has an expiring server lease. Heartbeats renew it while work is active. Sleep, disconnection, pause, quota exhaustion, or a crash leave the last confirmed checkpoint in Postgres. A replacement attempt receives a new lease; a late result from an old process cannot apply changes.
 
 Documents are processed one text section or PDF page at a time. The worker preserves text sources verbatim and renders each PDF page locally for Codex vision. Page results are checkpointed under deterministic source IDs, so another worker/provider can continue without repeating completed sections. Document text, pages, and credentials are confined to a temporary job directory. Each model run uses a separate Codex home with a local copy of managed authentication, disabled personal plugins/hooks/MCP integrations, no shell or network tools, and a read-only workspace. Normal completion deletes those temporary files; a hard process kill can leave a protected temporary directory until the next worker start cleans it.

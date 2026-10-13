@@ -36,3 +36,20 @@ test("retained audio responds with the exact requested bytes and playable range 
     assert.equal(invalid.headers.get("content-range"), "bytes */16");
   } finally { await unlink(target); }
 });
+
+test("active uploaded content is an attachment with nosniff and cannot execute under the site origin", async () => {
+  const name = `active-test-${randomUUID()}.txt`;
+  const folder = path.join(process.cwd(), "public", "uploads");
+  const target = path.join(folder, name);
+  await mkdir(folder, { recursive: true });
+  await writeFile(target, "<script>synthetic marker</script>");
+  try {
+    const response = await retainedFileResponse(new Request("http://localhost/file"), { filePath: `/uploads/${name}`, fileName: name, fileType: "text/html" });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "application/octet-stream");
+    assert.match(response.headers.get("content-disposition")!, /^attachment;/);
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    assert.match(response.headers.get("content-security-policy")!, /sandbox/);
+    assert.equal(response.headers.get("cache-control"), "private, no-store");
+  } finally { await unlink(target); }
+});

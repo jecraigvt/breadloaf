@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { indexMaintenance, removeFromIndex } from "@/lib/embeddings";
+import { maintenancePatchSchema } from "@/lib/maintenance-contract";
+import { requestAccessContext, accessibleDocumentScopes, accessPolicyResponse, AccessPolicyError } from "@/lib/access-policy";
+import { filterScopedDerivedRows } from "@/lib/derived-source-access";
+
+async function assertRecordAccess(request: NextRequest, id: string) {
+  const access = await requestAccessContext(request);
+  const record = await prisma.maintenanceRecord.findUnique({ where: { id } });
+  if (!record) throw new AccessPolicyError("Not found", 404);
+  if (!(await filterScopedDerivedRows([record], accessibleDocumentScopes(access))).length) throw new AccessPolicyError("This maintenance source requires verified permission or an unlocked vault", 403);
+}
 
 export async function PATCH(
   request: NextRequest,
@@ -8,26 +18,19 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
-
-    const data: Record<string, unknown> = {};
-
-    if (body.title !== undefined) data.title = body.title.trim();
-    if (body.description !== undefined) data.description = body.description?.trim() || null;
-    if (body.category !== undefined) data.category = body.category;
-    if (body.performedBy !== undefined) data.performedBy = body.performedBy?.trim() || null;
-    if (body.performedAt !== undefined) data.performedAt = new Date(body.performedAt);
-    if (body.nextDueAt !== undefined) data.nextDueAt = body.nextDueAt ? new Date(body.nextDueAt) : null;
-    if (body.cost !== undefined) data.cost = body.cost ? parseFloat(body.cost) : null;
+    await assertRecordAccess(request, id);
+    const parsed = maintenancePatchSchema.safeParse(await request.json());
+    if (!parsed.success) return NextResponse.json({ error: "Invalid maintenance change." }, { status: 400 });
 
     const record = await prisma.maintenanceRecord.update({
       where: { id },
-      data,
+      data: parsed.data,
     });
     void indexMaintenance(record.id);
 
     return NextResponse.json(record);
   } catch (error) {
+    const denied = accessPolicyResponse(error); if (denied) return denied;
     console.error("Maintenance update error:", error);
     return NextResponse.json(
       { error: "Failed to update maintenance record" },
@@ -42,12 +45,14 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+    await assertRecordAccess(_request, id);
     await prisma.maintenanceRecord.delete({ where: { id } });
     void removeFromIndex("maintenance", id).catch((error) =>
       console.error("Maintenance index cleanup failed:", error)
     );
     return NextResponse.json({ success: true });
   } catch (error) {
+    const denied = accessPolicyResponse(error); if (denied) return denied;
     console.error("Maintenance delete error:", error);
     return NextResponse.json(
       { error: "Failed to delete maintenance record" },

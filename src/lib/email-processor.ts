@@ -1,186 +1,176 @@
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
+import { randomUUID } from "node:crypto";
+import { Prisma, type EmailLog } from "@prisma/client";
 import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { fetchUnseenEmails, emailConfigured, type InboundEmail, type InboundAttachment } from "@/lib/email-inbox";
+import { scanInbox, parseInboundEmail, markInboxEmailSeen, type InboundEmail, type InboundAttachment } from "@/lib/email-inbox";
+import { retainEmailSource, readEmailSource } from "@/lib/email-source";
+import { emailIntakeDisposition } from "@/lib/email-authentication";
+import { EMAIL_LEASE_MS, MAX_EMAIL_ATTEMPTS, TERMINAL_EMAIL_STATUSES, assertEmailLease, commitEmailAction, emailRetryAt } from "@/lib/email-workflow";
+import { buildHistoricalPhotoQuestionProposal, loadHistoricalPhotoRoster } from "@/lib/historical-photo";
 import { MODELS } from "@/lib/ai";
 import { indexDocument } from "@/lib/embeddings";
 import { resolveDocumentCategory } from "@/lib/document-categories";
-import { findOverlappingStay, createStayWithCalendarSync } from "@/lib/stays";
-import { generateId } from "@/lib/utils";
+import { findOverlappingStay, createStayInTransaction } from "@/lib/stays";
 import { sha256 } from "@/lib/archive-integrity";
 import { resolveDocumentTitle } from "@/lib/document-title";
 import { getOpenAIClient, withRetry } from "@/lib/openai-client";
 import { analyzeDocumentBuffer } from "@/lib/document-analysis";
 import { resolveSupportedFileType } from "@/lib/document-file-types";
-import { createHistoricalPhotoQuestion } from "@/lib/historical-photo";
+import { storeFileBuffer } from "@/lib/file-storage";
 
-// ─── Guardrails ─────────────────────────────────────────────────
-// Email is an untrusted inlet: it can only ADD stays, documents, and
-// bulletin notes. It can never modify or delete anything, and only
-// allowlisted family senders are processed at all.
-
-const DEFAULT_FAMILY_EMAILS = ["jecraigvt@gmail.com", "breadloafhillsite@gmail.com"];
-
-function allowedSenders(): Set<string> {
-  const extra = (process.env.FAMILY_EMAILS || "")
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-  return new Set([...DEFAULT_FAMILY_EMAILS, ...extra]);
+async function allowedSenders(): Promise<Set<string>> {
+  const members = await prisma.familyMember.findMany({ where: { accessApproved: true, canClaim: true, isMinor: false, deceased: false }, select: { email: true } });
+  return new Set([...members.flatMap((member) => member.email ? [member.email.trim().toLowerCase()] : []),
+    ...(process.env.FAMILY_EMAILS || "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean)]);
 }
 
-const POLL_INTERVAL_MS = 10 * 60 * 1000;
-let lastPollAt = 0;
-let polling = false;
-
-// Fire-and-forget entry point, called from page loads (same pattern as
-// calendar sync). Rate-limited so busy days don't hammer Gmail.
-export function pollInboxInBackground(): void {
-  if (!emailConfigured()) return;
-  const now = Date.now();
-  if (polling || now - lastPollAt < POLL_INTERVAL_MS) return;
-  lastPollAt = now;
-  polling = true;
-  processInbox()
-    .catch((err) => console.error("[Mail Room] poll failed:", err))
-    .finally(() => {
-      polling = false;
-    });
-}
-
-export interface InboxRunSummary {
-  unseen: number;
-  processed: { from: string; subject: string; actions: EmailActions }[];
-  skipped: { from: string; subject: string; reason: string }[];
-  errors: { subject: string; error: string }[];
-}
-
-export async function processInbox(): Promise<InboxRunSummary> {
-  const summary: InboxRunSummary = { unseen: 0, processed: [], skipped: [], errors: [] };
-  const emails = await fetchUnseenEmails();
-  summary.unseen = emails.length;
-  console.log(`[Mail Room] inbox checked: ${emails.length} unseen message(s)`);
-  if (emails.length === 0) return summary;
-
-  const allowed = allowedSenders();
-
-  for (const email of emails) {
-    // Claim the ledger row BEFORE processing — the unique messageId acts
-    // as a lock so concurrent polls (rapid manual triggers, page-load
-    // races) can't double-process an email during the ~30s of AI work.
-    const claimed = await claimEmail(email);
-    if (!claimed) {
-      summary.skipped.push({ from: email.fromEmail, subject: email.subject, reason: "already processed (or in progress)" });
-      continue;
-    }
-
-    // MAIL_ROOM_ALLOW_ALL=true disables the sender allowlist (set via
-    // Railway env). Anyone who emails the address can then add stays/docs/
-    // notes — flip it back off after the family's addresses are collected.
-    const allowAll = process.env.MAIL_ROOM_ALLOW_ALL === "true";
-    if (!allowAll && !allowed.has(email.fromEmail)) {
-      console.log(`[Mail Room] Ignoring email from non-family sender: ${email.fromEmail}`);
-      await updateLog(email.messageId, { ignored: "sender not on family allowlist" });
-      summary.skipped.push({ from: email.fromEmail, subject: email.subject, reason: "sender not on allowlist" });
-      continue;
-    }
-
-    try {
-      const actions = await processEmail(email);
-      await updateLog(email.messageId, actions);
-      await postAuditNote(email, actions);
-      summary.processed.push({ from: email.fromEmail, subject: email.subject, actions });
-    } catch (err) {
-      console.error(`[Mail Room] Failed to process "${email.subject}":`, err);
-      await updateLog(email.messageId, { error: String(err) });
-      summary.errors.push({ subject: email.subject, error: String(err) });
-    }
-  }
-  return summary;
-}
-
-interface EmailActions {
+export interface EmailActions {
   staysCreated: { guestName: string; checkIn: string; checkOut: string }[];
   staysAlreadyOnCalendar: { guestName: string; checkIn: string; checkOut: string }[];
   docsFiled: { title: string; category: string | null }[];
   notes: string[];
 }
-
-async function processEmail(email: InboundEmail): Promise<EmailActions> {
-  const actions: EmailActions = {
-    staysCreated: [],
-    staysAlreadyOnCalendar: [],
-    docsFiled: [],
-    notes: [],
-  };
-
-  // 1. Analyze the body: stay announcements + is the body itself a document?
-  let bodyIsDocument = false;
-  if (email.text.trim()) {
-    try {
-      const analysis = await analyzeEmailBody(email);
-      bodyIsDocument = analysis.bodyIsDocument;
-      const stays = analysis.stays;
-      for (const stay of stays) {
-        // Hard guards regardless of model confidence: never create stays in
-        // the past (forwarded/old emails) or implausibly far out
-        const checkOut = new Date(stay.checkOut);
-        const checkIn = new Date(stay.checkIn);
-        const monthsAhead = (checkIn.getTime() - Date.now()) / (30 * 24 * 3600 * 1000);
-        if (checkOut <= new Date() || monthsAhead > 18) {
-          actions.notes.push(
-            `Skipped ${stay.guestName} ${stay.checkIn}–${stay.checkOut} (dates in the past or too far out — old/forwarded email?)`
-          );
-          continue;
-        }
-        if (stay.confidence < 0.7) {
-          actions.notes.push(
-            `Possible visit mentioned (${stay.guestName}, ${stay.checkIn}–${stay.checkOut}) but not confident enough to add`
-          );
-          continue;
-        }
-        const duplicate = await findOverlappingStay(stay.guestName, checkIn, checkOut);
-        if (duplicate) {
-          actions.staysAlreadyOnCalendar.push(stay);
-          continue;
-        }
-        await createStayWithCalendarSync({
-          guestName: stay.guestName,
-          checkIn,
-          checkOut,
-          notes: `Added by Mail Room from ${email.fromName}'s email "${email.subject}"`,
-        });
-        actions.staysCreated.push(stay);
-      }
-    } catch (error) {
-      // Attachment filing remains available even if body interpretation is
-      // temporarily unavailable.
-      console.error(`[Mail Room] body analysis failed for "${email.subject}":`, error);
-      actions.notes.push("Bucky could not analyze the email body; attachments were still archived.");
-    }
-  }
-
-  // 2. If the body itself is substantive content (typed-in minutes, a
-  // report, detailed instructions), archive it as a document
-  if (bodyIsDocument) {
-    const filed = await archiveBodyAsDocument(email);
-    if (filed) actions.docsFiled.push(filed);
-  }
-
-  // 3. File attachments through the document pipeline
-  for (const attachment of email.attachments) {
-    const result = await fileAttachment(attachment, email);
-    if (result && "filed" in result) actions.docsFiled.push(result.filed);
-    else if (result && "skipped" in result) actions.notes.push(`Skipped attachment ${result.skipped}`);
-  }
-
-  return actions;
+export interface InboxRunSummary {
+  received: number;
+  processed: { from: string; subject: string; actions: EmailActions }[];
+  skipped: { from: string; subject: string; reason: string }[];
+  errors: { subject: string; error: string }[];
 }
 
-// ─── Body analysis (stays + is-this-a-document) ────────────────
+/** A scheduler or deliberate curator POST runs intake; page loads never process mail. */
+export async function processInbox(options: { maxEmails?: number } = {}): Promise<InboxRunSummary> {
+  const maxEmails = Math.min(Math.max(options.maxEmails ?? 6, 1), 20);
+  const summary: InboxRunSummary = { received: 0, processed: [], skipped: [], errors: [] };
+  const allowed = await allowedSenders();
+  try {
+    const cursor = await prisma.emailMailboxState.findUnique({ where: { id: "gmail-inbox" } });
+    summary.received = await scanInbox({ cursor, maxEmails,
+      receive: (email, source) => receiveEmail(email, source, allowed),
+      saveCursor: async ({ uidValidity, lastScannedUid }) => {
+        await prisma.$executeRaw`INSERT INTO "EmailMailboxState" ("id", "uidValidity", "lastScannedUid", "updatedAt")
+          VALUES ('gmail-inbox', ${uidValidity}, ${lastScannedUid}, NOW())
+          ON CONFLICT ("id") DO UPDATE SET
+          "lastScannedUid" = CASE WHEN "EmailMailboxState"."uidValidity" = ${uidValidity}
+            THEN GREATEST("EmailMailboxState"."lastScannedUid"::BIGINT, ${lastScannedUid}::BIGINT)::TEXT ELSE ${lastScannedUid} END,
+          "uidValidity" = ${uidValidity}, "updatedAt" = NOW()`;
+      },
+    });
+  } catch { summary.errors.push({ subject: "Mailbox check", error: "Gmail could not be checked; previously saved messages can still retry" }); }
 
+  const now = new Date();
+  const pending = await prisma.emailLog.findMany({ where: { nextAttemptAt: { lte: now }, attempts: { lt: MAX_EMAIL_ATTEMPTS },
+    OR: [{ status: "received" }, { status: "retry" }, { status: "processing", leaseExpiresAt: { lte: now } }] },
+    orderBy: [{ nextAttemptAt: "asc" }, { createdAt: "asc" }], take: maxEmails });
+  for (const candidate of pending) {
+    const row = await claimStoredEmail(candidate.id);
+    if (!row) continue;
+    try {
+      const actions = await processStoredEmail(row, allowed);
+      if (actions) summary.processed.push({ from: row.fromEmail, subject: row.subject || "(no subject)", actions });
+      else summary.skipped.push({ from: row.fromEmail, subject: row.subject || "(no subject)", reason: "Waiting for curator review" });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message.replace(/\s+/g, " ").slice(0, 300) : "Email processing failed";
+      await prisma.emailLog.updateMany({ where: { id: row.id, leaseToken: row.leaseToken, status: "processing" }, data: {
+        status: row.attempts >= MAX_EMAIL_ATTEMPTS ? "quarantined" : "retry", nextAttemptAt: emailRetryAt(row.attempts),
+        lastError: reason, leaseToken: null, leaseExpiresAt: null,
+      } });
+      summary.errors.push({ subject: row.subject || "(no subject)", error: "This message is retained and can be retried or reviewed" });
+    }
+  }
+  return summary;
+}
+
+export async function receiveEmail(email: InboundEmail, source: Buffer, allowed: Set<string>): Promise<boolean> {
+  const existing = await prisma.emailLog.findUnique({ where: { messageId: email.messageId } });
+  if (existing && (!existing.sourceChecksum || existing.sourceChecksum === email.sourceChecksum)) return TERMINAL_EMAIL_STATUSES.includes(existing.status);
+  // A duplicate RFC Message-ID with different bytes never overwrites an original source.
+  const messageId = existing ? `${email.messageId}#${email.sourceChecksum}` : email.messageId;
+  const status = emailIntakeDisposition({ authentication: email.authentication, knownSender: allowed.has(email.fromEmail), ownNotification: email.ownNotification });
+  const sourceChecksum = status === "ignored" ? null : await retainEmailSource(source);
+  await prisma.emailLog.upsert({ where: { messageId }, update: {}, create: {
+    messageId, fromEmail: email.fromEmail, senderName: email.fromName, subject: email.subject, receivedAt: email.receivedAt,
+    status, sourceChecksum, inboxUid: email.inboxUid, inboxUidValidity: email.inboxUidValidity,
+    authenticationStatus: email.authentication.verified ? "verified" : "unverified",
+    authenticationReason: email.authentication.reason,
+    ...(status === "quarantined" ? { lastError: allowed.has(email.fromEmail) ? "Sender authentication needs curator review" : "Sender is not approved for automatic filing" } : {}),
+    ...(status === "ignored" ? { actions: JSON.stringify({ ignored: "Breadloaf notification; no source retained" }) } : {}),
+  } });
+  return TERMINAL_EMAIL_STATUSES.includes(status);
+}
+
+async function claimStoredEmail(id: string): Promise<EmailLog | null> {
+  const now = new Date();
+  const leaseToken = randomUUID();
+  const result = await prisma.emailLog.updateMany({ where: { id, nextAttemptAt: { lte: now }, attempts: { lt: MAX_EMAIL_ATTEMPTS },
+    OR: [{ status: "received" }, { status: "retry" }, { status: "processing", leaseExpiresAt: { lte: now } }] },
+    data: { status: "processing", leaseToken, leaseExpiresAt: new Date(now.getTime() + EMAIL_LEASE_MS), attempts: { increment: 1 }, lastError: null } });
+  return result.count === 1 ? prisma.emailLog.findUnique({ where: { id } }) : null;
+}
+
+async function processStoredEmail(row: EmailLog, allowed: Set<string>): Promise<EmailActions | null> {
+  if (!row.sourceChecksum || !row.leaseToken) throw new Error("This historical message has no retained source; review it in Gmail");
+  const source = await readEmailSource(row.sourceChecksum);
+  const email = await parseInboundEmail(source, { uid: row.inboxUid || undefined, uidValidity: row.inboxUidValidity || undefined, receivedAt: row.receivedAt });
+  email.messageId = row.messageId;
+  const reviewed = Boolean(row.reviewedBy && row.reviewedAt);
+  if ((!email.authentication.verified || !allowed.has(email.fromEmail)) && !reviewed) {
+    await prisma.emailLog.updateMany({ where: { id: row.id, leaseToken: row.leaseToken }, data: { status: "quarantined", leaseToken: null, leaseExpiresAt: null, lastError: "Sender needs curator approval" } });
+    await markInboxEmailSeen(row).catch(() => {});
+    return null;
+  }
+  const leaseToken = row.leaseToken;
+  const heartbeat = setInterval(() => { void prisma.emailLog.updateMany({ where: { id: row.id, leaseToken, status: "processing", leaseExpiresAt: { gt: new Date() } },
+    data: { leaseExpiresAt: new Date(Date.now() + EMAIL_LEASE_MS) } }).catch(() => {}); }, 60000);
+  try {
+    let plan: BodyAnalysis;
+    if (row.processingPlan) plan = BodyAnalysisSchema.parse(row.processingPlan);
+    else {
+      plan = email.text.trim() ? await analyzeEmailBody(email) : { stays: [], bodyIsDocument: false };
+      const saved = await prisma.emailLog.updateMany({ where: { id: row.id, leaseToken, status: "processing", leaseExpiresAt: { gt: new Date() } }, data: { processingPlan: plan as unknown as Prisma.InputJsonValue } });
+      if (saved.count !== 1) throw new Error("The email attempt expired before its plan was saved");
+    }
+    const actions: EmailActions = { staysCreated: [], staysAlreadyOnCalendar: [], docsFiled: [], notes: [] };
+    if (email.additionalAttachmentCount) actions.notes.push(`${email.additionalAttachmentCount} additional attachments remain in the retained original for manual filing`);
+    for (const stay of plan.stays) {
+      const checkIn = new Date(stay.checkIn), checkOut = new Date(stay.checkOut);
+      const monthsAhead = (checkIn.getTime() - Date.now()) / (30 * 24 * 3600 * 1000);
+      if (Number.isNaN(checkIn.getTime()) || Number.isNaN(checkOut.getTime()) || checkOut <= checkIn || checkOut <= new Date() || monthsAhead > 18 || stay.confidence < 0.7) {
+        actions.notes.push(`Visit mention for ${stay.guestName} needs confirmation; no dates were added`); continue;
+      }
+      const receipt = await commitEmailAction({ messageId: row.messageId, leaseToken, kind: "stay", identity: JSON.stringify([stay.guestName.toLowerCase(), stay.checkIn, stay.checkOut]),
+        find: (tx, id) => tx.stay.findUnique({ where: { id } }),
+        create: async (tx) => {
+          const overlap = await findOverlappingStay(stay.guestName, checkIn, checkOut, tx);
+          if (overlap) return { entity: await tx.stay.findUnique({ where: { id: overlap.id } }), kind: "stay_existing" };
+          const result = await createStayInTransaction(tx, { guestName: stay.guestName, checkIn, checkOut, notes: `Mail Room: ${email.fromName}'s email "${email.subject}"`, status: "confirmed" });
+          return { entity: result.stay, kind: result.created ? "stay_created" : "stay_existing" };
+        },
+      });
+      (receipt.kind === "stay_created" ? actions.staysCreated : actions.staysAlreadyOnCalendar).push(stay);
+    }
+    if (plan.bodyIsDocument) {
+      const buffer = Buffer.from([`From: ${email.fromName} <${email.fromEmail}>`, `Delivered: ${email.receivedAt.toISOString()}`, `Subject: ${email.subject}`, "", email.text].join("\n"));
+      const name = (email.subject || "email").replace(/[^\w\- ]+/g, "").slice(0, 60) || "email";
+      const filed = await archiveEmailDocument({ buffer, fileName: `${name}.txt`, fileType: "text/plain", email, leaseToken, identity: "email-body" });
+      if (filed) actions.docsFiled.push(filed);
+    }
+    for (const attachment of email.attachments) {
+      if (attachment.inline) continue;
+      const type = resolveSupportedFileType(attachment.contentType, attachment.filename);
+      if (!type || attachment.size > 30 * 1024 * 1024) { actions.notes.push(`Attachment "${attachment.filename}" is retained with the email but needs manual filing`); continue; }
+      const filed = await archiveEmailDocument({ buffer: attachment.content, fileName: attachment.filename, fileType: type, email, leaseToken, identity: `attachment:${sha256(attachment.content)}` });
+      if (filed) actions.docsFiled.push(filed);
+    }
+    await postAuditNote(email, actions, leaseToken);
+    const completed = await prisma.emailLog.updateMany({ where: { id: row.id, leaseToken, status: "processing", leaseExpiresAt: { gt: new Date() } }, data: {
+      status: "completed", actions: JSON.stringify(actions), leaseToken: null, leaseExpiresAt: null, lastError: null,
+    } });
+    if (completed.count !== 1) throw new Error("The email attempt no longer owns completion");
+    await markInboxEmailSeen(row).catch(() => {});
+    return actions;
+  } finally { clearInterval(heartbeat); }
+}
 interface ExtractedStay {
   guestName: string;
   checkIn: string;
@@ -213,7 +203,7 @@ Email from: ${email.fromName} <${email.fromEmail}>
 Subject: ${email.subject}
 
 Email body:
-${email.text}
+${email.text.slice(0, 15000)}
 
 Find statements that clearly announce someone WILL be staying at the property ("we'll be up July 10-17", "the Kellers arrive the 12th through the 19th"). Rules:
 - Only definite plans. "We might come up in August" or questions are NOT announcements (confidence < 0.5).
@@ -246,295 +236,56 @@ Return {"stays": [], "bodyIsDocument": false} if there is nothing.`;
   };
 }
 
-// Save the email body itself as an archived .txt document and run it
-// through the same categorization pipeline as any other text file.
-async function archiveBodyAsDocument(
-  email: InboundEmail
-): Promise<{ title: string; category: string | null } | null> {
-  try {
-    const content = [
-      `From: ${email.fromName} <${email.fromEmail}>`,
-      `Date: ${email.receivedAt.toISOString()}`,
-      `Subject: ${email.subject}`,
-      "",
-      email.text,
-    ].join("\n");
 
-    const uploadDir = path.join(process.cwd(), "public", "uploads");
-    await mkdir(uploadDir, { recursive: true });
-    const uniqueName = `${generateId()}.txt`;
-    const buffer = Buffer.from(content, "utf-8");
-    await writeFile(path.join(uploadDir, uniqueName), buffer);
-
-    const categories = await prisma.category.findMany({
-      select: { name: true, description: true },
-      orderBy: { name: "asc" },
-    });
-    const safeName = (email.subject || "email").replace(/[^\w\- ]+/g, "").trim().slice(0, 60) || "email";
-    const analysis = await analyzeDocumentBuffer({
-      buffer,
-      fileName: `${safeName}.txt`,
-      fileType: "text/plain",
-      categories,
-    });
-    const result = analysis.result;
-    if (!result) {
-      console.error(
-        `[Mail Room] ${analysis.state} for email body "${email.subject}"; filing for review: ${analysis.error}`
-      );
-    }
-    const resolution = result
-      ? await resolveDocumentCategory({
-          suggestedCategory: result.suggestedCategory,
-          newCategoryProposal: result.newCategoryProposal,
-          confidence: result.confidence,
-        })
-      : {
-          categoryId: null,
-          categoryName: null,
-          categorySlug: null,
-          categoryCreated: false,
-          needsReview: true,
-        };
-
-    const doc = await prisma.document.create({
-      data: {
-        title: resolveDocumentTitle({
-          suggestedTitle: result?.title,
-          fileName: `${safeName}.txt`,
-          summary: result?.summary,
-          extractedText: result?.extractedText,
-          fileType: "text/plain",
-          createdAt: email.receivedAt,
-        }),
-        description: result?.summary || null,
-        fileName: `${safeName}.txt`,
-        filePath: `/uploads/${uniqueName}`,
-        fileType: "text/plain",
-        fileSize: buffer.length,
-        categoryId: resolution.categoryId,
-        tags: result?.tags?.length ? JSON.stringify(result.tags) : null,
-        aiSummary: result?.summary || null,
-        aiExtractedText: result?.extractedText || null,
-        analysisState: analysis.state,
-        analysisError: analysis.error,
-        uploadedBy: `${email.fromName} (email)`,
-        checksum: sha256(buffer),
-      },
-      include: { category: true },
-    });
-
-    void indexDocument(doc.id);
-
-    if (result?.intakeType === "historical_photo") {
-      await createHistoricalPhotoQuestion({
-        documentId: doc.id,
-        documentTitle: doc.title,
-        analysis: result,
-      }).catch((error) =>
-        console.error("[Mail Room] historical-photo question creation failed:", error)
-      );
-    }
-
-    if (resolution.needsReview) {
-      try {
-        await prisma.buckyQuestion.create({
-          data: {
-            question: `Where should "${doc.title}" be filed?`,
-            context: `This substantive email body could not be confidently categorized. It came from ${email.fromName} with subject "${email.subject}".`,
-            questionType: "archive",
-            sourceType: "document",
-            sourceId: doc.id,
-            sourceLabel: doc.title,
-            options: result?.suggestedCategory ? [result.suggestedCategory, "Other"] : undefined,
-          },
-        });
-      } catch (error) {
-        console.error("[Mail Room] body filing question creation failed:", error);
-      }
-    }
-
-    return { title: doc.title, category: resolution.categoryName };
-  } catch (err) {
-    console.error("[Mail Room] body archive failed:", err);
-    return null;
-  }
-}
-
-// ─── Attachment filing ──────────────────────────────────────────
-
-const SAVE_SIZE_LIMIT = 30 * 1024 * 1024;
-
-type FileResult =
-  | { filed: { title: string; category: string | null } }
-  | { skipped: string }
-  | null; // inline signature image — ignore without comment
-
-async function fileAttachment(
-  attachment: InboundAttachment,
-  email: InboundEmail
-): Promise<FileResult> {
-  if (attachment.inline) return null;
-
-  const type = resolveSupportedFileType(attachment.contentType, attachment.filename);
-  if (!type) {
-    return {
-      skipped: `"${attachment.filename}" — refused because Breadloaf cannot read ${attachment.contentType || "that file type"}`,
-    };
-  }
-  if (attachment.size > SAVE_SIZE_LIMIT) {
-    return { skipped: `"${attachment.filename}" — too large (${Math.round(attachment.size / 1024 / 1024)}MB)` };
-  }
-
-  // Save to /uploads like the web upload path
-  const uploadDir = path.join(process.cwd(), "public", "uploads");
-  await mkdir(uploadDir, { recursive: true });
-  const ext = attachment.filename.split(".").pop() || "bin";
-  const uniqueName = `${generateId()}.${ext}`;
-  await writeFile(path.join(uploadDir, uniqueName), attachment.content);
-
-  // Categorize (save-only formats and oversized-for-AI files skip analysis
-  // and land in Needs Review instead)
-  const categories = await prisma.category.findMany({
-    select: { name: true, description: true },
-    orderBy: { name: "asc" },
-  });
-
-  const analysis = await analyzeDocumentBuffer({
-    buffer: attachment.content,
-    fileName: attachment.filename,
-    fileType: type,
-    categories,
-  });
-  const result = analysis.result;
-  if (!result) {
-    console.error(
-      `[Mail Room] ${analysis.state} for ${attachment.filename}; filing for review: ${analysis.error}`
-    );
-  }
-
-  const resolution = result
-    ? await resolveDocumentCategory({
-        suggestedCategory: result.suggestedCategory,
-        newCategoryProposal: result.newCategoryProposal,
-        confidence: result.confidence,
-      })
-    : { categoryId: null, categoryName: null, categorySlug: null, categoryCreated: false, needsReview: true };
-
-  const doc = await prisma.document.create({
-    data: {
-      title: resolveDocumentTitle({
-        suggestedTitle: result?.title,
-        fileName: attachment.filename,
-        summary: result?.summary,
-        extractedText: result?.extractedText,
-        fileType: type,
-        createdAt: email.receivedAt,
-      }),
-      description: result?.summary || null,
-      fileName: attachment.filename,
-      filePath: `/uploads/${uniqueName}`,
-      fileType: type,
-      fileSize: attachment.size,
-      categoryId: resolution.categoryId,
-      tags: result?.tags?.length ? JSON.stringify(result.tags) : null,
-      aiSummary: result?.summary || null,
-      aiExtractedText: result?.extractedText || null,
-      analysisState: analysis.state,
-      analysisError: analysis.error,
-      uploadedBy: `${email.fromName} (email)`,
-      checksum: sha256(attachment.content),
+async function archiveEmailDocument(input: { buffer: Buffer; fileName: string; fileType: string; email: InboundEmail; leaseToken: string; identity: string }): Promise<{ title: string; category: string | null } | null> {
+  const checksum = sha256(input.buffer);
+  const existing = await prisma.document.findFirst({ where: { checksum, deletedAt: null, accessScope: "family" }, include: { category: true } });
+  const stored = existing ? null : await storeFileBuffer({ buffer: input.buffer, fileName: input.fileName, contentType: input.fileType });
+  const categories = existing ? [] : await prisma.category.findMany({ select: { name: true, description: true }, orderBy: { name: "asc" } });
+  const analysis = existing ? null : await analyzeDocumentBuffer({ buffer: input.buffer, fileName: input.fileName, fileType: input.fileType, categories });
+  const result = analysis?.result;
+  const photoQuestion = result?.intakeType === "historical_photo"
+    ? buildHistoricalPhotoQuestionProposal(result, await loadHistoricalPhotoRoster()) : null;
+  const receipt = await commitEmailAction({ messageId: input.email.messageId, leaseToken: input.leaseToken, kind: "document", identity: input.identity,
+    find: (tx, id) => tx.document.findUnique({ where: { id }, include: { category: true } }),
+    create: async (tx) => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtextextended(${`mail-document:${checksum}`}, 0))`;
+      const duplicate = await tx.document.findFirst({ where: { checksum, deletedAt: null, accessScope: "family" }, include: { category: true } });
+      if (duplicate) return { entity: duplicate };
+      if (!stored || !analysis) throw new Error("The duplicate document changed while the email was being filed");
+      const resolution = result ? await resolveDocumentCategory({ suggestedCategory: result.suggestedCategory, newCategoryProposal: result.newCategoryProposal, confidence: result.confidence }, tx)
+        : { categoryId: null, categoryName: null, needsReview: true };
+      const doc = await tx.document.create({ data: {
+        title: resolveDocumentTitle({ suggestedTitle: result?.title, fileName: input.fileName, summary: result?.summary, extractedText: result?.extractedText, fileType: input.fileType, createdAt: input.email.receivedAt }),
+        description: result?.summary || null, fileName: input.fileName, filePath: stored.filePath, fileType: stored.fileType, fileSize: stored.fileSize,
+        categoryId: resolution.categoryId, tags: result?.tags?.length ? JSON.stringify(result.tags) : null, aiSummary: result?.summary || null,
+        aiExtractedText: result?.extractedText || null, analysisState: analysis.state, analysisError: analysis.error,
+        uploadedBy: `${input.email.fromName} (email${input.email.authentication.verified ? " verified" : ", curator approved"})`, checksum, accessScope: "family",
+      }, include: { category: true } });
+      if (resolution.needsReview) await tx.buckyQuestion.create({ data: {
+        question: `Where should "${doc.title}" be filed?`, context: `Retained from ${input.email.fromName}'s email "${input.email.subject}"; automatic filing needs review.`,
+        questionType: "archive", sourceType: "document", sourceId: doc.id, sourceLabel: doc.title,
+      } });
+      if (photoQuestion) await tx.buckyQuestion.create({ data: {
+        ...photoQuestion, questionType: "historical_photo_identification", sourceType: "document", sourceId: doc.id, sourceLabel: doc.title,
+      } });
+      return { entity: doc };
     },
-    include: { category: true },
   });
-
-  void indexDocument(doc.id);
-
-  if (result?.intakeType === "historical_photo") {
-    await createHistoricalPhotoQuestion({
-      documentId: doc.id,
-      documentTitle: doc.title,
-      analysis: result,
-    }).catch((error) =>
-      console.error("[Mail Room] historical-photo question creation failed:", error)
-    );
-  }
-
-  if (resolution.needsReview) {
-    try {
-      await prisma.buckyQuestion.create({
-        data: {
-          question: `Where should "${doc.title}" be filed?`,
-          context: result?.suggestedCategory
-            ? `My best guess was "${result.suggestedCategory}", but I wasn't confident enough to file it automatically. It arrived as an attachment to "${email.subject}".`
-            : `I couldn't read or confidently categorize this attachment to "${email.subject}".`,
-          questionType: "archive",
-          sourceType: "document",
-          sourceId: doc.id,
-          sourceLabel: doc.title,
-          options: result?.suggestedCategory ? [result.suggestedCategory, "Other"] : undefined,
-        },
-      });
-    } catch (error) {
-      console.error("[Mail Room] needs-review question creation failed:", error);
-    }
-  }
-
-  return { filed: { title: doc.title, category: resolution.categoryName } };
+  if (!receipt.entity) return null;
+  void indexDocument(receipt.entity.id).catch(() => {});
+  return { title: receipt.entity.title, category: receipt.entity.category?.name || null };
 }
 
-// ─── Audit trail ────────────────────────────────────────────────
-
-// Returns false if another run already claimed (or completed) this email.
-async function claimEmail(email: InboundEmail): Promise<boolean> {
-  try {
-    await prisma.emailLog.create({
-      data: {
-        messageId: email.messageId,
-        fromEmail: email.fromEmail,
-        subject: email.subject,
-        receivedAt: email.receivedAt,
-        actions: JSON.stringify({ status: "processing" }),
-      },
-    });
-    return true;
-  } catch {
-    return false; // unique collision — someone else owns it
-  }
-}
-
-async function updateLog(messageId: string, actions: unknown): Promise<void> {
-  try {
-    await prisma.emailLog.update({
-      where: { messageId },
-      data: { actions: JSON.stringify(actions) },
-    });
-  } catch {
-    // log row vanished — nothing to update
-  }
-}
-
-async function postAuditNote(email: InboundEmail, actions: EmailActions): Promise<void> {
-  const lines: string[] = [];
-  for (const s of actions.staysCreated) {
-    lines.push(`Added stay: ${s.guestName}, ${s.checkIn} → ${s.checkOut} (now on the calendar)`);
-  }
-  for (const s of actions.staysAlreadyOnCalendar) {
-    lines.push(`${s.guestName}'s visit ${s.checkIn} → ${s.checkOut} was already on the calendar`);
-  }
-  for (const d of actions.docsFiled) {
-    lines.push(
-      d.category ? `Filed "${d.title}" under ${d.category}` : `Saved "${d.title}" — needs review on the Documents page`
-    );
-  }
-  lines.push(...actions.notes);
-
-  if (lines.length === 0) return; // nothing actionable — stay quiet
-
-  await prisma.bulletinMessage.create({
-    data: {
-      author: "📧 Mail Room",
-      content: `From ${email.fromName}'s email "${email.subject}":\n${lines.map((l) => `• ${l}`).join("\n")}`,
-    },
+async function postAuditNote(email: InboundEmail, actions: EmailActions, leaseToken: string): Promise<void> {
+  const lines = [
+    ...actions.staysCreated.map((stay) => `Saved visit: ${stay.guestName}, ${stay.checkIn} → ${stay.checkOut}; Google sync is queued`),
+    ...actions.staysAlreadyOnCalendar.map((stay) => `${stay.guestName}'s visit ${stay.checkIn} → ${stay.checkOut} was already recorded`),
+    ...actions.docsFiled.map((doc) => doc.category ? `Filed "${doc.title}" under ${doc.category}` : `Saved "${doc.title}" for archive review`), ...actions.notes,
+  ];
+  if (!lines.length) return;
+  await commitEmailAction({ messageId: email.messageId, leaseToken, kind: "audit", identity: "email-audit",
+    find: (tx, id) => tx.bulletinMessage.findUnique({ where: { id } }),
+    create: async (tx) => ({ entity: await tx.bulletinMessage.create({ data: { author: "📧 Mail Room", content: `From ${email.fromName}'s email "${email.subject}":\n${lines.map((line) => `• ${line}`).join("\n")}` } }) }),
   });
 }

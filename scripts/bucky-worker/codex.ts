@@ -6,6 +6,7 @@ import path from "node:path";
 import { createCanvas, DOMMatrix, ImageData, Path2D } from "@napi-rs/canvas";
 import { codexEnvironment } from "../../src/lib/bucky-codex-policy";
 import { readCodexAvailability } from "../../src/lib/bucky-codex-account";
+import { resolveCodexRuntime } from "../../src/lib/bucky-codex-runtime";
 import { MODELS } from "../../src/lib/ai-models";
 import type { WorkerConfig } from "./config";
 import type { SourcePart } from "./client";
@@ -28,8 +29,8 @@ export async function createCodexRunner(config: WorkerConfig, directory: string,
   // Fail closed when the managed login uses an unsupported credential store.
   const auth = JSON.parse(await readFile(path.join(isolatedHome, "auth.json"), "utf8"));
   if (!auth.tokens || auth.OPENAI_API_KEY) throw new Error("This Codex credential store is not supported by the isolated worker; use managed ChatGPT file authentication");
-  const codex = new Codex({
-    codexPathOverride: config.codexPath,
+  const createClient = (runtimePath: string) => new Codex({
+    codexPathOverride: runtimePath,
     env: { ...codexEnvironment(), CODEX_HOME: isolatedHome },
     config: {
       forced_login_method: "chatgpt", cli_auth_credentials_store: "file", project_doc_max_bytes: 0,
@@ -46,6 +47,9 @@ export async function createCodexRunner(config: WorkerConfig, directory: string,
       signal.throwIfAborted();
       const availability = await readCodexAvailability(config.codexPath);
       if (!availability.ready) throw new SubscriptionUnavailableError(availability.reason);
+      const runtimePath = await resolveCodexRuntime(config.codexPath);
+      if (!runtimePath) throw new SubscriptionUnavailableError("runtime-unavailable");
+      const codex = createClient(runtimePath);
       signal.throwIfAborted();
       const thread = codex.startThread({ model: MODELS.pro, workingDirectory: directory, sandboxMode: "read-only",
         networkAccessEnabled: false, webSearchMode: "disabled", approvalPolicy: "never", skipGitRepoCheck: true });

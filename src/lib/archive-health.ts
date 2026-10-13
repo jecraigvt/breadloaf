@@ -43,7 +43,7 @@ export interface ArchiveHealth {
   verification: ArchiveVerificationSummary;
 }
 
-export async function getArchiveHealth(): Promise<ArchiveHealth> {
+export async function getArchiveHealth(scopes: string[] = ["family"]): Promise<ArchiveHealth> {
   // Prefer what a harness actually recorded; fall back to the constant only
   // until the first run lands. A literal that reads as a measurement is the
   // same failure shape as a placeholder summary — running the checks is what
@@ -79,14 +79,14 @@ export async function getArchiveHealth(): Promise<ArchiveHealth> {
   const [stateGroups, documentsAddedAfterMeasurement, issues] = await Promise.all([
     prisma.document.groupBy({
       by: ["analysisState"],
-      where: { deletedAt: null },
+      where: { deletedAt: null, accessScope: { in: scopes } },
       _count: { _all: true },
     }),
     prisma.document.count({
-      where: { deletedAt: null, createdAt: { gt: measuredThrough } },
+      where: { deletedAt: null, accessScope: { in: scopes }, createdAt: { gt: measuredThrough } },
     }),
     prisma.document.findMany({
-      where: { deletedAt: null, accessScope: "family", analysisState: { not: "ok" } },
+      where: { deletedAt: null, accessScope: { in: scopes }, analysisState: { not: "ok" } },
       select: { id: true, title: true, analysisState: true, analysisError: true },
       orderBy: { createdAt: "desc" }, take: 20,
     }),

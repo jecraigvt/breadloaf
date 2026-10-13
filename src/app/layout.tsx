@@ -28,6 +28,11 @@ export const metadata: Metadata = {
   title: "Breadloaf Hill | Family Hub",
   description: "A family record of the house at 3995 Vermont Route 125 — Ripton, Addison County.",
   manifest: "/manifest.json",
+  icons: {
+    icon: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+  appleWebApp: { capable: true, title: "Breadloaf Hill", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

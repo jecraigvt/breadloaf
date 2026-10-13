@@ -74,7 +74,9 @@ async function configuredHash(): Promise<string | null> {
 }
 
 async function sessionSecret(): Promise<string | null> {
-  return process.env.AUTH_SECRET?.trim() || configuredHash();
+  const hash = await configuredHash();
+  // Rotation changes this verifier, invalidating every previously issued vault cookie.
+  return hash ? `${process.env.AUTH_SECRET?.trim() || ""}:${hash}` : null;
 }
 
 export function getAccountsVaultCookieName(): string {

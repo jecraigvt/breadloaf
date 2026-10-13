@@ -1,0 +1,39 @@
+name: Weekly encrypted archive backup
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 10 * * 0'
+permissions: {}
+concurrency:
+  group: archive-backup
+  cancel-in-progress: false
+jobs:
+  backup:
+    if: vars.ARCHIVE_BACKUP_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - name: Snapshot actual originals and verify the independent encrypted copy
+        env:
+          ARCHIVE_BACKUP_TOKEN: ${{ secrets.ARCHIVE_BACKUP_TOKEN }}
+        run: |
+          test -n "$ARCHIVE_BACKUP_TOKEN"
+          status_file=$(mktemp)
+          trap 'rm -f "$status_file"' EXIT
+          curl --fail --silent --show-error --max-time 45 --request POST \
+            --header "Authorization: Bearer $ARCHIVE_BACKUP_TOKEN" \
+            https://breadloafhill.com/api/archive/backup > "$status_file"
+          for attempt in $(seq 1 60); do
+            curl --fail --silent --show-error --max-time 45 \
+              --header "Authorization: Bearer $ARCHIVE_BACKUP_TOKEN" \
+              https://breadloafhill.com/api/archive/backup > "$status_file"
+            state=$(jq -r '.state' "$status_file")
+            case "$state" in
+              verified) echo 'Encrypted independent copy verified; full restoration status is unchanged.'; exit 0 ;;
+              failed|interrupted) echo 'Archive backup failed or was interrupted; previous success was retained.'; exit 1 ;;
+              running) sleep 60 ;;
+              *) echo 'Unexpected backup state; no verified success was recorded.'; exit 1 ;;
+            esac
+          done
+          echo 'Backup status did not complete within the monitoring window.'
+          exit 1

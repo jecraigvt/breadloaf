@@ -11,28 +11,31 @@ import {
   FamilyChangeValidationError,
 } from "@/lib/family-change";
 import { FAMILY_CHANGE_QUESTION_TYPE } from "@/lib/family-change-contract";
+import { AccessPolicyError, accessPolicyResponse, accessibleDocumentScopes, isPrivilegedActor, lockVerifiedActorForAccessChange, requestAccessContext } from "@/lib/access-policy";
+import { filterScopedDerivedRows } from "@/lib/derived-source-access";
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+ try {
+  const access = await requestAccessContext(request);
   const { id } = await params;
   const body = await request.json();
-  const answeredBy =
-    (await getFamilyFromAuthToken(request.cookies.get(getAuthCookieName())?.value)) ||
-    (typeof body.answeredBy === "string" ? body.answeredBy : "Family member");
+  const actor = await getCurrentActor(request);
+  const answeredBy = actor?.fullName || "Family member";
 
   const existing = await prisma.buckyQuestion.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Question not found" }, { status: 404 });
+  if (!(await filterScopedDerivedRows([existing], accessibleDocumentScopes(access))).length) throw new AccessPolicyError("This question's source requires verified permission or an unlocked vault", 403);
 
   if (body.action === "confirm_family_change") {
     if (existing.questionType !== FAMILY_CHANGE_QUESTION_TYPE) {
       return NextResponse.json({ error: "This is not a family-change proposal" }, { status: 400 });
     }
-    const actor = await getCurrentActor(request);
-    if (!actor) {
+    if (!isPrivilegedActor(actor)) {
       return NextResponse.json(
-        { error: "Claim your identity before confirming a family-tree change" },
+        { error: "A verified caretaker or board member must confirm family-tree changes" },
         { status: 403 }
       );
     }
@@ -40,14 +43,18 @@ export async function PATCH(
       const result = await confirmFamilyChangeProposal({
         questionId: id,
         minorDecisions: body.minorDecisions,
-        confirmedBy: actor.fullName,
+        confirmedBy: actor!.fullName,
+        authorize: async (tx) => {
+          const current = await lockVerifiedActorForAccessChange(tx, request, actor!);
+          if (!isPrivilegedActor(current)) throw new AccessPolicyError("Your family-directory permissions have changed", 403);
+        },
       });
       try {
         await recordBuckyLedgerEntry({
           actionType: "confirm_family_change",
-          summary: `${actor.displayName} confirmed a family-tree proposal`,
+          summary: `${actor!.displayName} confirmed a family-tree proposal`,
           details: result.answer,
-          initiatedBy: actor.fullName,
+          initiatedBy: actor!.fullName,
           entityType: "family_change_proposal",
           entityId: id,
           sourceType: existing.sourceType || undefined,
@@ -62,6 +69,7 @@ export async function PATCH(
       }
       return NextResponse.json({ questionId: id, applied: true, result });
     } catch (error) {
+      const denied = accessPolicyResponse(error); if (denied) return denied;
       const message = error instanceof Error ? error.message : "Unable to confirm proposal";
       return NextResponse.json(
         { error: message },
@@ -81,6 +89,7 @@ export async function PATCH(
       initiatedBy: answeredBy,
       entityType: "question",
       entityId: question.id,
+      sourceType: question.sourceType || undefined, sourceId: question.sourceId || undefined, sourceLabel: question.sourceLabel || undefined,
     });
     return NextResponse.json({ question });
   }
@@ -96,6 +105,8 @@ export async function PATCH(
   if (!answer) return NextResponse.json({ error: "Answer required" }, { status: 400 });
 
   const { question, promoted } = await prisma.$transaction(async (tx) => {
+    const source = await tx.buckyQuestion.findUnique({ where: { id } });
+    if (!source || !(await filterScopedDerivedRows([source], accessibleDocumentScopes(access), tx)).length) throw new AccessPolicyError("The question source is no longer available with your access", 403);
     const question = await tx.buckyQuestion.update({
       where: { id },
       data: { status: "answered", answer, answeredBy, answeredAt: new Date() },
@@ -130,7 +141,7 @@ export async function PATCH(
 
   let buckyResponse: string | null = null;
   let processingError = !memoryIndexed;
-  try {
+  try { if (promoted.memory.accessScope === "family") {
     buckyResponse = await chatWithAssistant(
       [
         {
@@ -138,9 +149,16 @@ export async function PATCH(
           content: `[ANSWER TO YOUR ASYNCHRONOUS FOLLOW-UP]\nQuestion: ${question.question}\nContext: ${question.context || "None"}\nAnswer from ${answeredBy}: ${answer}\nSource: ${question.sourceLabel || question.sourceType || "Bucky follow-up"}${question.sourceType && question.sourceId ? `\nRelated ${question.sourceType} id: ${question.sourceId}` : ""}\n\nThe raw human answer is already preserved as a provenance-linked memory; do not call save_memory merely to duplicate it. Process this answer now. Apply any clear, low-risk structured update using your tools — for a document filing question, call set_document_category with the related document id and the category the answer indicates. If it remains ambiguous or would merge/delete records, create a new focused question instead.`,
         },
       ],
-      answeredBy
+      answeredBy,
+      undefined,
+      { actor, authorizeFamilyChange: async tx => {
+        if (!actor) throw new AccessPolicyError("A verified identity is required", 403);
+        const current = await lockVerifiedActorForAccessChange(tx, request, actor);
+        if (!isPrivilegedActor(current)) throw new AccessPolicyError("Your permission to change family roles has changed", 403);
+        return current;
+      } }
     );
-  } catch (error) {
+  } } catch (error) {
     processingError = true;
     console.error("Bucky follow-up processing failed:", error);
   }
@@ -152,4 +170,5 @@ export async function PATCH(
     memoryIndexed,
     processed: !processingError,
   });
+ } catch (error) { return accessPolicyResponse(error) || NextResponse.json({ error: "The question could not be updated" }, { status: 503 }); }
 }

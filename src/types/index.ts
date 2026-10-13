@@ -65,6 +65,9 @@ export interface StayType {
   notes: string | null;
   status: string;
   googleEventId: string | null;
+  calendarSyncState?: string;
+  calendarSyncRevision?: number;
+  alreadyExisted?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

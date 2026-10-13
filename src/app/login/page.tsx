@@ -1,196 +1,48 @@
 "use client";
 
-import { useState, useRef, useEffect, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Mountain, Loader2 } from "lucide-react";
+import { useEffect, useState, Suspense, type FormEvent } from "react";
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { Loader2, Mail, ArrowRight } from "lucide-react";
+import "./sign-in.css";
+import { safeSignInDestination } from "@/lib/sign-in-destination";
 
-export default function LoginPage() {
-  return (
-    <Suspense>
-      <LoginContent />
-    </Suspense>
-  );
-}
-
-function LoginContent() {
-  const [pin, setPin] = useState(["", "", "", ""]);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [family, setFamily] = useState("");
-  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
-  // Check if already authenticated
-  useEffect(() => {
-    fetch("/api/auth")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.authenticated) {
-          router.replace(searchParams.get("from") || "/");
-        }
-      })
-      .catch(() => {});
-  }, [router, searchParams]);
-
-  const handleChange = (index: number, value: string) => {
-    if (!/^\d*$/.test(value)) return;
-
-    const newPin = [...pin];
-    newPin[index] = value.slice(-1);
-    setPin(newPin);
-    setError("");
-
-    // Auto-advance to next input
-    if (value && index < 3) {
-      inputRefs.current[index + 1]?.focus();
-    }
-
-    // Auto-submit when all 4 digits entered
-    if (value && index === 3) {
-      const fullPin = newPin.join("");
-      if (fullPin.length === 4) {
-        submitPin(fullPin);
-      }
-    }
-  };
-
-  const handleKeyDown = (index: number, e: React.KeyboardEvent) => {
-    if (e.key === "Backspace" && !pin[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
-    }
-  };
-
-  const handlePaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 4);
-    if (pasted.length === 4) {
-      setPin(pasted.split(""));
-      submitPin(pasted);
-    }
-  };
-
-  const submitPin = async (fullPin: string) => {
-    setLoading(true);
-    setError("");
-
-    try {
-      const res = await fetch("/api/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin: fullPin }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        setFamily(data.family);
-        // Set username in localStorage
-        localStorage.setItem("breadloaf-username", data.family);
-        // Brief pause to show welcome, then hard-redirect so the browser
-        // sends the fresh auth cookie on a full page load (soft navigation
-        // via router.replace can stall inside the RSC request).
-        const dest = searchParams.get("from") || "/";
-        setTimeout(() => {
-          window.location.assign(dest);
-        }, 600);
-      } else {
-        setError("Invalid PIN");
-        setPin(["", "", "", ""]);
-        inputRefs.current[0]?.focus();
-      }
-    } catch {
-      setError("Something went wrong");
-      setPin(["", "", "", ""]);
-    }
-
-    setLoading(false);
-  };
-
-  return (
-    <div className="min-h-screen relative flex items-center justify-center">
-      {/* Background */}
-      <img
-        src="/photos/hilltop-view.jpg"
-        alt=""
-        className="absolute inset-0 w-full h-full object-cover"
-      />
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-
-      {/* Login card */}
-      <div className="relative z-10 w-full max-w-sm mx-4">
-        <div className="bg-white/95 backdrop-blur rounded-2xl shadow-2xl p-8 text-center">
-          {/* Logo */}
-          <div className="w-16 h-16 rounded-2xl bg-green-700 flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <Mountain size={32} className="text-white" />
-          </div>
-
-          <h1 className="text-2xl font-bold text-stone-800 mb-1">
-            Breadloaf Hill
-          </h1>
-          <p className="text-stone-500 text-sm mb-8">
-            Enter your family PIN to continue
-          </p>
-
-          {/* Success state */}
-          {family ? (
-            <div className="py-4">
-              <p className="text-green-700 font-semibold text-lg">
-                Welcome, {family} Craigs!
-              </p>
-              <Loader2
-                size={20}
-                className="animate-spin text-green-600 mx-auto mt-3"
-              />
-            </div>
-          ) : (
-            <>
-              {/* PIN inputs */}
-              <div className="flex gap-3 justify-center mb-6">
-                {pin.map((digit, i) => (
-                  <input
-                    key={i}
-                    ref={(el) => { inputRefs.current[i] = el; }}
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={1}
-                    value={digit}
-                    onChange={(e) => handleChange(i, e.target.value)}
-                    onKeyDown={(e) => handleKeyDown(i, e)}
-                    onPaste={i === 0 ? handlePaste : undefined}
-                    className={`w-14 h-16 text-center text-2xl font-bold rounded-xl border-2 focus:outline-none transition-all ${
-                      error
-                        ? "border-red-300 bg-red-50 text-red-700 animate-shake"
-                        : "border-stone-200 bg-stone-50 text-stone-800 focus:border-green-500 focus:ring-2 focus:ring-green-200"
-                    }`}
-                    autoFocus={i === 0}
-                    disabled={loading}
-                  />
-                ))}
-              </div>
-
-              {/* Error */}
-              {error && (
-                <p className="text-red-500 text-sm mb-4 font-medium">
-                  {error}
-                </p>
-              )}
-
-              {/* Loading */}
-              {loading && (
-                <Loader2
-                  size={24}
-                  className="animate-spin text-green-600 mx-auto mb-4"
-                />
-              )}
-            </>
-          )}
-
-          <p className="text-stone-400 text-xs mt-6">
-            Craig Family Property &middot; Ripton, VT
-          </p>
-        </div>
-      </div>
-    </div>
-  );
+type AccessStatus = { authenticated: boolean; emailEnabled: boolean; emailConfigured: boolean; pinAvailable: boolean };
+export default function LoginPage() { return <Suspense fallback={<p className="family-sign-in">One moment…</p>}><SignIn /></Suspense>; }
+function SignIn() {
+  const search = useSearchParams();
+  const [status, setStatus] = useState<AccessStatus | null>(null);
+  const [email, setEmail] = useState(""); const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false); const [sent, setSent] = useState(false); const [error, setError] = useState("");
+  useEffect(() => { let active = true; fetch("/api/auth", { cache: "no-store" }).then(r => r.json()).then(data => {
+    if (!active) return;
+    if (data.authenticated) window.location.assign(safeSignInDestination(search.get("from")));
+    else setStatus(data);
+  }).catch(() => { if (active) setError("We couldn't reach the site. Please try again shortly."); }); return () => { active = false; }; }, [search]);
+  async function sendLink(event: FormEvent) {
+    event.preventDefault(); if (busy) return; setBusy(true); setError("");
+    try { const response = await fetch("/api/auth/link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, from: search.get("from") }) });
+      const data = await response.json(); if (!response.ok) throw new Error(data.error || "The link couldn't be requested. Please try again."); setSent(true);
+    } catch (e) { setError(e instanceof Error ? e.message : "Please try again shortly."); } finally { setBusy(false); }
+  }
+  async function usePin(event: FormEvent) {
+    event.preventDefault(); if (busy) return; setBusy(true); setError("");
+    try { const response = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin }) });
+      const data = await response.json(); if (!response.ok) throw new Error(data.error || "Sign-in failed."); localStorage.setItem("breadloaf-username", data.family);
+      window.location.assign(safeSignInDestination(search.get("from")));
+    } catch (e) { setError(e instanceof Error ? e.message : "Please try again shortly."); setBusy(false); }
+  }
+  return <section className="family-sign-in" aria-labelledby="sign-in-title">
+    <Link href="/" className="family-sign-in-brand">Breadloaf <em>Hill.</em></Link><p className="eyebrow">The family field guide</p>
+    <h1 id="sign-in-title">Come on <em>in.</em></h1>
+    {sent ? <div role="status"><Mail aria-hidden="true" size={28} /><h2>Check your email</h2><p>If {email} is on the family list, your link is on its way. It works once and expires in 20 minutes.</p><p>Check your spam folder too. Open the link on the device you want to use.</p><button type="button" className="btn-quiet" onClick={() => setSent(false)}>Use another email</button></div> : <>
+      <p>Use your family email to receive a sign-in link. We’ll remember this device for future visits.</p>
+      {status?.emailEnabled && <form onSubmit={sendLink}><label htmlFor="family-email">Your email</label><input id="family-email" type="email" autoComplete="email" inputMode="email" value={email} onChange={e => setEmail(e.target.value)} required maxLength={254} autoFocus /><button type="submit" className="btn-ember" disabled={busy || !email.trim() || !status.emailConfigured}>{busy ? <Loader2 size={18} className="animate-spin" aria-hidden="true" /> : <Mail size={18} aria-hidden="true" />} Send sign-in link</button><p className="family-sign-in-small">{status.emailConfigured ? "No password to remember." : "Email delivery is temporarily unavailable. Contact the family caretaker."}</p></form>}
+      {status?.pinAvailable && <details open={!status.emailEnabled}><summary>Use the family PIN during the transition</summary><form onSubmit={usePin}><label htmlFor="family-pin">Family PIN</label><input id="family-pin" type="password" inputMode="numeric" autoComplete="off" value={pin} onChange={e => setPin(e.target.value)} required maxLength={32} /><button className="btn-ember" disabled={busy || !pin}>Open Breadloaf Hill <ArrowRight size={17} aria-hidden="true" /></button></form></details>}
+      {!status && !error && <p role="status">One moment…</p>}
+    </>}
+    {error && <p className="family-sign-in-error" role="alert">{error}</p>}
+    <Link className="family-sign-in-help" href="/login/request-access">Need your email added to the family list?</Link>
+    <div className="family-sign-in-public"><Link href="/emergency">Emergency contacts</Link><Link href="/guide">Local guide</Link><Link href="/weather">Weather</Link></div>
+  </section>;
 }

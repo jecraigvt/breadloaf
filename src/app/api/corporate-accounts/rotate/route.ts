@@ -7,8 +7,8 @@ import {
   hashAccountsVaultPassword,
   validateAccountsVaultToken,
 } from "@/lib/accounts-vault-auth";
-import { getAuthCookieName, getFamilyFromAuthToken } from "@/lib/auth";
 import { recordBuckyLedgerEntry } from "@/lib/bucky-ledger";
+import { requirePrivilegedActor, accessPolicyResponse } from "@/lib/access-policy";
 
 interface RotatedAccount {
   id: string;
@@ -39,6 +39,9 @@ function validRotatedAccount(value: unknown): value is RotatedAccount {
 }
 
 export async function POST(request: NextRequest) {
+ let actor;
+ try { actor = await requirePrivilegedActor(request); }
+ catch (error) { return accessPolicyResponse(error) || NextResponse.json({ error: "Unable to verify permission" }, { status: 503 }); }
   if (!(await validateAccountsVaultToken(request.cookies.get(getAccountsVaultCookieName())?.value))) {
     return NextResponse.json({ error: "Vault unlock required" }, { status: 401 });
   }
@@ -67,9 +70,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const changedBy =
-    (await getFamilyFromAuthToken(request.cookies.get(getAuthCookieName())?.value)) ||
-    "Family member";
+  const changedBy = actor.fullName;
   const passwordHash = await hashAccountsVaultPassword(newPassword);
   await prisma.$transaction([
     ...rotated.map((account: RotatedAccount) =>

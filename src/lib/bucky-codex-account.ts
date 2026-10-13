@@ -1,17 +1,21 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { canUseSubscription, codexEnvironment, quotaRemainingPercent } from "./bucky-codex-policy";
+import { resolveCodexRuntime } from "./bucky-codex-runtime";
 
 export interface CodexAvailability {
   ready: boolean;
   remaining: number | null;
-  reason: "ready" | "reserve" | "sign-in-required" | "quota-unavailable";
+  reason: "ready" | "reserve" | "sign-in-required" | "quota-unavailable" | "runtime-unavailable";
+  runtimePath?: string;
 }
 
 /** Read-only app-server adapter. Never calls login, token export, reset, or purchase APIs. */
 export async function readCodexAvailability(executable: string, timeoutMs = 20_000): Promise<CodexAvailability> {
-  const unavailable: CodexAvailability = { ready: false, remaining: null, reason: "quota-unavailable" };
-  const child = spawn(executable, ["app-server", "--listen", "stdio://"], {
+  const runtimePath = await resolveCodexRuntime(executable);
+  if (!runtimePath) return { ready: false, remaining: null, reason: "runtime-unavailable" };
+  const unavailable: CodexAvailability = { ready: false, remaining: null, reason: "quota-unavailable", runtimePath };
+  const child = spawn(runtimePath, ["app-server", "--listen", "stdio://"], {
     stdio: ["pipe", "pipe", "ignore"], windowsHide: true, env: codexEnvironment(),
   });
   const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
@@ -49,7 +53,7 @@ export async function readCodexAvailability(executable: string, timeoutMs = 20_0
     if (auth?.account?.type !== "chatgpt") return { ...unavailable, reason: "sign-in-required" };
     const remaining = quotaRemainingPercent(await request("account/rateLimits/read"));
     const ready = canUseSubscription(auth, remaining);
-    return { ready, remaining, reason: ready ? "ready" : remaining === null ? "quota-unavailable" : "reserve" };
+    return { ready, remaining, runtimePath, reason: ready ? "ready" : remaining === null ? "quota-unavailable" : "reserve" };
   } catch { return unavailable; }
   finally { clearTimeout(timeout); lines.close(); child.kill(); stop(); }
 }

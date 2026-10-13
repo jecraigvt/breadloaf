@@ -6,15 +6,18 @@ import {
   type AssistantVoiceRecording,
 } from "@/lib/ai";
 import { getCurrentActor } from "@/lib/actor";
+import { lockVerifiedActorForAccessChange } from "@/lib/access-policy";
 import { recordBuckyLedgerEntry } from "@/lib/bucky-ledger";
 import { indexMemory } from "@/lib/embeddings";
 import { fileDocumentFromBuffer, type FiledDocument } from "@/lib/file-document";
 import { storeFileBuffer } from "@/lib/file-storage";
-import { syncFromGoogleCalendar } from "@/lib/google-calendar";
 import { prisma } from "@/lib/prisma";
 import { captureQuickVoiceNote } from "@/lib/voice-note";
 import { processVoiceUpload } from "@/lib/voice-upload";
 import { tryAnalyzeRetainedDictation } from "@/lib/dictation-intelligence";
+import { authClientKey, consumeAuthAttempt } from "@/lib/auth-rate-limit";
+import { STORED_FILE_SIZE_LIMIT } from "@/lib/file-storage";
+import { z } from "zod";
 
 interface ChatMessage {
   role: "user" | "model";
@@ -26,6 +29,22 @@ interface CapturedVoiceNote {
   topic: string;
   transcript: string;
   actorName: string | null;
+}
+
+const messagesSchema = z.array(z.object({ role: z.enum(["user", "model"]), content: z.string().max(16000) })).min(1).max(40)
+  .refine(messages => messages.reduce((size, message) => size + message.content.length, 0) <= 80000, "Conversation is too long");
+
+async function limitedJson(request: Request): Promise<unknown> {
+  const reader = request.body?.getReader();
+  if (!reader) throw new Error("Message body required");
+  const chunks: Uint8Array[] = []; let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read(); if (done) break;
+    size += value.byteLength;
+    if (size > 400000) { await reader.cancel(); throw new Error("Message body is too large"); }
+    chunks.push(value);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
 function isOverloaded(error: unknown): boolean {
@@ -58,6 +77,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const actor = await getCurrentActor(request);
+    const key = actor?.memberId || authClientKey(request);
+    if (!await consumeAuthAttempt(`assistant:${key}`, 30, 60 * 60 * 1000) ||
+      !await consumeAuthAttempt("assistant:site", 200, 24 * 60 * 60 * 1000)) {
+      return new Response("Bucky has reached the conversation limit for now. Your other family tools are still available; try again later.", { status: 429 });
+    }
     const actorName = actor?.fullName || null;
     let messages: ChatMessage[];
     let attachmentContext = "";
@@ -65,16 +89,19 @@ export async function POST(request: NextRequest) {
 
     const contentType = request.headers.get("content-type") || "";
     if (contentType.includes("multipart/form-data")) {
+      if (Number(request.headers.get("content-length")) > STORED_FILE_SIZE_LIMIT + 1024 * 1024) return new Response("Attach at most 100 MB at a time.", { status: 413 });
       const formData = await request.formData();
       try {
         messages = JSON.parse((formData.get("messages") as string) || "[]");
       } catch {
         return new Response("Invalid messages payload", { status: 400 });
       }
+      if (!messagesSchema.safeParse(messages).success) return new Response("Send a shorter conversation with valid messages.", { status: 400 });
 
       const files = formData
         .getAll("files")
         .filter((file): file is File => file instanceof File && file.size > 0);
+      if (files.length > 10 || files.reduce((size, file) => size + file.size, 0) > STORED_FILE_SIZE_LIMIT) return new Response("Attach at most 10 files totalling 100 MB.", { status: 413 });
       const failed: string[] = [];
 
       for (const file of files) {
@@ -94,11 +121,12 @@ export async function POST(request: NextRequest) {
                         sourceType: "voice_note",
                         sourceId: checksum,
                         filePath: { not: null },
+                        accessScope: "family",
                       },
                       select: { filePath: true },
                     }),
                     prisma.document.findFirst({
-                      where: { checksum, deletedAt: null },
+                      where: { checksum, deletedAt: null, accessScope: "family" },
                       select: { filePath: true },
                     }),
                   ]);
@@ -115,7 +143,7 @@ export async function POST(request: NextRequest) {
               triage: triageTextDocument,
               captureQuickNote: (input) => captureQuickVoiceNote({
                 findExisting: (sourceId) => prisma.jarvisMemory.findFirst({
-                  where: { sourceType: "voice_note", sourceId, status: "active" },
+                  where: { sourceType: "voice_note", sourceId, status: "active", accessScope: "family" },
                   select: { id: true, topic: true, filePath: true },
                 }),
                 createMemory: (data) => prisma.jarvisMemory.create({
@@ -213,20 +241,22 @@ Respond to what the person said and take any appropriate native action. Do not c
         attachmentContext += "\nThe original audio and unedited automated transcript are retained. A separate internal analysis attempts source-linked connections. Acknowledge the saved dictation briefly; do not present a rewritten dictation or a detailed internal summary to the speaker. Any maintenance description must be one short sentence based only on this dictation.";
       }
     } else {
-      const body = await request.json();
-      messages = body.messages;
+      try {
+        const body = await limitedJson(request) as { messages?: unknown };
+        messages = messagesSchema.parse(body.messages);
+      } catch { return new Response("Send a shorter conversation with valid messages.", { status: 400 }); }
     }
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return new Response("Messages array required", { status: 400 });
     }
 
-    await syncFromGoogleCalendar().catch(() => {});
     const responseText = await chatWithAssistant(
       messages,
       actorName || undefined,
       attachmentContext,
-      { actor, ...(maintenanceVoiceRecordings.length ? { voiceRecordings: maintenanceVoiceRecordings } : {}) }
+      { actor, ...(actor?.verified ? { authorizeFamilyChange: (tx) => lockVerifiedActorForAccessChange(tx, request, actor) } : {}),
+        ...(maintenanceVoiceRecordings.length ? { voiceRecordings: maintenanceVoiceRecordings } : {}) }
     );
     return new Response(responseText, {
       headers: { "Content-Type": "text/plain; charset=utf-8" },

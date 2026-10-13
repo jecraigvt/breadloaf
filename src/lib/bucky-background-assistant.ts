@@ -4,6 +4,7 @@ import type { ActorContext } from "@/lib/actor";
 import { prisma } from "@/lib/prisma";
 import { enqueueBuckyJob } from "@/lib/bucky-jobs";
 import { queueExistingDocument } from "@/lib/bucky-background-documents";
+import { isPrivilegedActor } from "@/lib/access-policy";
 
 const documentIds = z.array(z.string().trim().min(1).max(128)).min(1).max(50).transform((ids) => Array.from(new Set(ids)));
 const instructions = z.string().trim().min(1).max(8000);
@@ -51,7 +52,7 @@ export async function queueAssistantBackgroundWork(args: Record<string, unknown>
   const parsed = queueSchema.safeParse(args);
   if (!parsed.success) return { success: false, error: "Document analysis needs an exact documentId from the archive; archive or website review needs clear instructions. Up to 50 source documents may be specified." };
   const input = parsed.data;
-  if (input.kind === "site_improvement" && !actor?.isCurator && !actor?.isBoardMember) {
+  if (input.kind === "site_improvement" && !isPrivilegedActor(actor)) {
     return { success: false, error: "Website improvement requests require the signed-in curator or board identity. A name mentioned in chat does not grant that role." };
   }
   let job: JobSummary;

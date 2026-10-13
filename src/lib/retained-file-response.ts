@@ -1,6 +1,6 @@
-import { readFile, realpath } from "node:fs/promises";
-import path from "node:path";
+import { readFile } from "node:fs/promises";
 import { NextResponse } from "next/server";
+import { containedRetainedPath, retainedResponseType } from "@/lib/retained-file-security";
 
 export function byteRange(value: string | null, size: number): { start: number; end: number } | null {
   if (!value) return null;
@@ -15,15 +15,15 @@ export function byteRange(value: string | null, size: number): { start: number; 
 export async function retainedFileResponse(request: Request, file: { filePath: string; fileName: string; fileType: string }, download = false) {
   if (!file.filePath.startsWith("/uploads/")) return NextResponse.json({ error: "Invalid retained file" }, { status: 404 });
   try {
-    const root = await realpath(path.join(process.cwd(), "public", "uploads"));
-    const resolved = await realpath(path.join(root, file.filePath.slice("/uploads/".length)));
-    const relative = path.relative(root, resolved);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) return NextResponse.json({ error: "Invalid retained file" }, { status: 404 });
+    const resolved = await containedRetainedPath(file.filePath);
     const bytes = await readFile(resolved);
+    const safeType = retainedResponseType(file.fileType);
     const headers = {
-      "Content-Type": file.fileType || "application/octet-stream",
-      "Content-Disposition": `${download ? "attachment" : "inline"}; filename="${file.fileName.replace(/["\r\n]/g, "")}"`,
-      "Cache-Control": "private, max-age=3600", "Accept-Ranges": "bytes",
+      "Content-Type": safeType.fileType,
+      "Content-Disposition": `${download || !safeType.inline ? "attachment" : "inline"}; filename="${file.fileName.replace(/["\r\n\\]/g, "")}"`,
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "sandbox; default-src 'none'",
+      "Cache-Control": "private, no-store", "Accept-Ranges": "bytes",
     };
     let range;
     try { range = byteRange(request.headers.get("range"), bytes.length); }

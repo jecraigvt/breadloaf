@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { MAINTENANCE_CATEGORIES, propertyTodayDateKey } from "@/lib/maintenance-contract";
+import { requestSavedState } from "@/lib/saved-state";
 import { Header } from "@/components/layout/header";
 import { dictationDisplaySummary } from "@/lib/dictation-analysis";
 import {
@@ -70,17 +72,7 @@ const ASSET_CATEGORY_LABELS: Record<string, string> = {
   other: "Other",
 };
 
-const CATEGORIES = [
-  "Septic",
-  "Plumbing",
-  "Electrical",
-  "Roofing",
-  "HVAC",
-  "Grounds",
-  "Pest Control",
-  "Appliances",
-  "General",
-];
+const CATEGORIES = MAINTENANCE_CATEGORIES;
 
 const CATEGORY_COLORS: Record<string, string> = {
   Septic: "bg-amber-100 text-amber-700",
@@ -104,6 +96,9 @@ export default function MaintenancePage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const loadRevision = useRef(0);
   const handledFragmentRef = useRef<string | null>(null);
 
   // Form state
@@ -112,14 +107,10 @@ export default function MaintenancePage() {
   const [formCategory, setFormCategory] = useState("General");
   const [formPerformedBy, setFormPerformedBy] = useState("");
   const [formPerformedAt, setFormPerformedAt] = useState(
-    new Date().toISOString().split("T")[0]
+    propertyTodayDateKey()
   );
   const [formNextDueAt, setFormNextDueAt] = useState("");
   const [formCost, setFormCost] = useState("");
-
-  useEffect(() => {
-    fetchRecords();
-  }, [filterCategory]);
 
   useEffect(() => {
     fetch("/api/assets")
@@ -155,23 +146,25 @@ export default function MaintenancePage() {
     return () => window.removeEventListener("hashchange", scrollToLinkedRecord);
   }, [loading, records]);
 
-  const fetchRecords = async () => {
+  const fetchRecords = useCallback(async () => {
+    const revision = ++loadRevision.current;
     setLoading(true);
     const params = new URLSearchParams();
     if (filterCategory !== "All") params.set("category", filterCategory);
-    const res = await fetch(`/api/maintenance?${params}`);
-    if (res.ok) {
-      setRecords(await res.json());
-    }
-    setLoading(false);
-  };
+    try {
+      const saved = await requestSavedState<MaintenanceRecord[]>(`/api/maintenance?${params}`, { cache: "no-store" });
+      if (revision === loadRevision.current) { setRecords(saved); setError(""); }
+    } catch { if (revision === loadRevision.current) setError("Maintenance records could not be loaded. Try again."); }
+    finally { if (revision === loadRevision.current) setLoading(false); }
+  }, [filterCategory]);
+  useEffect(() => { void fetchRecords(); }, [fetchRecords]);
 
   const resetForm = () => {
     setFormTitle("");
     setFormDescription("");
     setFormCategory("General");
     setFormPerformedBy("");
-    setFormPerformedAt(new Date().toISOString().split("T")[0]);
+    setFormPerformedAt(propertyTodayDateKey());
     setFormNextDueAt("");
     setFormCost("");
     setEditingId(null);
@@ -190,8 +183,9 @@ export default function MaintenancePage() {
   };
 
   const submitForm = async () => {
-    if (!formTitle.trim() || !formPerformedAt) return;
+    if (!formTitle.trim() || !formPerformedAt || submitting) return;
     setSubmitting(true);
+    setError("");
 
     const body = {
       title: formTitle,
@@ -208,24 +202,26 @@ export default function MaintenancePage() {
       : "/api/maintenance";
     const method = editingId ? "PATCH" : "POST";
 
-    const res = await fetch(url, {
+    try {
+      await requestSavedState(url, {
       method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    });
-
-    if (res.ok) {
+      });
       resetForm();
       setShowForm(false);
-      fetchRecords();
-    }
-    setSubmitting(false);
+      await fetchRecords();
+    } catch (error) { setError(error instanceof Error ? error.message : "The record was not saved. Try again."); }
+    finally { setSubmitting(false); }
   };
 
   const deleteRecord = async (id: string) => {
+    if (deletingId) return;
     if (!confirm("Delete this maintenance record?")) return;
-    await fetch(`/api/maintenance/${id}`, { method: "DELETE" });
-    setRecords((prev) => prev.filter((r) => r.id !== id));
+    setDeletingId(id); setError("");
+    try { await requestSavedState(`/api/maintenance/${id}`, { method: "DELETE" }); setRecords((prev) => prev.filter((r) => r.id !== id)); }
+    catch { setError("The record could not be deleted. It remains in the log."); }
+    finally { setDeletingId(null); }
   };
 
   const overdueRecords = records.filter((r) => isMaintenanceOverdue(r.nextDueAt));
@@ -238,6 +234,7 @@ export default function MaintenancePage() {
       />
 
       <div className="max-w-5xl mx-auto px-4 py-4 space-y-4">
+        {error && <div role="alert" className="p-3 border border-red-200 rounded-lg text-red-800"><p>{error}</p><button className="underline mt-2" onClick={() => void fetchRecords()}>Reload records</button></div>}
         {/* Overdue warnings */}
         {overdueRecords.length > 0 && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4">
@@ -678,6 +675,7 @@ export default function MaintenancePage() {
                         </button>
                         <button
                           onClick={() => deleteRecord(record.id)}
+                          disabled={deletingId !== null}
                           className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-700 transition-colors hover:border-red-300 hover:bg-red-100 hover:text-red-800 focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2"
                           aria-label={`Delete ${record.title}`}
                           title="Delete record"

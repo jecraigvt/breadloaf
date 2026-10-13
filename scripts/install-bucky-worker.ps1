@@ -26,7 +26,12 @@ if (-not (Test-Path -LiteralPath $configPath) -or -not (Test-Path -LiteralPath $
   throw 'First register this worker using npm run worker:register. See docs/bucky-worker-local.md.'
 }
 $workerConfig = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-$workerConfig | Add-Member -NotePropertyName codexPath -NotePropertyValue $codexExecutable -Force
+# The desktop app replaces its versioned bin directories on updates. The worker
+# discovers the current native executable at each account check/model turn.
+$storedCodexPath = $codexExecutable
+$managedCodexRoot = Join-Path $env:LOCALAPPDATA 'OpenAI/Codex/bin'
+if ($codexExecutable.StartsWith([IO.Path]::GetFullPath($managedCodexRoot) + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { $storedCodexPath = 'codex' }
+$workerConfig | Add-Member -NotePropertyName codexPath -NotePropertyValue $storedCodexPath -Force
 $workerConfig | Add-Member -NotePropertyName repository -NotePropertyValue $repositoryPath -Force
 $workerConfig | Add-Member -NotePropertyName mode -NotePropertyValue 'local' -Force
 $workerConfig | Add-Member -NotePropertyName paused -NotePropertyValue $false -Force
@@ -51,14 +56,18 @@ foreach ($rule in $currentRules) {
 if (-not $aclMatches) {
   # Change only the DACL. Rewriting an unchanged owner/security descriptor on a
   # protected directory can require SeSecurityPrivilege under Windows PS 5.1.
-  $acl = New-Object Security.AccessControl.DirectorySecurity
+  $acl = $currentAcl
+  foreach ($rule in $currentRules) { $acl.RemoveAccessRuleSpecific($rule) }
   $acl.SetAccessRuleProtection($true, $false)
   foreach ($sidValue in $allowedSids) {
     $sid = New-Object Security.Principal.SecurityIdentifier $sidValue
     $rule = New-Object Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', $inheritance, $propagation, 'Allow')
     $acl.AddAccessRule($rule)
   }
-  Set-Acl -LiteralPath $workerRoot -AclObject $acl
+  # Set-Acl can rewrite the full descriptor under Windows PowerShell 5.1 and
+  # request SeSecurityPrivilege for its audit section. Persist only modified
+  # access rules through the native .NET API, retaining owner/audit metadata.
+  ([IO.DirectoryInfo]::new($workerRoot)).SetAccessControl($acl)
 }
 foreach ($secretPath in @($tokenPath, $configPath)) {
   $fileAcl = Get-Acl -LiteralPath $secretPath
@@ -66,7 +75,7 @@ foreach ($secretPath in @($tokenPath, $configPath)) {
   if ($fileAcl.AreAccessRulesProtected -or $explicitRules.Count -gt 0) {
     foreach ($rule in $explicitRules) { $fileAcl.RemoveAccessRuleSpecific($rule) }
     $fileAcl.SetAccessRuleProtection($false, $false)
-    Set-Acl -LiteralPath $secretPath -AclObject $fileAcl
+    ([IO.FileInfo]::new($secretPath)).SetAccessControl($fileAcl)
   }
 }
 

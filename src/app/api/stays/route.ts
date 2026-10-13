@@ -1,28 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import {
-  createCalendarEvent,
-  syncFromGoogleCalendar,
-} from "@/lib/google-calendar";
+import { createStayWithCalendarSync } from "@/lib/stays";
+import { parseStayDate } from "@/lib/stay-dates";
+import { StayInputError, validateStayInput } from "@/lib/stay-input";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const from = searchParams.get("from");
   const to = searchParams.get("to");
-  const sync = searchParams.get("sync");
-
-  // Trigger Google Calendar sync if requested
-  if (sync === "true") {
-    const stats = await syncFromGoogleCalendar();
-    if (stats.created > 0 || stats.updated > 0 || stats.deleted > 0) {
-      console.log("Calendar sync:", stats);
-    }
-  }
-
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { deletedAt: null };
   if (from || to) {
-    where.checkOut = from ? { gt: new Date(from) } : undefined;
-    where.checkIn = to ? { lte: new Date(to) } : undefined;
+    try {
+      if (from) where.checkOut = { gt: parseStayDate(from) };
+      if (to) where.checkIn = { lte: parseStayDate(to) };
+    } catch { return NextResponse.json({ error: "Use valid from/to dates in YYYY-MM-DD format" }, { status: 400 }); }
   }
 
   const rooms = await prisma.room.findMany({
@@ -65,56 +56,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { guestName, roomId, checkIn, checkOut, notes, status } =
-      await request.json();
-
-    if (!guestName?.trim() || !checkIn || !checkOut) {
-      return NextResponse.json(
-        { error: "Guest name, check-in, and check-out dates are required" },
-        { status: 400 }
-      );
-    }
-
-    const checkInDate = new Date(checkIn);
-    const checkOutDate = new Date(checkOut);
-
-    if (checkOutDate <= checkInDate) {
-      return NextResponse.json(
-        { error: "Check-out must be after check-in" },
-        { status: 400 }
-      );
-    }
-
-    const stay = await prisma.stay.create({
-      data: {
-        guestName: guestName.trim(),
-        roomId: roomId || null,
-        checkIn: checkInDate,
-        checkOut: checkOutDate,
-        notes: notes?.trim() || null,
-        status: status || "confirmed",
-      },
-      include: { room: true },
-    });
-
-    // Sync to Google Calendar
-    try {
-      const eventId = await createCalendarEvent(stay);
-      if (eventId) {
-        console.log("Calendar event created:", eventId);
-      }
-    } catch (err) {
-      console.error("Calendar sync failed:", err);
-    }
-
-    // Re-fetch to include googleEventId
-    const updatedStay = await prisma.stay.findUnique({
-      where: { id: stay.id },
-      include: { room: true },
-    });
-
-    return NextResponse.json(updatedStay || stay);
+    const body = await request.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new StayInputError("Enter visit details");
+    const input = validateStayInput(body);
+    const stay = await createStayWithCalendarSync({ ...input, allowRoomOverlap: body.allowRoomOverlap === true });
+    return NextResponse.json(stay);
   } catch (error) {
+    if (error instanceof StayInputError) return NextResponse.json({ error: error.message, conflicts: error.conflicts }, { status: error.status });
     console.error("Stay creation error:", error);
     return NextResponse.json(
       { error: "Failed to create stay" },

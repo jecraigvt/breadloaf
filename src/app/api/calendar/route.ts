@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
   const isDownload = searchParams.get("download") === "true";
 
   const stays = await prisma.stay.findMany({
+    where: { deletedAt: null },
     include: { room: true },
     orderBy: { checkIn: "asc" },
   });
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest) {
       stay.notes || "",
     ]
       .filter(Boolean)
-      .join("\\n");
+      .join("\n");
 
     lines.push(
       "BEGIN:VEVENT",

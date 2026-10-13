@@ -1,9 +1,10 @@
 import type { BuckyQuestion, JarvisMemory, Prisma } from "@prisma/client";
+import { filterScopedDerivedRows } from "./derived-source-access";
 
-interface AnsweredQuestion extends Pick<
+type AnsweredQuestion = Pick<
   BuckyQuestion,
   "id" | "question" | "context" | "questionType" | "targetPerson" | "sourceType" | "sourceId" | "sourceLabel"
-> {}
+>;
 
 export interface PromotedQuestionMemory {
   memory: JarvisMemory;
@@ -43,6 +44,9 @@ export async function promoteQuestionAnswerToMemory(
   const answer = options.answer.trim();
   if (!answer) throw new Error("Cannot promote an empty question answer");
   const content = memoryContent(options.question, answer);
+  if (!(await filterScopedDerivedRows([options.question], ["family", "board", "vault"], tx)).length) throw new Error("Question source is no longer available");
+  const accessScope = (await filterScopedDerivedRows([options.question], ["family"], tx)).length ? "family"
+    : (await filterScopedDerivedRows([options.question], ["family", "board"], tx)).length ? "board" : "vault";
   const existing = await tx.jarvisMemory.findFirst({
     where: { sourceType: "question", sourceId: options.question.id, status: "active" },
     orderBy: { updatedAt: "desc" },
@@ -63,7 +67,7 @@ export async function promoteQuestionAnswerToMemory(
       subject: options.question.sourceLabel || options.question.targetPerson || undefined,
       confidence: 1,
       importance: 0.85,
-      accessScope: "family",
+      accessScope,
     },
   });
   if (existing) {

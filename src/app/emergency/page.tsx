@@ -1,242 +1,40 @@
+import Link from "next/link";
+import { Phone } from "lucide-react";
 import { Header } from "@/components/layout/header";
-import {
-  Phone,
-  Stethoscope,
-  Wrench,
-  Zap,
-  PawPrint,
-  Plus,
-  Shield,
-  Trash2,
-} from "lucide-react";
+import { PrintEmergencyCard } from "@/components/print-emergency-card";
 
-interface ContactCard {
-  name: string;
-  phone?: string;
-  description?: string;
-  placeholder?: boolean;
-}
-
-interface ContactSection {
-  title: string;
-  icon: React.ReactNode;
-  color: string;
-  borderColor: string;
-  bgColor: string;
-  iconBg: string;
-  contacts: ContactCard[];
-}
-
-const sections: ContactSection[] = [
-  {
-    title: "Medical",
-    icon: <Stethoscope size={20} />,
-    color: "text-blue-700",
-    borderColor: "border-blue-200",
-    bgColor: "bg-blue-50",
-    iconBg: "bg-blue-100",
-    contacts: [
-      {
-        name: "Poison Control",
-        phone: "1-800-222-1222",
-        description: "24/7 nationwide hotline",
-      },
-      {
-        name: "Porter Medical Center",
-        phone: "(802) 388-4701",
-        description: "Nearest hospital — Middlebury, VT",
-      },
-    ],
-  },
-  {
-    title: "Fire & Police",
-    icon: <Shield size={20} />,
-    color: "text-orange-700",
-    borderColor: "border-orange-200",
-    bgColor: "bg-orange-50",
-    iconBg: "bg-orange-100",
-    contacts: [
-      {
-        name: "Vermont State Police",
-        phone: "(802) 388-4919",
-        description: "New Haven barracks",
-      },
-      {
-        name: "Ripton Volunteer Fire Department",
-        description: "Local fire & EMS — call 911 for emergencies",
-      },
-    ],
-  },
-  {
-    title: "Property Services",
-    icon: <Wrench size={20} />,
-    color: "text-amber-700",
-    borderColor: "border-amber-200",
-    bgColor: "bg-amber-50",
-    iconBg: "bg-amber-100",
-    contacts: [
-      {
-        name: "Plumber",
-        placeholder: true,
-      },
-      {
-        name: "Electrician",
-        placeholder: true,
-      },
-      {
-        name: "Septic Service",
-        placeholder: true,
-      },
-      {
-        name: "Propane Delivery",
-        placeholder: true,
-      },
-    ],
-  },
-  {
-    title: "Utilities",
-    icon: <Zap size={20} />,
-    color: "text-purple-700",
-    borderColor: "border-purple-200",
-    bgColor: "bg-purple-50",
-    iconBg: "bg-purple-100",
-    contacts: [
-      {
-        name: "Green Mountain Power",
-        phone: "1-888-835-4672",
-        description: "Electric utility — outage reporting",
-      },
-      {
-        name: "Starlink",
-        description: "Internet — manage via Starlink app",
-      },
-    ],
-  },
-  {
-    title: "Trash & Recycling",
-    icon: <Trash2 size={20} />,
-    color: "text-lime-700",
-    borderColor: "border-lime-200",
-    bgColor: "bg-lime-50",
-    iconBg: "bg-lime-100",
-    contacts: [
-      {
-        name: "Addison County Solid Waste District",
-        phone: "(802) 388-2333",
-        description: "Recycling drop-off and hazardous waste info",
-      },
-      {
-        name: "Ripton Transfer Station",
-        description: "Town transfer station — check town website for hours and accepted items",
-      },
-      {
-        name: "Casella Waste Systems",
-        phone: "(802) 775-0800",
-        description: "Private trash hauler — pickup service available",
-      },
-    ],
-  },
-  {
-    title: "Veterinary",
-    icon: <PawPrint size={20} />,
-    color: "text-teal-700",
-    borderColor: "border-teal-200",
-    bgColor: "bg-teal-50",
-    iconBg: "bg-teal-100",
-    contacts: [
-      {
-        name: "Nearest Veterinarian",
-        placeholder: true,
-        description: "Add your preferred local vet",
-      },
-    ],
-  },
+const CONTACTS = [
+  { name: "Poison Control", phone: "1-800-222-1222", description: "Northern New England Poison Center · available 24 hours", source: "https://healthvermont.org/about/contact-us/get-help-now" },
+  { name: "Porter Medical Center", phone: "(802) 388-4701", description: "Hospital main number · 115 Porter Drive, Middlebury, VT", source: "https://www.uvmhealth.org/", directions: "https://www.google.com/maps/search/?api=1&query=Porter+Medical+Center+115+Porter+Drive+Middlebury+VT" },
+  { name: "Vermont State Police", phone: "(802) 388-4919", description: "New Haven barracks · non-emergency inquiries", source: "https://vsp.vermont.gov/stations/newhaven" },
+  { name: "Green Mountain Power", phone: "1-888-835-4672", description: "Report an electricity outage", source: "https://greenmountainpower.com/report-outage/" },
 ];
 
 export default function EmergencyPage() {
-  return (
-    <div>
-      <Header
-        title="Emergency Contacts"
-        subtitle="Important numbers for the Breadloaf Hill property"
-      />
-
-      <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
-        {/* Sections */}
-        {sections.map((section) => (
-          <div key={section.title}>
-            <h2 className={`text-sm font-semibold uppercase tracking-wider ${section.color} flex items-center gap-2 mb-3`}>
-              <span className={`w-8 h-8 rounded-lg ${section.iconBg} flex items-center justify-center`}>
-                {section.icon}
-              </span>
-              {section.title}
-            </h2>
-            <div className="space-y-2">
-              {section.contacts.map((contact) => (
-                <div
-                  key={contact.name}
-                  className={`bg-white rounded-xl border ${section.borderColor} p-4`}
-                >
-                  {contact.placeholder ? (
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-stone-800">
-                          {contact.name}
-                        </p>
-                        {contact.description && (
-                          <p className="text-sm text-stone-400 mt-0.5">
-                            {contact.description}
-                          </p>
-                        )}
-                      </div>
-                      <span className="inline-flex items-center gap-1 text-sm text-stone-400 bg-stone-100 rounded-lg px-3 py-1.5">
-                        <Plus size={14} />
-                        Add contact
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-medium text-stone-800">
-                          {contact.name}
-                        </p>
-                        {contact.description && (
-                          <p className="text-sm text-stone-500 mt-0.5">
-                            {contact.description}
-                          </p>
-                        )}
-                      </div>
-                      {contact.phone && (
-                        <a
-                          href={`tel:${contact.phone.replace(/[^+\d]/g, "")}`}
-                          className={`inline-flex items-center gap-2 ${section.bgColor} ${section.color} rounded-lg px-3 py-2 text-sm font-medium hover:opacity-80 transition-opacity flex-shrink-0`}
-                        >
-                          <Phone size={14} />
-                          {contact.phone}
-                        </a>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-
-        {/* Footer note */}
-        <div className="text-center py-4">
-          <p className="text-sm text-stone-400">
-            3995 Vermont Route 125, Ripton, VT
-          </p>
-          <p className="text-xs text-stone-400 mt-1">
-            Know a local contact to add? Let the family know on the{" "}
-            <a href="/bulletin" className="text-green-700 hover:underline">
-              Family Board
-            </a>
-            .
-          </p>
-        </div>
-      </div>
+  return <div className="fade-in emergency-page">
+    <Header title="Emergency" subtitle="Help and the property address, always within reach." />
+    <div className="max-w-3xl mx-auto px-4 py-5 space-y-5">
+      <PrintEmergencyCard />
+      <section className="border-2 border-red-700 rounded-xl p-5 bg-red-50" aria-labelledby="emergency-call">
+        <h2 id="emergency-call" className="text-xl font-semibold text-red-900">For an emergency, call 911</h2>
+        <p className="mt-2 text-red-900">Fire, medical emergency, or immediate danger.</p>
+        <a href="tel:911" className="inline-flex items-center gap-2 mt-4 px-5 py-3 rounded-lg bg-red-700 text-white font-semibold"><Phone size={20} aria-hidden="true" />Call 911</a>
+      </section>
+      <section className="p-5 bg-white border border-stone-300 rounded-xl" aria-labelledby="property-address">
+        <h2 id="property-address" className="text-lg font-semibold">Tell the dispatcher</h2>
+        <p className="text-xl mt-2">3995 Vermont Route 125<br />Ripton, Vermont 05766</p>
+        <p className="mt-2 text-stone-600">The property is called Breadloaf Hill.</p>
+        <a className="inline-block mt-3 text-green-800 underline" href="https://www.google.com/maps/search/?api=1&query=3995+Vermont+Route+125+Ripton+VT+05766" target="_blank" rel="noopener noreferrer">Open the property location</a>
+      </section>
+      <section aria-labelledby="other-contacts">
+        <h2 id="other-contacts" className="text-lg font-semibold mb-3">Other useful numbers</h2>
+        <ul className="space-y-3">{CONTACTS.map(contact => <li key={contact.name} className="p-4 bg-white border border-stone-200 rounded-xl">
+          <h3 className="font-semibold">{contact.name}</h3><p className="text-sm text-stone-600 mt-1">{contact.description}</p>
+          <a href={"tel:" + contact.phone.replace(/[^+\d]/g, "")} className="inline-flex items-center gap-2 py-3 text-green-800 font-semibold"><Phone size={16} aria-hidden="true" />{contact.phone}</a>
+          <div className="flex gap-4 text-sm"><a href={contact.source} target="_blank" rel="noopener noreferrer" className="underline text-stone-600">Official contact information</a>{contact.directions && <a href={contact.directions} target="_blank" rel="noopener noreferrer" className="underline text-green-800">Hospital directions</a>}</div>
+        </li>)}</ul>
+      </section>
+      <p className="text-sm text-stone-600 print:hidden">For property repairs, check <Link href="/maintenance" className="underline text-green-800">maintenance history</Link> for the provider previously used.</p>
     </div>
-  );
+  </div>;
 }
