@@ -42,7 +42,7 @@ export function Masthead() {
       </div>
       <div className="scrim" />
       <div className="fg-hero-copy">
-        <p className="eyebrow">Ripton, Vermont</p>
+        <p className="eyebrow max-w-full leading-relaxed">Ripton, Vermont · <span className="inline-block">Est. July 6, 1964</span></p>
         <h1>A place to<br /><em>come together.</em></h1>
         <p className="fg-hero-caption">The days slow down. The door stays open.</p>
       </div>

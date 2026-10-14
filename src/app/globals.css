@@ -774,6 +774,11 @@ h3.chapter {
   line-height: 1.75;
 }
 .history-article p + p { margin-top: 16px; }
+.history-article > section > p > a {
+  color: var(--pine);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .history-sources {
   margin-top: 32px;
   padding-top: 24px;
@@ -792,6 +797,16 @@ h3.chapter {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+.history-originals { display: grid; gap: 16px; margin-top: 20px; }
+.history-original { padding: 20px; background: var(--paper-2); border: 1px solid var(--rule); }
+.history-original h3 { font-family: var(--serif); font-size: 25px; line-height: 1.25; color: var(--ink); }
+.history-original-actions, .original-reader-actions { display: flex; flex-wrap: wrap; column-gap: 24px; row-gap: 4px; }
+.history-deeds-title { margin-top: 28px; font-weight: 600; color: var(--ink); }
+.original-reader-actions { padding-bottom: 16px; border-bottom: 1px solid var(--rule); font-size: 14px; }
+.original-reader-actions a { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: var(--pine); text-decoration: underline; text-underline-offset: 3px; }
+.original-reader-status { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 24px 0; }
+.original-reader-note { color: var(--muted); font-size: 13px; line-height: 1.6; padding: 16px 0; overflow-wrap: anywhere; }
+.original-reader-text { white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; padding-top: 12px; }
 .footer-colophon .fc-sub {
   font-family: var(--mono); font-size: 9px;
   letter-spacing: 0.2em; text-transform: uppercase;
