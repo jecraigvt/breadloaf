@@ -35,7 +35,7 @@ export default async function HomePage() {
     <div className="fg-home fade-in">
       <header className="chrome-top fg-brand-bar">
         <Link href="/" className="wordmark" aria-label="Breadloaf Hill home">Breadloaf Hill<span className="fg-wordmark-dot">.</span></Link>
-        <span className="ctr">Est. 1974<span className="fg-brand-caption"> / The family field guide</span></span>
+        <span className="ctr">The family field guide<span className="fg-brand-caption"> / Ripton, Vermont</span></span>
       </header>
       <nav className="fg-home-actions" aria-label="Everyday tasks">
         <Link href="/calendar">Plan a visit <ArrowRight size={16} aria-hidden="true" /></Link>
@@ -88,7 +88,7 @@ export default async function HomePage() {
           <div className="section-head fg-section-head"><h2 id="home-photos-title" className="lt">Life on the <em>hill</em></h2><a href={ICLOUD_ALBUM} target="_blank" rel="noopener noreferrer" className="rt">Family album ↗</a></div>
           <div className="strip fg-photo-strip" role="region" aria-label="Family photographs" tabIndex={0}>{PHOTO_STRIP.map((photo) => <a key={photo.src} className="card" href={ICLOUD_ALBUM} target="_blank" rel="noopener noreferrer"><div className="img"><img src={photo.src} alt={photo.caption} loading="lazy" /></div><p className="cap">{photo.caption}</p></a>)}</div>
         </section>
-        <footer className="footer-colophon"><div className="fc-mark"><em>Breadloaf Hill</em></div><p className="fc-sub">A private family record<br />Craig Family · Est. 1974<br />Ripton, Vermont</p></footer>
+        <footer className="footer-colophon"><div className="fc-mark"><em>Breadloaf Hill</em></div><p className="fc-sub">A private family record<br />Craig Family<br />Ripton, Vermont</p><Link href="/history" className="fg-light-link mt-4">History of the hill <ArrowRight size={16} aria-hidden="true" /></Link></footer>
       </div>
     </div>
   );
