@@ -21,6 +21,7 @@ const DESTINATIONS: Destination[] = [
   { name: "Weather", sub: "Forecast on the hill", href: "/weather" },
   { name: "Expense Ledger", sub: "Recorded spending and who paid", href: "/expenses" },
   { name: "Family Album", sub: "Family photographs on iCloud", href: ICLOUD_ALBUM, external: true },
+  { name: "History of the Hill", sub: "The family’s vision and the records of its beginnings", href: "/history" },
   { name: "Corporation Accounts", sub: "Utilities and access", href: "/accounts" },
   { name: "Bulletin Board", sub: "Family notes", href: "/bulletin" },
   { name: "Add Documents", sub: "Scan, upload, or link a file", href: "/upload" },

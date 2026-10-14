@@ -760,6 +760,38 @@ h3.chapter {
   font-family: var(--serif); font-size: 22px; letter-spacing: -0.015em;
 }
 .footer-colophon .fc-mark em { font-style: italic; }
+
+.history-page .fg-page-heading {
+  max-width: 760px;
+  margin: 0 auto;
+}
+.history-article {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 var(--fg-gutter, 22px) 48px;
+  font-size: 16px;
+  line-height: 1.75;
+}
+.history-article p + p { margin-top: 16px; }
+.history-sources {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 14px;
+}
+.history-sources h2 { color: var(--ink); font-weight: 600; }
+.history-sources p { margin-top: 8px; }
+.history-sources ul { margin-top: 12px; list-style: none; }
+.history-sources a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--pine);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .footer-colophon .fc-sub {
   font-family: var(--mono); font-size: 9px;
   letter-spacing: 0.2em; text-transform: uppercase;

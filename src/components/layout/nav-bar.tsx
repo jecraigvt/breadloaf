@@ -67,7 +67,7 @@ export function NavBar() {
             item.href === "/"
               ? pathname === "/"
               : item.href === "/more"
-                ? ["/more", "/grocery", "/checklists", "/maintenance", "/expenses", "/documents", "/upload", "/accounts", "/emergency", "/dinners", "/bulletin", "/bucky", "/narrate", "/family"].some(path => pathname.startsWith(path))
+                ? ["/more", "/grocery", "/checklists", "/maintenance", "/expenses", "/documents", "/upload", "/accounts", "/emergency", "/dinners", "/bulletin", "/bucky", "/narrate", "/family", "/history"].some(path => pathname.startsWith(path))
                 : pathname.startsWith(item.href);
 
           return (
