@@ -88,7 +88,7 @@ export default async function HomePage() {
           <div className="section-head fg-section-head"><h2 id="home-photos-title" className="lt">Life on the <em>hill</em></h2><a href={ICLOUD_ALBUM} target="_blank" rel="noopener noreferrer" className="rt">Family album ↗</a></div>
           <div className="strip fg-photo-strip" role="region" aria-label="Family photographs" tabIndex={0}>{PHOTO_STRIP.map((photo) => <a key={photo.src} className="card" href={ICLOUD_ALBUM} target="_blank" rel="noopener noreferrer"><div className="img"><img src={photo.src} alt={photo.caption} loading="lazy" /></div><p className="cap">{photo.caption}</p></a>)}</div>
         </section>
-        <footer className="footer-colophon"><div className="fc-mark"><em>Breadloaf Hill</em></div><p className="fc-sub">A private family record<br />Craig Family<br />Ripton, Vermont</p><Link href="/history" className="fg-light-link mt-4">History of the hill <ArrowRight size={16} aria-hidden="true" /></Link></footer>
+        <footer className="footer-colophon"><div className="fc-mark"><em>Breadloaf Hill</em></div><p className="fc-sub">A private family record<br />Craig Family · <span className="inline-block">Est. July 6, 1964</span><br />Ripton, Vermont</p><Link href="/history" className="fg-light-link mt-4">History of the hill <ArrowRight size={16} aria-hidden="true" /></Link></footer>
       </div>
     </div>
   );
