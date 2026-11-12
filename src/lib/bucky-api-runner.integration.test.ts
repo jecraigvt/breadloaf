@@ -3,7 +3,7 @@ import test from "node:test";
 import { randomUUID } from "node:crypto";
 import { writeFile, unlink, mkdir } from "node:fs/promises";
 import path from "node:path";
-import type OpenAI from "openai";
+import type { GeminiInteractionParams } from "./gemini-generation";
 
 const testUrl = process.env.BUCKY_HANDLER_TEST_DATABASE_URL;
 test("hosted fallback progresses by section under real DB leases and budget", { skip: !testUrl }, async () => {
@@ -19,10 +19,11 @@ test("hosted fallback progresses by section under real DB leases and budget", { 
   const jobIds: string[] = [];
   let documentId: string | undefined;
   let calls = 0;
-  const generate = async (input: OpenAI.Responses.ResponseCreateParamsNonStreaming) => {
+  const generate = async (input: GeminiInteractionParams) => {
     calls++;
-    assert.equal(input.store, false); assert.equal(input.max_output_tokens, 4096);
-    return { status: "completed" as const, usage: { input_tokens: 100, output_tokens: 200, total_tokens: 300, input_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } },
+    assert.equal(input.store, false); assert.equal(input.generation_config?.max_output_tokens, 4096);
+    assert.equal(input.generation_config?.thinking_level, "low");
+    return { id: "mock-interaction", steps: [], status: "completed" as const, usage: { total_input_tokens: 100, total_output_tokens: 200, total_thought_tokens: 100, total_tokens: 400 },
       output_text: JSON.stringify({ kind: "document_analysis", title: "Pump service notes", summary: "Service instructions describe the pump.", extractedText: "Model text must not replace original text", tags: ["pump"], suggestedCategory: "", confidence: 0.5 }) };
   };
   try {

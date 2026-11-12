@@ -1,8 +1,7 @@
-import { zodTextFormat } from "openai/helpers/zod";
 import { prisma } from "@/lib/prisma";
 import { filterScopedDerivedRows } from "@/lib/derived-source-access";
 import { MODELS } from "@/lib/ai-models";
-import { getOpenAIClient, withRetry } from "@/lib/openai-client";
+import { generateGeminiStructured } from "@/lib/gemini-generation";
 import { sha256 } from "@/lib/archive-integrity";
 import { distillRetrievalQueries } from "@/lib/bucky-retrieval-query";
 import {
@@ -52,15 +51,13 @@ export async function analyzeRetainedDictation(input: { filePath: string; transc
     // The archived copy and native maintenance record can contain this same transcript.
     .filter((source) => source.text.trim() && !source.text.includes(input.transcript) && !input.transcript.includes(source.text))
     .map((source) => ({ ...source, text: sourceExcerpt(source.text, queries) }));
-  const response = await withRetry(() => getOpenAIClient().responses.parse({
+  const response = await generateGeminiStructured({
     model: MODELS.flash,
-    input: [
-      { role: "system", content: DICTATION_ANALYSIS_INSTRUCTIONS },
-      { role: "user", content: JSON.stringify({ title: input.title, transcript: input.transcript, priorRecords: sources }) },
-    ],
-    text: { format: zodTextFormat(DictationAnalysisSchema, "dictation_analysis") },
-  }));
-  const analysis = validateDictationAnalysis(response.output_parsed, input.transcript, sources);
+    instructions: DICTATION_ANALYSIS_INSTRUCTIONS,
+    input: JSON.stringify({ title: input.title, transcript: input.transcript, priorRecords: sources }),
+    schema: DictationAnalysisSchema,
+  });
+  const analysis = validateDictationAnalysis(response, input.transcript, sources);
   // Only this derived table is writable here. Never write to a Document, memory,
   // maintenance description, sourceRecordings, or the retained file.
   const data = { transcriptHash, ...analysis, analyzedAt: new Date() };

@@ -44,15 +44,14 @@ async function main() {
       for await (const chunk of request) chunks.push(Buffer.from(chunk));
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       response.setHeader("Content-Type", "application/json");
-      if (request.url === "/v1/responses") {
+      if (request.url === "/v1beta/interactions") {
         requests++;
         assert.equal(body.store, false);
-        imageSeen = body.input.some((message: { content: { type: string; image_url?: string }[] }) => message.content.some((part) => part.type === "input_image" && part.image_url?.startsWith("data:image/png;base64,")));
-        response.end(JSON.stringify({ id: `resp_${marker}`, object: "response", created_at: Math.floor(Date.now() / 1000), status: "completed",
-          model: body.model, output: [{ id: `msg_${marker}`, type: "message", role: "assistant", status: "completed",
-            content: [{ type: "output_text", text: JSON.stringify(result), annotations: [] }] }],
-          usage: { input_tokens: 1200, output_tokens: 120, total_tokens: 1320,
-            input_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } },
+        assert.equal(body.generation_config.max_output_tokens, 4096);
+        imageSeen = body.input.some((part: { type: string; data?: string; mime_type?: string }) => part.type === "image" && part.mime_type === "image/png" && !!part.data);
+        response.end(JSON.stringify({ id: `interaction_${marker}`, status: "completed",
+          model: body.model, steps: [{ type: "model_output", content: [{ type: "text", text: JSON.stringify(result) }] }],
+          usage: { total_input_tokens: 1200, total_output_tokens: 120, total_thought_tokens: 80, total_tokens: 1400 },
         }));
       } else if (request.url === "/v1/embeddings") {
         embeddings++;
@@ -85,7 +84,8 @@ async function main() {
     Object.assign(environment, {
       NODE_ENV: "production", DATABASE_URL: databaseUrl, FAMILY_PINS: "Test:2468", AUTH_SECRET: `${marker}-auth`,
       OPENAI_API_KEY: "mock-key-no-real-provider", OPENAI_BASE_URL: `http://127.0.0.1:${providerAddress.port}/v1`,
-      GOOGLE_SERVICE_ACCOUNT_KEY: "", GOOGLE_CALENDAR_ID: "", GOOGLE_AI_API_KEY: "", GMAIL_APP_PASSWORD: "",
+      GOOGLE_AI_API_KEY: "mock-key-no-real-provider", GOOGLE_AI_BASE_URL: `http://127.0.0.1:${providerAddress.port}`,
+      GOOGLE_SERVICE_ACCOUNT_KEY: "", GOOGLE_CALENDAR_ID: "", GMAIL_APP_PASSWORD: "",
       BUCKY_BACKGROUND_API_BUDGET_CENTS: "100000", BUCKY_API_MAX_ATTEMPT_CENTS: "50", NEXT_TELEMETRY_DISABLED: "1",
     });
     child = spawn(process.execPath, [path.join(process.cwd(), "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(port), "-H", "127.0.0.1"], {

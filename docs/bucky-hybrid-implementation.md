@@ -12,7 +12,7 @@ The August [Bucky 2.0 handoff](bucky-2.0-architecture-handoff.md) described the 
 - **Paid fallback becomes eligible after 24 hours.** Process now makes a queued task eligible immediately; the next scheduled pass still has to collect it. Generation uses the same structured result contract in both paths.
 - **Extra background generation defaults to $3 per UTC calendar month.** Reservations count against `BUCKY_BACKGROUND_API_BUDGET_CENTS` before work starts; the default per-attempt reservation is 25 cents (`BUCKY_API_MAX_ATTEMPT_CENTS`). Invalid limits disable spending. Foreground API usage and the small paid embedding calls used by retrieval are separate from this background-generation cap.
 
-“Local subscription” describes where the worker runs and which account pays for inference. Source material is still sent to OpenAI; this is not an offline model. The local worker does not receive production database credentials or the website's API key.
+“Local subscription” describes where the worker runs and which account pays for inference. Local Codex source material is still sent to OpenAI; this is not an offline model. Since November 12, hosted generation uses Gemini Hydrogen, while local Codex retains its separate model. See [the provider migration](hydrogen-migration.md). The local worker does not receive production database credentials or the website's API key.
 
 ## What tasks can do
 
@@ -71,7 +71,7 @@ The workflow can be dispatched manually, optionally for a completed local develo
 
 - The 24-hour setting is eligibility for fallback, not a completion deadline. Large documents can need many scheduled passes; local processing or a more frequent data scheduler is necessary for prompt completion. Process now does not bypass the scheduler or budget.
 - Quota introspection depends on the installed Codex runtime. Unknown quota, no subscription login, a paused worker, or a sleeping/logged-out computer leaves work queued for a later attempt or fallback.
-- The $3 background-generation budget does not cap the household's entire OpenAI bill. Chat and existing retrieval embeddings remain separate. Embedding work retries after analysis is saved.
+- The $3 background-generation budget does not cap the household's entire provider bill. Chat and existing retrieval embeddings remain separate. Embedding work retries after analysis is saved. Paid Hydrogen accounting includes visible output and thinking tokens.
 - Archive review creates findings, not an automatic filing cleanup. Website automation is restricted to the presentation allowlist; broader architecture changes still need normal development and review.
 - Email intake remains on its existing processor. It does not call the authenticated chat tools or accept arbitrary background-job creation from an email. A later extension would need its own authenticated intent handling; sender text must not grant a curator or board identity.
 - Automatic publication is disabled. The verified website proposal remains an open review PR until a maintainer merges or closes it.

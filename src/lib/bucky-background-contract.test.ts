@@ -3,7 +3,7 @@ import test from "node:test";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { BackgroundDocumentResultSchema, backgroundResultJsonSchema, combineDocumentParts, splitBackgroundText } from "./bucky-background-contract";
 import { backgroundSourceImage } from "./bucky-source-image";
-import { backgroundApiUpperBoundCents, backgroundApiCostCents } from "./bucky-api-cost";
+import { backgroundApiUpperBoundCents, backgroundApiCostCents, backgroundApiUsage } from "./bucky-api-cost";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 
 test("long Unicode source text survives chunking and aggregation", () => {
@@ -24,9 +24,23 @@ test("strict output schema requires nullable source references", () => {
 });
 
 test("paid cost bounds count bytes and bounded image capacity", () => {
-  assert.equal(backgroundApiCostCents(1000000, 1000000), 1400);
+  assert.equal(backgroundApiCostCents(1000000, 1000000), 900);
   assert.ok(backgroundApiUpperBoundCents("水".repeat(12000), 4096, 1) > backgroundApiUpperBoundCents("x".repeat(12000), 4096, 0));
   assert.ok(backgroundApiUpperBoundCents("x".repeat(16000), 4096, 1) <= 25);
+});
+
+test("Hydrogen background accounting includes thought tokens and validates usage", () => {
+  assert.deepEqual(backgroundApiUsage({ total_input_tokens: 1_000_000, total_output_tokens: 100_000, total_thought_tokens: 900_000, total_tokens: 2_000_000 }),
+    { inputTokens: 1_000_000, outputTokens: 1_000_000, costCents: 900 });
+  assert.equal(backgroundApiUsage({ total_input_tokens: 100, total_output_tokens: 20, total_tokens: 600 }).outputTokens, 500,
+    "Total usage retains thinking even if a breakdown is absent");
+  assert.equal(backgroundApiUsage({ total_input_tokens: 100, total_output_tokens: 20, total_thought_tokens: 0 }).outputTokens, 20);
+  for (const usage of [undefined, {}, { total_input_tokens: 100, total_output_tokens: 20 },
+    { total_input_tokens: 100, total_output_tokens: 20, total_thought_tokens: -1 },
+    { total_input_tokens: 100, total_output_tokens: 20, total_thought_tokens: 30, total_tokens: 120 },
+    { total_input_tokens: NaN, total_output_tokens: 20, total_thought_tokens: 0 }]) {
+    assert.throws(() => backgroundApiUsage(usage), /usage/);
+  }
 });
 
 test("PDF fallback rasterizes one original page without a provider call", async () => {
