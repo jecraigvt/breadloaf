@@ -48,7 +48,7 @@ jobs:
           BUCKY_WORKER_ID: ${{ vars.BUCKY_API_WORKER_ID }}
           BUCKY_WORKER_TOKEN: ${{ secrets.BUCKY_API_WORKER_TOKEN }}
           BUCKY_WORKER_CAPABILITIES: document_analysis,archive_review,site_improvement
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
       - name: Fetch completed local or API proposal
         id: artifact
         run: npx tsx scripts/bucky-publish.ts fetch

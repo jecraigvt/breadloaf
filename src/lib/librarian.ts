@@ -1,11 +1,10 @@
 import { createHash } from "crypto";
 import { readFile } from "fs/promises";
-import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { slugifyCategory } from "@/lib/document-categories";
-import { MODELS } from "@/lib/ai";
-import { getOpenAIClient, withRetry } from "@/lib/openai-client";
+import { MODELS } from "@/lib/ai-models";
+import { generateGeminiStructured } from "@/lib/gemini-generation";
 import { containedRetainedPath } from "@/lib/retained-file-security";
 
 // The librarian reviews the whole filing system and proposes a
@@ -119,27 +118,12 @@ Return ONLY valid JSON (no markdown fences):
   "summary": "1-2 sentence plain-English summary of the plan (or say the archive is tidy)"
 }`;
 
-  // Terra gives the best reorganization judgment; keep Luna as the existing
-  // availability fallback after transient retries are exhausted.
-  let raw: z.infer<typeof LibrarianPlanSchema>;
-  try {
-    const result = await withRetry(() => getOpenAIClient().responses.parse({
-      model: MODELS.pro,
-      input: prompt,
-      text: { format: zodTextFormat(LibrarianPlanSchema, "librarian_plan") },
-    }));
-    if (!result.output_parsed) throw new Error("OpenAI returned no librarian plan");
-    raw = result.output_parsed;
-  } catch (err) {
-    console.warn("[Librarian] Pro model unavailable, falling back to Flash:", String(err).slice(0, 200));
-    const result = await withRetry(() => getOpenAIClient().responses.parse({
-      model: MODELS.flash,
-      input: prompt,
-      text: { format: zodTextFormat(LibrarianPlanSchema, "librarian_plan") },
-    }));
-    if (!result.output_parsed) throw new Error("OpenAI returned no librarian plan");
-    raw = result.output_parsed;
-  }
+  const raw = await generateGeminiStructured({
+    model: MODELS.pro,
+    thinkingLevel: "high",
+    input: prompt,
+    schema: LibrarianPlanSchema,
+  });
 
   const plan = validatePlan(raw, categories, documents);
   plan.duplicates = await findDuplicateDocuments();

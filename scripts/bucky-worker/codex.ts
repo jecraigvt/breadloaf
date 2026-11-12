@@ -40,7 +40,7 @@ export async function createCodexRunner(config: WorkerConfig, directory: string,
         browser_use_external: false, in_app_browser: false, sleep_tool: false },
     },
   });
-  const usage: ModelUsage = { inputTokens: 0, outputTokens: 0, costCents: 0, model: MODELS.pro };
+  const usage: ModelUsage = { inputTokens: 0, outputTokens: 0, costCents: 0, model: MODELS.localWorker };
   return {
     usage,
     async run(prompt, schema, images = []) {
@@ -51,7 +51,7 @@ export async function createCodexRunner(config: WorkerConfig, directory: string,
       if (!runtimePath) throw new SubscriptionUnavailableError("runtime-unavailable");
       const codex = createClient(runtimePath);
       signal.throwIfAborted();
-      const thread = codex.startThread({ model: MODELS.pro, workingDirectory: directory, sandboxMode: "read-only",
+      const thread = codex.startThread({ model: MODELS.localWorker, workingDirectory: directory, sandboxMode: "read-only",
         networkAccessEnabled: false, webSearchMode: "disabled", approvalPolicy: "never", skipGitRepoCheck: true });
       const inputs: UserInput[] = [{ type: "text", text: prompt }, ...images.map((file) => ({ type: "local_image" as const, path: file }))];
       const result = await thread.run(inputs, { outputSchema: schema, signal });

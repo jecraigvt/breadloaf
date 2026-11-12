@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { Prisma, type EmailLog } from "@prisma/client";
-import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { scanInbox, parseInboundEmail, markInboxEmailSeen, type InboundEmail, type InboundAttachment } from "@/lib/email-inbox";
@@ -8,13 +7,13 @@ import { retainEmailSource, readEmailSource } from "@/lib/email-source";
 import { emailIntakeDisposition } from "@/lib/email-authentication";
 import { EMAIL_LEASE_MS, MAX_EMAIL_ATTEMPTS, TERMINAL_EMAIL_STATUSES, assertEmailLease, commitEmailAction, emailRetryAt } from "@/lib/email-workflow";
 import { buildHistoricalPhotoQuestionProposal, loadHistoricalPhotoRoster } from "@/lib/historical-photo";
-import { MODELS } from "@/lib/ai";
+import { MODELS } from "@/lib/ai-models";
 import { indexDocument } from "@/lib/embeddings";
 import { resolveDocumentCategory } from "@/lib/document-categories";
 import { findOverlappingStay, createStayInTransaction } from "@/lib/stays";
 import { sha256 } from "@/lib/archive-integrity";
 import { resolveDocumentTitle } from "@/lib/document-title";
-import { getOpenAIClient, withRetry } from "@/lib/openai-client";
+import { generateGeminiStructured } from "@/lib/gemini-generation";
 import { analyzeDocumentBuffer } from "@/lib/document-analysis";
 import { resolveSupportedFileType } from "@/lib/document-file-types";
 import { storeFileBuffer } from "@/lib/file-storage";
@@ -218,21 +217,20 @@ Return ONLY valid JSON (no markdown fences):
 {"stays": [{"guestName": "...", "checkIn": "YYYY-MM-DD", "checkOut": "YYYY-MM-DD", "confidence": 0.0}], "bodyIsDocument": false}
 Return {"stays": [], "bodyIsDocument": false} if there is nothing.`;
 
-  const result = await withRetry(() => getOpenAIClient().responses.parse({
+  const result = await generateGeminiStructured({
     model: MODELS.flash,
     input: prompt,
-    text: { format: zodTextFormat(BodyAnalysisSchema, "email_body_analysis") },
-  }));
-  if (!result.output_parsed) throw new Error("OpenAI returned no email body analysis");
+    schema: BodyAnalysisSchema,
+  });
   return {
-    stays: result.output_parsed.stays.filter(
+    stays: result.stays.filter(
       (stay) =>
         stay.guestName.trim() &&
         /^\d{4}-\d{2}-\d{2}$/.test(stay.checkIn) &&
         /^\d{4}-\d{2}-\d{2}$/.test(stay.checkOut) &&
         new Date(stay.checkOut) > new Date(stay.checkIn)
     ),
-    bodyIsDocument: result.output_parsed.bodyIsDocument,
+    bodyIsDocument: result.bodyIsDocument,
   };
 }
 

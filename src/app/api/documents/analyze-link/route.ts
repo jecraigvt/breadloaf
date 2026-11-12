@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { MODELS } from "@/lib/ai";
+import { MODELS } from "@/lib/ai-models";
 import { resolveDocumentTitle } from "@/lib/document-title";
-import { getOpenAIClient, withRetry } from "@/lib/openai-client";
+import { generateGeminiStructured, generateGeminiText } from "@/lib/gemini-generation";
 import { safeExternalFetch, safeLinkUrl, UnsafeExternalUrlError } from "@/lib/safe-external-fetch";
 import { requestAccessContext, accessPolicyResponse } from "@/lib/access-policy";
 
@@ -125,7 +124,7 @@ export async function POST(request: NextRequest) {
 
     // Analyze images with Vision if available
     let imageDescriptions = "";
-    if (process.env.OPENAI_API_KEY && imageUrls.length > 0) {
+    if (process.env.GOOGLE_AI_API_KEY && imageUrls.length > 0) {
       try {
         // Fetch up to 3 images and describe them
         const imagePartsPromises = imageUrls.slice(0, 3).map(async (imgUrl) => {
@@ -138,9 +137,9 @@ export async function POST(request: NextRequest) {
             if (buffer.length < 1000) return null; // Skip tiny images
             if (buffer.length > 4 * 1024 * 1024) return null; // Skip huge images
             return {
-              type: "input_image" as const,
-              image_url: `data:${contentType.split(";")[0]};base64,${buffer.toString("base64")}`,
-              detail: "auto" as const,
+              type: "image" as const,
+              data: buffer.toString("base64"),
+              mime_type: contentType.split(";")[0],
             };
           } catch {
             return null;
@@ -150,20 +149,16 @@ export async function POST(request: NextRequest) {
         const imageParts = (await Promise.all(imagePartsPromises)).filter(Boolean);
 
         if (imageParts.length > 0) {
-          const visionResult = await withRetry(() => getOpenAIClient().responses.create({
+          imageDescriptions = await generateGeminiText({
             model: MODELS.flash,
-            input: [{
-              role: "user",
-              content: [
-                ...imageParts as NonNullable<(typeof imageParts)[number]>[],
-                {
-                  type: "input_text",
-                  text: `Describe what you see in these images. They are from a document related to the Craig family property at Breadloaf Hill in Ripton, Vermont. Be specific about any people, locations, structures, equipment, or documents visible. Keep each description to 1-2 sentences.`,
-                },
-              ],
-            }],
-          }));
-          imageDescriptions = visionResult.output_text;
+            input: [
+              ...imageParts as NonNullable<(typeof imageParts)[number]>[],
+              {
+                type: "text",
+                text: `Describe what you see in these images. They are from a document related to the Craig family property at Breadloaf Hill in Ripton, Vermont. Be specific about any people, locations, structures, equipment, or documents visible. Keep each description to 1-2 sentences.`,
+              },
+            ],
+          });
         }
       } catch {
         // Vision analysis failed — continue without
@@ -177,7 +172,7 @@ export async function POST(request: NextRequest) {
     let contentSummary = "";
     let fullExtractedContent = "";
 
-    if (process.env.OPENAI_API_KEY) {
+    if (process.env.GOOGLE_AI_API_KEY) {
       try {
         const prompt = `You are Bucky Dragon, document analyst for the Craig family property at Breadloaf Hill, Vermont. Analyze this linked document thoroughly and return ONLY valid JSON (no markdown fences):
 {
@@ -202,17 +197,16 @@ ${imageDescriptions ? `\nImages found in document:\n${imageDescriptions}` : ""}
 This property is owned as an S-Corp by four Craig brothers (Tom, Jim, Sandy, Greg).
 Be thorough — extract every useful detail. The family assistant needs this to answer questions about the property.`;
 
-        const result = await withRetry(() => getOpenAIClient().responses.parse({
+        const result = await generateGeminiStructured({
           model: MODELS.flash,
           input: prompt,
-          text: { format: zodTextFormat(LinkAnalysisSchema, "link_analysis") },
-        }));
-        if (!result.output_parsed) throw new Error("OpenAI returned no link analysis");
-        suggestedTitle = result.output_parsed.title || suggestedTitle;
-        suggestedCategory = result.output_parsed.category;
-        suggestedDescription = result.output_parsed.description || suggestedDescription;
-        contentSummary = result.output_parsed.summary;
-        fullExtractedContent = result.output_parsed.extractedContent;
+          schema: LinkAnalysisSchema,
+        });
+        suggestedTitle = result.title || suggestedTitle;
+        suggestedCategory = result.category;
+        suggestedDescription = result.description || suggestedDescription;
+        contentSummary = result.summary;
+        fullExtractedContent = result.extractedContent;
       } catch {
         // AI analysis failed — use what we have
       }
