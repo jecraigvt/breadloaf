@@ -2,6 +2,14 @@
 
 Updated November 12, 2026. The August OpenAI migration documents describe historical work; the September queue and local-worker policies continue to apply.
 
+## Activation gate
+
+The initial November 12 deployment and synthetic checks succeeded, but subsequent checks exhausted the existing Gemini key's free-tier allowance of 20 Hydrogen requests per day. Production was temporarily rolled back to the previous Luna/Terra deployment (`34e3dad`) to preserve service. The Hydrogen implementation remains on `main`; do not treat its code presence as proof that production is using it.
+
+Before activating, enable paid billing for the Breadloafhill Google project (`gen-lang-client-0885936225`) or configure an approved paid Gemini key on both Railway and the GitHub background worker. Confirm the effective paid quota, then deploy the verified code and run a minimal synthetic check. A successful individual request alone does not establish sustainable quota. Never repeat full live smoke suites against an unverified free-tier allowance.
+
+Gemini foreground retries surface a provider delay longer than 15 seconds immediately, preserving the original error rather than waiting for a daily reset. Short transient retries still honor `Retry-After`; metered background calls remain at zero retries per attempt.
+
 ## Providers
 
 `src/lib/ai-models.ts` owns every model ID. Both hosted generation tiers use Gemini 4 Hydrogen through the native Google Interactions API. Routine chat and intake use low thinking; heavy chat and Tidy Up use high thinking. Paid background requests use low thinking within their existing 4,096-token combined output allowance. The migration covers document and image categorization, narration splitting, Mail Room, link analysis, retrieval-query distillation, dictation intelligence, Tidy Up, archive verification questions, and paid background generation.

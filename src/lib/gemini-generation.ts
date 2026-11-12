@@ -23,6 +23,7 @@ interface GeminiGenerationOptions {
 }
 
 let client: GoogleGenAI | null = null;
+const MAX_GEMINI_RETRY_DELAY_MS = 15_000;
 
 export function getGeminiClient(): GoogleGenAI {
   const apiKey = process.env.GOOGLE_AI_API_KEY;
@@ -58,7 +59,7 @@ export async function createGeminiInteraction(
         ...(options.signal ? { signal: options.signal } : {}),
       }
     );
-  }, options.retries ?? 0);
+  }, options.retries ?? 0, { maxRetryDelayMs: MAX_GEMINI_RETRY_DELAY_MS });
 }
 
 function generationParams(options: GeminiGenerationOptions): GeminiInteractionParams {

@@ -166,6 +166,30 @@ test("routine generation retries transient errors through the shared Retry-After
   assert.equal(transport.mock.callCount(), 2);
 });
 
+test("routine generation surfaces day-quota exhaustion promptly without retrying before Retry-After", async (t) => {
+  const nativeSetTimeout = globalThis.setTimeout;
+  let longWaitRequested = false;
+  t.mock.method(globalThis, "setTimeout", ((...args: Parameters<typeof setTimeout>) => {
+    if (args[1] === 46_800_000) {
+      longWaitRequested = true;
+      throw new Error("A thirteen-hour foreground retry must never be scheduled");
+    }
+    return nativeSetTimeout(...args);
+  }) as typeof setTimeout);
+  const transport = mockTransport(t, () => jsonResponse({
+    error: { code: 429, message: "Daily quota exhausted", status: "RESOURCE_EXHAUSTED" },
+  }, 429, { "Retry-After": "46800" }));
+  const started = Date.now();
+  await assert.rejects(generateGeminiText({ model: MODELS.flash, input: "Summarize" }), (error: unknown) => {
+    assert.equal((error as { status?: number }).status, 429);
+    assert.match((error as Error).message, /Daily quota exhausted/);
+    return true;
+  });
+  assert.equal(transport.mock.callCount(), 1);
+  assert.equal(longWaitRequested, false);
+  assert.ok(Date.now() - started < 2_000, "Quota exhaustion should reject promptly");
+});
+
 test("an aborted raw request never reaches the provider", async (t) => {
   const transport = mockTransport(t, () => { throw new Error("Unexpected provider call"); });
   const controller = new AbortController();
