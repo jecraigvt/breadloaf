@@ -28,7 +28,11 @@ export function retryAfterMs(error: unknown, now = Date.now()): number | null {
   return Number.isNaN(date) ? null : Math.max(0, date - now);
 }
 
-export async function withRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  retries = 2,
+  options: { maxRetryDelayMs?: number } = {}
+): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -39,6 +43,9 @@ export async function withRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T
       if ((status !== 429 && status !== 503) || attempt === retries) throw error;
 
       const delay = retryAfterMs(error) ?? 1000 * 2 ** attempt;
+      // A caller may surface long quota outages immediately. Never retry before
+      // the provider's hint; callers without a bound retain the existing policy.
+      if (delay > (options.maxRetryDelayMs ?? Infinity)) throw error;
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
