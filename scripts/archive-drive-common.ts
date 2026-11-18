@@ -5,7 +5,8 @@ import path from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { google } from "googleapis";
-import { MAX_ARCHIVE_BYTES, privateStagingDirectory, removeStagingDirectory, verifySnapshot } from "./archive-common";
+import { privateStagingDirectory, removeStagingDirectory } from "./archive-common";
+import { verifySnapshot } from "./archive-format";
 
 export const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 export const BACKUP_DRIVE_ACCOUNT = "breadloafhillsite@gmail.com";
@@ -122,7 +123,7 @@ export async function uploadVerifiedSnapshotToDrive(options: DriveBackupOptions)
   if (options.passphrase.length < 20) return failed("Use the same backup passphrase of at least 20 characters that created the encrypted snapshot.");
   if (!safeDriveId(options.folderId) || options.existingFileId && !safeDriveId(options.existingFileId)) return failed("Configure a valid, fixed Drive backup folder or file ID.");
   const source = await lstat(options.input);
-  if (!source.isFile() || source.isSymbolicLink() || source.size < 52 || source.size > MAX_ARCHIVE_BYTES + 1024 * 1024) return failed("Choose an ordinary encrypted snapshot within the 512 MB backup limit.");
+  if (!source.isFile() || source.isSymbolicLink() || source.size < 52 || !Number.isSafeInteger(source.size)) return failed("Choose an ordinary encrypted snapshot with a valid size.");
   const stage = await privateStagingDirectory();
   try {
     const input = path.join(stage, "snapshot.blhbackup");

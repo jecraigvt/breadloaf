@@ -87,8 +87,9 @@ backup schedule.
 First follow [Archive recovery](archive-recovery.md) to make a coherent encrypted
 snapshot from the actual database and mounted originals. Include private Mail
 Room RFC822 originals in the snapshot; a dump or laptop upload directory alone
-is incomplete. The upload helper uses the existing bounded `BLHBACK1` encrypted
-format and supports the same 512 MB tooling limit.
+is incomplete. The upload helper streams verification of the encrypted `BLHBACK1`
+snapshot. Allow temporary disk space for the protected encrypted copy and decrypted
+ZIP, and enough Drive quota for the complete encrypted file.
 
 ```sh
 npx tsx scripts/archive-drive.ts --input /mnt/independent/breadloaf-2026-10-13.blhbackup --receipt /mnt/independent/breadloaf-2026-10-13.drive-receipt.json
