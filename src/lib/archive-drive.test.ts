@@ -5,7 +5,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { createServer } from "node:http";
-import { encryptSnapshot, type SnapshotManifest } from "../../scripts/archive-common";
+import { encryptSnapshot } from "../../scripts/archive-format";
+import { type SnapshotManifest } from "../../scripts/archive-common";
 import { BACKUP_DRIVE_ACCOUNT, requestDriveResponse, uploadVerifiedSnapshotToDrive, type DriveTransport } from "../../scripts/archive-drive-common";
 
 const folderId = "syntheticFolder12345", fileId = "syntheticSnapshot12345";
