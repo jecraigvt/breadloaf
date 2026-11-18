@@ -58,13 +58,20 @@ completion or error. A forced process kill can leave a protected staging directo
 named `breadloaf-archive-*` in the operating-system temporary directory; inspect
 and remove that exact directory after confirming no backup process owns it.
 
-The initial tools support at most 512 MB of combined dump/original bytes and
-10,000 originals. They fail rather than truncate a larger archive. A larger
-archive should move to a streaming backup service and a separate restore test.
-Verification decrypts the bounded ZIP bundle in memory, so run it on a recovery
-machine with adequate memory (allow roughly three times the snapshot size plus
-the largest original). The format limit is not a claim that a 512 MB Railway
-container can verify a 512 MB archive while serving the website.
+Snapshot creation, verification and restore stream file contents. The reader
+accepts existing `BLHBACK1` backups. New bundles use ZIP64 when needed and retain
+the original authenticated encryption and manifest. Keep the current recovery
+tools for large bundles. Older readers enforce their original size limit.
+
+Size the **temporary disk** for the operation. Creation stages the dump and
+originals, and verification also stages the decrypted ZIP. Restore stages the ZIP
+and its extracted, verified files before applying anything. Allow room for the
+encrypted input/output and final restored files on their respective volumes.
+The reader authenticates the entire ZIP before opening it, checks sizes and
+SHA-256 one member at a time, and starts the restore only after every file and
+database reference passes. The 4 MiB manifest and 10,000-original limits still
+apply. A single AES-GCM message supports a ZIP payload just under 64 GiB.
+Disk space, Drive quota and job timeouts can impose smaller practical limits.
 
 ## Verify and rehearse recovery
 
