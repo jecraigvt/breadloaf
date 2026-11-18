@@ -481,8 +481,9 @@ export default function UploadPage() {
             <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
               <ShieldAlert size={18} className="mt-0.5 flex-shrink-0" />
               <p>
-                Vault protection is not active yet. Do not upload passwords, account numbers,
-                or safe-deposit details.
+                Files added here are visible to signed-in family members. Set aside Board-only
+                records and scans containing passwords, account numbers or safe-deposit details.
+                Ask the Secretary how to file those privately.
               </p>
             </div>
             <CameraCapture onCapture={handleFile} />
@@ -932,13 +933,11 @@ export default function UploadPage() {
         </section>
         <aside className="fg-upload-aside">
           <section className="fg-archive-panel fg-archive-note">
-            <span className="fg-archive-eyebrow">A little help from Bucky</span>
-            <h2>Save now.<br /><em>Find it later.</em></h2>
-            <p>House records, receipts, old stories, and useful links — kept together for the next person who needs them.</p>
+            <h2>Filing a <em>scanned record</em></h2>
             <ol className="fg-archive-steps">
-              <li><span>01</span><div><h3>Choose an original</h3><p>Use your camera, files, or a document URL.</p></div></li>
-              <li><span>02</span><div><h3>Choose when to analyze</h3><p>Upload &amp; Analyze works while you wait. Analyze in background saves supported files first, so you can leave after the upload finishes.</p></div></li>
-              <li><span>03</span><div><h3>Return to your archive</h3><p>Review immediate results here, or follow background progress in Bucky’s tasks.</p></div></li>
+              <li><span>01</span><div><h3>Group the pages</h3><p>Save each record as one PDF in page order, or choose a clear image for a single page. Include the date, if known, and subject in the filename.</p></div></li>
+              <li><span>02</span><div><h3>Save the scan</h3><p>Choose your file, then select <strong>Analyze in background</strong>. Keep this page open until it confirms the original was saved. Analysis can finish later.</p></div></li>
+              <li><span>03</span><div><h3>Check the original</h3><p>Find the record in the archive and open the file. Check that every page is present, upright and readable. Keep your own copy of the scan.</p></div></li>
             </ol>
             <Link href="/documents" className="fg-archive-text-link">Browse the archive <FolderOpen size={16} aria-hidden="true" /></Link>
           </section>

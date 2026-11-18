@@ -20,6 +20,19 @@ test("an unauthenticated private bookmark redirects to the public site behind an
   assert.equal(location.searchParams.get("from"), "/calendar?month=2026-11");
 });
 
+test("family roles and scan intake require family access", async () => {
+  for (const path of ["/family/roles", "/upload", "/documents"]) {
+    const response = await middleware(new NextRequest(`http://localhost:3000${path}`));
+    assert.equal(response.status, 307);
+    const login = new URL(response.headers.get("location")!);
+    assert.equal(login.pathname, "/login");
+    assert.equal(login.searchParams.get("from"), path);
+  }
+  for (const path of ["/api/upload", "/api/bucky/jobs", "/api/documents/example/file"]) {
+    assert.equal((await middleware(new NextRequest(`http://localhost:3000${path}`))).status, 401);
+  }
+});
+
 test("email sign-in accepts the canonical browser origin while foreign origins are rejected", async () => {
   const request = (origin: string, site = "same-origin") => new NextRequest("http://localhost:3000/api/auth/link", {
     method: "POST", headers: { origin, "sec-fetch-site": site },
