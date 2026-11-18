@@ -20,33 +20,22 @@ function manifestIndex(manifest: SnapshotManifest) {
   if (manifest?.version !== 1 || !Array.isArray(manifest.files) || manifest.files.length > 10001 ||
       !Array.isArray(manifest.references) || !Number.isFinite(Date.parse(manifest.createdAt))) throw new Error("Invalid backup manifest.");
   const files = new Map<string, SnapshotManifest["files"][number]>();
-  const directories = new Set<string>();
-  const spellings = new Map<string, string>();
   for (const file of manifest.files) {
     if (!file || typeof file.path !== "string" || !safeArchivePath(file.path) ||
         (file.path !== "database.dump" && !file.path.startsWith("originals/"))) throw new Error("Unsafe backup entry.");
     if (files.has(file.path) || !Number.isSafeInteger(file.size) || file.size < 0 ||
         typeof file.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(file.sha256)) throw new Error("Invalid backup file record.");
     files.set(file.path, file);
-    // A snapshot must also restore unambiguously on a case-insensitive filesystem.
-    let name = file.path;
-    while (name) {
-      const key = name.normalize("NFC").toLowerCase();
-      const previous = spellings.get(key);
-      if (previous && previous !== name) throw new Error("Conflicting backup paths.");
-      if (previous) break;
-      spellings.set(key, name);
-      const slash = name.lastIndexOf("/");
-      if (slash < 0) break;
-      name = name.slice(0, slash);
-      directories.add(name);
+  }
+  for (const name of files.keys()) {
+    for (let slash = name.lastIndexOf("/"); slash >= 0; slash = name.lastIndexOf("/", slash - 1)) {
+      if (files.has(name.slice(0, slash))) throw new Error("Conflicting backup paths.");
     }
   }
-  for (const name of directories) if (files.has(name)) throw new Error("Conflicting backup paths.");
   if (!files.has("database.dump") || manifest.references.some(ref => typeof ref !== "string" || !files.has(`originals/${ref}`))) {
     throw new Error("Backup is missing a database or referenced original.");
   }
-  return { files, directories };
+  return files;
 }
 
 export async function encryptSnapshot(stage: string, output: string, manifest: SnapshotManifest, phrase: string, signal?: AbortSignal): Promise<void> {
@@ -100,13 +89,11 @@ async function authenticate(input: string, plaintextZip: string, phrase: string,
     decipher.setAAD(header);
     decipher.setAuthTag(tag);
     // No ZIP parser sees plaintext until GCM finalization has authenticated the entire file.
-    let authenticationError = false;
-    decipher.on("error", error => { authenticationError = error.message.includes("authenticate"); });
     try {
       await pipeline(file.createReadStream({ start: HEADER_BYTES, end: size - TAG_BYTES - 1, autoClose: false }),
         decipher, createWriteStream(plaintextZip, { flags: "wx", mode: 0o600 }), { signal });
     } catch (error) {
-      if (authenticationError) throw new Error("Backup authentication failed: wrong passphrase or damaged backup.");
+      if (error instanceof Error && error.message.includes("unable to authenticate data")) throw new Error("Backup authentication failed: wrong passphrase or damaged backup.");
       throw error;
     }
   } finally { await file.close(); }
@@ -146,7 +133,8 @@ export async function verifySnapshot(input: string, phrase: string, options: Ver
     const plaintextZip = path.join(stage, "authenticated.zip");
     await authenticate(input, plaintextZip, phrase, options.signal);
     const manifest = await readManifest(plaintextZip, options.signal);
-    const { files, directories } = manifestIndex(manifest);
+    const files = manifestIndex(manifest);
+    const remaining = new Set(files.keys());
     const zip = await yauzl.openPromise(plaintextZip, { strictFileNames: true });
     let foundManifest = false;
     try {
@@ -157,7 +145,7 @@ export async function verifySnapshot(input: string, phrase: string, options: Ver
         const type = (entry.externalFileAttributes >>> 16) & 0o170000;
         if (!safeArchivePath(name) || (type && type !== (dir ? 0o040000 : 0o100000)) || entry.isEncrypted()) throw new Error("Unsafe backup entry.");
         if (dir) {
-          if (!directories.delete(name) || entry.uncompressedSize !== 0) throw new Error("Unexpected backup directory.");
+          if (files.has(name) || name === "manifest.json" || entry.uncompressedSize !== 0) throw new Error("Unexpected backup directory.");
           continue;
         }
         if (name === "manifest.json") {
@@ -166,8 +154,7 @@ export async function verifySnapshot(input: string, phrase: string, options: Ver
           continue;
         }
         const expected = files.get(name);
-        if (!expected || expected.size !== entry.uncompressedSize) throw new Error("Unmanifested, duplicate or incorrectly sized backup entry.");
-        files.delete(name);
+        if (!expected || !remaining.delete(name) || expected.size !== entry.uncompressedSize) throw new Error("Unmanifested, duplicate or incorrectly sized backup entry.");
         const hash = createHash("sha256");
         let count = 0;
         const verifyBytes = new Transform({ transform(chunk: Buffer, _encoding, callback) {
@@ -185,7 +172,7 @@ export async function verifySnapshot(input: string, phrase: string, options: Ver
         if (count !== expected.size || hash.digest("hex") !== expected.sha256) throw new Error("Backup file integrity failed.");
       }
     } finally { zip.close(); }
-    if (!foundManifest || files.size) throw new Error("Backup is incomplete.");
+    if (!foundManifest || remaining.size) throw new Error("Backup is incomplete.");
     options.signal?.throwIfAborted();
     await options.onVerifiedFiles?.(stage, manifest);
     return { manifest };
