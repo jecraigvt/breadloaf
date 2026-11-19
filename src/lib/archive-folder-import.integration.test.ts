@@ -225,7 +225,7 @@ test("a regular family account can open its folder imports", { skip: !testUrl },
   const memberId = randomUUID();
   const otherMemberId = randomUUID();
   const email = memberId + "@example.test";
-  const data = { folderKey: checksum, folderName: "Synthetic letters", groupImages: false, fileCount: 1, sizeBytes: 1n };
+  const data = { folderKey: checksum, folderName: "Synthetic letters", groupImages: false, fileCount: 1, sizeBytes: BigInt(1) };
   try {
     await prisma.familyMember.create({ data: { id: memberId, name: "Synthetic Member", email, accessApproved: true } });
     const token = createIdentityToken();
