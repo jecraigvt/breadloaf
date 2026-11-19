@@ -14,7 +14,7 @@ model Document {
   fileName        String
   filePath        String
   fileType        String
-  fileSize        Int
+  fileSize        Float
   categoryId      String?
   category        Category? @relation(fields: [categoryId], references: [id])
   tags            String?
@@ -32,6 +32,9 @@ model Document {
   asset           Asset?    @relation(fields: [assetId], references: [id])
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  archiveImportFile ArchiveImportFile?
+  archivePageJobId String?
+  archivePages    ArchivePage[]
 
   @@index([categoryId])
   @@index([createdAt])
@@ -39,6 +42,62 @@ model Document {
   @@index([checksum])
   @@index([deletedAt])
   @@index([accessScope])
+}
+
+model ArchiveImport {
+  id          String   @id @default(cuid())
+  memberId    String
+  folderKey   String
+  folderName  String
+  groupImages Boolean
+  fileCount   Int
+  sizeBytes   BigInt
+  reservedBytes BigInt @default(0)
+  reservedFiles Int @default(0)
+  createdAt   DateTime @default(now())
+  files       ArchiveImportFile[]
+
+  @@unique([memberId, folderKey])
+  @@index([memberId, createdAt])
+}
+
+model ArchiveImportFile {
+  id           String   @id @default(cuid())
+  importId     String
+  batch        ArchiveImport @relation(fields: [importId], references: [id], onDelete: Restrict)
+  relativePath String
+  groupPath    String?
+  position     Int
+  fileType     String
+  sizeBytes    BigInt
+  sha256       String
+  driveId      String   @unique
+  driveFolder  String
+  uploadUrl    String?
+  documentId   String?  @unique
+  pageCount    Int?
+  document     Document? @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  createdAt    DateTime @default(now())
+
+  @@unique([importId, relativePath])
+  @@unique([importId, position])
+  @@index([importId, groupPath, position])
+}
+
+model ArchivePage {
+  jobId       String
+  documentId  String
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  number      Int
+  text        String
+  summary     String
+  years       Int[]
+  needsReview Boolean @default(false)
+  details     Json
+
+  @@id([jobId, number])
+  @@index([documentId, jobId])
+  @@index([years], type: Gin)
 }
 
 model Category {

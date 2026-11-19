@@ -27,6 +27,7 @@ export interface DriveBackupReceipt {
   verifiedAt: string;
   snapshotCreatedAt: string;
   originalCount: number;
+  externalOriginalCount?: number;
   restoreVerified: false;
 }
 export interface DriveBackupOptions {
@@ -228,6 +229,7 @@ export async function uploadVerifiedSnapshotToDrive(options: DriveBackupOptions)
     } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
     if (downloadedSize !== size || downloadedSha.digest("hex") !== encryptedSha256) return failed("Drive download checksum verification failed. No verified backup was recorded.");
     return { version: 1, provider: "google-drive", driveFileId: fileId, folderId: options.folderId, encryptedSha256, size,
-      verifiedAt: new Date().toISOString(), snapshotCreatedAt: manifest.createdAt, originalCount: manifest.files.filter(file => file.path.startsWith("originals/")).length, restoreVerified: false };
+      verifiedAt: new Date().toISOString(), snapshotCreatedAt: manifest.createdAt, originalCount: manifest.files.filter(file => file.path.startsWith("originals/")).length,
+      ...(manifest.externalOriginalCount ? { externalOriginalCount: manifest.externalOriginalCount } : {}), restoreVerified: false };
   } finally { await removeStagingDirectory(stage); }
 }

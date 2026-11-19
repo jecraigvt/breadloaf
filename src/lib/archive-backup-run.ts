@@ -57,9 +57,11 @@ export async function runClaimedArchiveBackup(token: string, dependencies: Backu
 }
 
 export function backupStatus(state: BackupState | null, now = new Date()) {
+  const receipt = state?.latestReceipt as { externalOriginalCount?: unknown } | null;
   return { state: state?.state === "running" && (!state.leaseExpiresAt || state.leaseExpiresAt <= now) ? "interrupted" : state?.state || "never-run",
     startedAt: state?.startedAt || null, lastSuccessAt: state?.lastSuccessAt || null,
     lastFailureAt: state?.lastFailureAt || null, lastError: state?.lastError || null,
     copyVerified: Boolean(state?.latestReceipt), restoreVerified: false,
+    ...(typeof receipt?.externalOriginalCount === "number" ? { externalOriginalsExcluded: receipt.externalOriginalCount } : {}),
     due: !state?.lastSuccessAt || state.lastSuccessAt.getTime() <= now.getTime() - BACKUP_INTERVAL_MS };
 }

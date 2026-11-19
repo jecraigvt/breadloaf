@@ -10,7 +10,7 @@ import JSZip from "jszip";
 const MAGIC = Buffer.from("BLHBACK1");
 export const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024;
 export interface SnapshotFile { path: string; size: number; sha256: string; }
-export interface SnapshotManifest { version: 1; createdAt: string; files: SnapshotFile[]; references: string[]; }
+export interface SnapshotManifest { version: 1; createdAt: string; files: SnapshotFile[]; references: string[]; externalOriginalCount?: number; }
 export function option(name: string): string | undefined { const index = process.argv.indexOf(name); return index >= 0 ? process.argv[index + 1] : undefined; }
 export function backupPassphrase(): string {
   const phrase = process.env.ARCHIVE_BACKUP_PASSPHRASE;

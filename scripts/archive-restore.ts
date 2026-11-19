@@ -9,6 +9,9 @@ async function main() {
   if (!input) throw new Error("Provide --input <file.blhbackup>. Verification is a dry run unless --apply is supplied.");
   const verified = await verifySnapshot(path.resolve(input), backupPassphrase());
   console.log(`Snapshot verified: ${verified.manifest.files.length - 1} originals plus database dump, created ${verified.manifest.createdAt}.`);
+  if (verified.manifest.externalOriginalCount) {
+    console.log(`${verified.manifest.externalOriginalCount} Drive originals require the separate collection recovery copy.`);
+  }
   if (!process.argv.includes("--apply")) { console.log("Dry run complete. No database or original files were changed."); return; }
   const target = process.env.ARCHIVE_RESTORE_DATABASE_URL;
   const targetOriginals = option("--target-originals");

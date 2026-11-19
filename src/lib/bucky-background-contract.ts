@@ -43,6 +43,8 @@ export interface BackgroundSourcePart {
   text?: string;
   imageBase64?: string;
   fileBase64?: string;
+  pageNumber?: number;
+  read?: boolean;
 }
 export interface BackgroundSourceBundle {
   jobId: string;
@@ -51,6 +53,7 @@ export interface BackgroundSourceBundle {
   categories: { name: string; description: string | null }[];
   parts: BackgroundSourcePart[];
   resultSchema: Record<string, unknown>;
+  archiveScan?: boolean;
 }
 
 export function backgroundResultJsonSchema(kind: string): Record<string, unknown> {

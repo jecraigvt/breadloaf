@@ -103,6 +103,11 @@ jobs:
         run: >-
           docker run --rm --entrypoint sh breadloaf-runtime-verify -c
           'node --version && pg_dump --version && pg_restore --version && node -e "require(\"@prisma/client\"); require(\"@napi-rs/canvas\")"'
+      - name: Read and recover a large scan with bounded memory
+        run: >-
+          docker run --rm --network none --memory 512m --env ARCHIVE_LARGE_FILE_TEST=1
+          --entrypoint node breadloaf-runtime-verify node_modules/tsx/dist/cli.mjs
+          --test src/lib/archive-collection-streaming.test.ts
       - name: Verify the generated Prisma engine really connects from the image
         run: >-
           docker run --rm --network host

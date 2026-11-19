@@ -11,7 +11,7 @@ export async function runDataJob(client: WorkerClient, claim: Claim, runner: Str
   for (const descriptor of metadata.parts) {
     signal.throwIfAborted();
     // Central checkpoints are revalidated before reusing them after any provider handoff.
-    if (resultSchema.safeParse(parts[descriptor.id]).success) continue;
+    if (metadata.archiveScan ? descriptor.read : resultSchema.safeParse(parts[descriptor.id]).success) continue;
     const bundle = await client.source(claim, descriptor.id, signal);
     const part = bundle.parts.find((p) => p.id === descriptor.id);
     if (!part) throw new Error("Source part disappeared");
@@ -27,9 +27,14 @@ export async function runDataJob(client: WorkerClient, claim: Claim, runner: Str
     ].join("\n\n");
     const parsed = resultSchema.parse(await runner.run(prompt, metadata.resultSchema, images));
     if (parsed.kind === "document_analysis" && part.text !== undefined) parsed.extractedText = part.text;
-    parts[descriptor.id] = parsed;
-    await checkpoint({ parts });
+    if (metadata.archiveScan && descriptor.pageNumber) {
+      await client.request("heartbeat", { ...client.credentials(claim), scanPage: { number: descriptor.pageNumber, result: parsed } }, signal);
+    } else {
+      parts[descriptor.id] = parsed;
+      await checkpoint({ parts });
+    }
   }
+  if (metadata.archiveScan) return { kind: "archive_scan_complete" as const };
   if (claim.job.kind === "document_analysis") {
     return combineDocumentParts(metadata.parts.map((p) => BackgroundDocumentResultSchema.parse(parts[p.id])));
   }
