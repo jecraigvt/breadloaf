@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import type { NextRequest } from "next/server";
 import { localFamilyEmailTestTransport } from "./family-email-test-transport";
 export { safeSignInDestination } from "./sign-in-destination";
 
@@ -18,6 +19,10 @@ export function hashSignInSecret(value: string): string { return createHash("sha
 
 export function emailSignInEnabled(): boolean { return process.env.FAMILY_EMAIL_SIGN_IN_ENABLED === "true"; }
 
+export function familyAuthConfigured(): boolean {
+  return Boolean(process.env.FAMILY_PINS) || emailSignInEnabled();
+}
+
 export function canonicalSiteUrl(): string {
   const candidate = process.env.APP_URL || "https://breadloafhill.com";
   const parsed = new URL(candidate);
@@ -26,4 +31,20 @@ export function canonicalSiteUrl(): string {
   if (parsed.protocol !== "https:" && !((process.env.NODE_ENV !== "production" || localTest) && loopback && parsed.protocol === "http:")) throw new Error("APP_URL must use HTTPS");
   if (parsed.username || parsed.password) throw new Error("APP_URL must not contain credentials");
   return parsed.origin;
+}
+
+export function publicSiteOrigin(request: NextRequest): string {
+  return !process.env.APP_URL && process.env.NODE_ENV !== "production" ? request.nextUrl.origin : canonicalSiteUrl();
+}
+
+export function siteWriteOriginError(request: NextRequest) {
+  const origin = request.headers.get("origin");
+  // Validate against the public site because a reverse proxy may use a local origin.
+  let siteOrigin: string;
+  try { siteOrigin = publicSiteOrigin(request); }
+  catch { return { error: "Site address is not configured correctly.", status: 503 }; }
+
+  if (request.headers.get("sec-fetch-site") === "cross-site" || (origin && origin !== siteOrigin)) {
+    return { error: "Open Breadloaf Hill before making this change.", status: 403 };
+  }
 }

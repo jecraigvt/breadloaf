@@ -56,6 +56,13 @@ export interface BackgroundSourceBundle {
   archiveScan?: boolean;
 }
 
+export function backgroundTranscriptionInstruction(part: Pick<BackgroundSourcePart, "text">): string {
+  if (part.text !== undefined) {
+    return "The supplied text is already transcribed. Leave extractedText empty because the archive keeps the supplied text as written.";
+  }
+  return "Put a verbatim transcription of every legible line in the attached image in extractedText. Include names and dates as written, even on a page with only a heading or date. Use summary for your separate summary. Leave extractedText empty only if the image has no legible text.";
+}
+
 export function backgroundResultJsonSchema(kind: string): Record<string, unknown> {
   const schema = kind === "document_analysis" ? BackgroundDocumentResultSchema
     : kind === "archive_review" ? BackgroundReviewResultSchema : BackgroundDevelopmentResultSchema;
