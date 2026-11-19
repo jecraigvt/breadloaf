@@ -30,6 +30,7 @@ test("a resumed import saves one verified original, checkpoints pages, and opens
   const { ArchiveOriginalDrive } = await import("./archive-original-drive");
   const { archiveBatchFile, createArchiveImport, prepareArchiveImportFile, relayArchiveChunk } = await import("./archive-imports");
   const { archiveScanJob, checkpointArchivePage } = await import("./archive-scan-pages");
+  const { queueBackgroundUpload } = await import("./bucky-background-documents");
   const { claimBuckyJob, heartbeatBuckyWorker, completeBuckyJob } = await import("./bucky-jobs");
   const { applyJobResult } = await import("./bucky-job-handlers");
   const { findArchivePages } = await import("./archive-scan-search");
@@ -115,6 +116,8 @@ test("a resumed import saves one verified original, checkpoints pages, and opens
     const job = await prisma.buckyJob.findFirstOrThrow({ where: { sourceDocumentId: docId } });
     jobId = job.id;
     assert.equal(archiveScanJob(job), true);
+    const reupload = () => queueBackgroundUpload(new File([bytes], "same-scan.pdf", { type: "application/pdf" }), actor);
+    assert.equal((await reupload()).id, job.id);
     await prisma.archiveImportFile.update({ where: { id: saved.fileId }, data: { pageCount: 2 } });
     await prisma.buckyWorker.create({ data: { id: workerId, label: "scan test", provider: "local",
       tokenHash: randomUUID(), capabilities: ["document_analysis"] } });
@@ -132,6 +135,11 @@ test("a resumed import saves one verified original, checkpoints pages, and opens
     await page(2, "October 1972. Dear Tom, here is the letter from the house.");
     await page(2, "This late duplicate must not replace the first acknowledged reading.");
     await completeBuckyJob(workerId, job.id, attempt!.leaseToken, completion, undefined, applyJobResult);
+    const queuedAgain = await reupload();
+    assert.notEqual(queuedAgain.id, job.id);
+    assert.equal(queuedAgain.sourceDocumentId, docId);
+    assert.equal(archiveScanJob(queuedAgain), true);
+    assert.equal((await reupload()).id, queuedAgain.id);
     const matches = await findArchivePages("Show me the letter from 1972");
     assert.ok(matches.some(match => match.id === docId && match.number === 2 && match.excerpt.includes("1972")));
 
@@ -152,9 +160,9 @@ test("a resumed import saves one verified original, checkpoints pages, and opens
   } finally {
     if (jobId) {
       await prisma.buckyJobAttempt.deleteMany({ where: { jobId } });
-      await prisma.buckyJob.deleteMany({ where: { id: jobId } });
       await prisma.buckyLedgerEntry.deleteMany({ where: { sourceId: jobId } });
     }
+    if (docId) await prisma.buckyJob.deleteMany({ where: { sourceDocumentId: docId } });
     if (batchId) {
       await prisma.archiveImportFile.deleteMany({ where: { importId: batchId } });
       await prisma.archiveImport.deleteMany({ where: { id: batchId } });
