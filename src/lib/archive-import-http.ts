@@ -5,9 +5,9 @@ import { ArchiveImportError } from "@/lib/archive-import-format";
 
 export const archiveNoStore = { "Cache-Control": "private, no-store" };
 
-export async function requireArchiveCurator(request: NextRequest) {
+export async function requireArchiveAccount(request: NextRequest) {
   const { actor } = await requestAccessContext(request);
-  if (!actor?.verified || !actor.isCurator) throw new AccessPolicyError("A verified archive curator is required.", 403);
+  if (!actor?.verified) throw new AccessPolicyError("Sign in with your family account to import a folder.", 403);
   return actor;
 }
 

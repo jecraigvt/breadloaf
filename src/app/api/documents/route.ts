@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
   if (searchParams.get("healthOnly") === "true") {
     return NextResponse.json({
       ...await getArchiveHealth(scopes),
-      canImportFolder: !!access.actor?.isCurator && !process.env.ARCHIVE_RECOVERED_ORIGINALS_DIR &&
+      canImportFolder: !!access.actor?.verified && !process.env.ARCHIVE_RECOVERED_ORIGINALS_DIR &&
         validArchiveDriveId(process.env.ARCHIVE_IMPORT_DRIVE_FOLDER_ID || ""),
     });
   }

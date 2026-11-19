@@ -37,8 +37,8 @@ test("a resumed import saves one verified original, checkpoints pages, and opens
   const { getAuthCookieName, createAuthToken } = await import("./auth");
   const stage = await privateStagingDirectory();
   const actor: ActorContext = {
-    memberId: randomUUID(), displayName: "Test", fullName: "Test Curator", branch: null,
-    boardRole: null, isBoardMember: false, isCurator: true, verified: true,
+    memberId: randomUUID(), displayName: "Test", fullName: "Test Member", branch: null,
+    boardRole: null, isBoardMember: false, isCurator: false, verified: true,
   };
   const driveId = randomUUID();
   const workerId = randomUUID();
@@ -181,8 +181,8 @@ test("the import catalog and Bucky queue accept a full 15 GiB batch, including a
   drive.allocateId = async () => randomUUID();
   drive.verified = async () => true;
   const actor: ActorContext = {
-    memberId: randomUUID(), displayName: "Test", fullName: "Test Curator", branch: null,
-    boardRole: null, isBoardMember: false, isCurator: true, verified: true,
+    memberId: randomUUID(), displayName: "Test", fullName: "Test Member", branch: null,
+    boardRole: null, isBoardMember: false, isCurator: false, verified: true,
   };
   const sizes = [3 * 1024 ** 3, ...Array<number>(24).fill(512 * 1024 ** 2)];
   const total = 15 * 1024 ** 3;
@@ -207,6 +207,42 @@ test("the import catalog and Bucky queue accept a full 15 GiB batch, including a
     await prisma.archiveImportFile.deleteMany({ where: { importId: batch.id } });
     await prisma.archiveImport.deleteMany({ where: { id: batch.id } });
     await prisma.document.deleteMany({ where: { id: { in: ids } } });
+    await prisma.$disconnect();
+    for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+  }
+});
+
+test("a regular family account can open its folder imports", { skip: !testUrl }, async () => {
+  const url = new URL(testUrl!);
+  assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) && /test/i.test(url.pathname));
+  const previous = { DATABASE_URL: process.env.DATABASE_URL, FAMILY_PINS: process.env.FAMILY_PINS };
+  process.env.DATABASE_URL = testUrl;
+  process.env.FAMILY_PINS = "Synthetic:9231";
+  const { prisma } = await import("./prisma");
+  const { createIdentityToken, hashIdentityToken } = await import("./identity-token");
+  const { getAuthCookieName } = await import("./auth");
+  const { GET } = await import("../app/api/archive/imports/route");
+  const memberId = randomUUID();
+  const otherMemberId = randomUUID();
+  const email = memberId + "@example.test";
+  const data = { folderKey: checksum, folderName: "Synthetic letters", groupImages: false, fileCount: 1, sizeBytes: 1n };
+  try {
+    await prisma.familyMember.create({ data: { id: memberId, name: "Synthetic Member", email, accessApproved: true } });
+    const token = createIdentityToken();
+    await prisma.familySession.create({ data: {
+      memberId, tokenHash: await hashIdentityToken(token), verifiedAt: new Date(), verifiedEmail: email,
+      expiresAt: new Date(Date.now() + 3600000),
+    } });
+    const own = await prisma.archiveImport.create({ data: { ...data, memberId } });
+    await prisma.archiveImport.create({ data: { ...data, memberId: otherMemberId } });
+    const endpoint = "https://breadloafhill.com/api/archive/imports";
+    const response = await GET(new NextRequest(endpoint, { headers: { Cookie: getAuthCookieName() + "=v3." + token } }));
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).imports.map((batch: { id: string }) => batch.id), [own.id]);
+    assert.equal((await GET(new NextRequest(endpoint))).status, 401);
+  } finally {
+    await prisma.archiveImport.deleteMany({ where: { memberId: { in: [memberId, otherMemberId] } } });
+    await prisma.familyMember.deleteMany({ where: { id: memberId } });
     await prisma.$disconnect();
     for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
   }

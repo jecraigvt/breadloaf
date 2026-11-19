@@ -16,7 +16,7 @@ Measure the folder before import. Keep the property Drive on its free plan for t
 
 ## Import a folder
 
-With a verified curator login, open **Archive → Import folder**. If each image subfolder contains pages of one letter or record, select the grouping option. The organizer can pause or reselect the same folder to resume. The app tries resumable transfers directly to Drive and can relay individual bounded chunks if the browser cannot complete the direct transfer. Drive’s session expiry can require restarting one unfinished file. Completed originals and their catalog entries are reused.
+Sign in with your family account and open **Archive → Import folder**. If each image subfolder contains pages of one letter or record, select the grouping option. You can pause or reselect the same folder to resume. The app tries resumable transfers directly to Drive and can relay individual bounded chunks if the browser cannot complete the direct transfer. Drive’s session expiry can require restarting one unfinished file. Completed originals and their catalog entries are reused.
 
 Each verified scan queues a Bucky job. The worker stages the original on private temporary disk and renders one bounded page at a time. The Railway runtime image includes Poppler and libvips. For a local app instance, make Poppler available on PATH or set `ARCHIVE_PDFINFO_PATH`, `ARCHIVE_PDFTOTEXT_PATH`, and `ARCHIVE_PDFTOPPM_PATH`. Update local Bucky workers to this release before the pilot. An older worker can still run its original jobs and will skip the new page jobs.
 

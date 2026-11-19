@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { archiveRowId } from "@/lib/archive-import-format";
-import { archiveImportError, archiveImportResponse, requireArchiveCurator } from "@/lib/archive-import-http";
+import { archiveImportError, archiveImportResponse, requireArchiveAccount } from "@/lib/archive-import-http";
 import { archiveBatchFile, archiveImportProgress, relayArchiveChunk } from "@/lib/archive-imports";
 import { archiveImportFolder } from "@/lib/archive-original-drive";
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ id: string; fileId: string }> };
 
 async function importFile(request: NextRequest, { params }: Context) {
-  const actor = await requireArchiveCurator(request);
+  const actor = await requireArchiveAccount(request);
   archiveImportFolder();
   const { id, fileId } = await params;
   const file = await archiveBatchFile(archiveRowId.parse(id), archiveRowId.parse(fileId), actor.memberId);
