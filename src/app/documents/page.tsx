@@ -57,7 +57,7 @@ export default function DocumentsPage() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [showDeleted, setShowDeleted] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [archiveHealth, setArchiveHealth] = useState<ArchiveHealth | null>(null);
+  const [archiveHealth, setArchiveHealth] = useState<(ArchiveHealth & { canImportFolder?: boolean }) | null>(null);
   const [totalDocuments, setTotalDocuments] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -385,6 +385,11 @@ export default function DocumentsPage() {
             >
               + Add
             </Link>
+            )}
+            {!showDeleted && archiveHealth?.canImportFolder && (
+              <Link href="/documents/import" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-stone-100 text-stone-900 hover:bg-stone-200">
+                Import folder
+              </Link>
             )}
             {!showDeleted && (
             <button

@@ -138,7 +138,6 @@ async function buildRoundTripCases(): Promise<VerificationCase[]> {
 }
 
 async function main() {
-  if (!process.env.GOOGLE_AI_API_KEY) throw new Error("GOOGLE_AI_API_KEY is required for question generation");
   if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is required");
 
   const [roundTripCases, documents] = await Promise.all([

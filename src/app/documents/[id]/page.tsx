@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import {
@@ -22,6 +22,7 @@ import "../../fieldguide-archive.css";
 import { formatDate, formatFileSize, parseTags } from "@/lib/utils";
 import { dictationDisplaySummary } from "@/lib/dictation-analysis";
 import { archiveAnalysisIssueMessage } from "@/lib/archive-health-shared";
+import { requestSavedState } from "@/lib/saved-state";
 
 export default function DocumentDetailPage() {
   const params = useParams();
@@ -29,9 +30,17 @@ export default function DocumentDetailPage() {
   const [doc, setDoc] = useState<DocumentWithCategory | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [scanPage, setScanPage] = useState(1);
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const [savingTitle, setSavingTitle] = useState(false);
+  const [titleError, setTitleError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    setTitleDraft(null);
+    setTitleError(null);
+    const requested = Number(new URLSearchParams(window.location.search).get("page")) || 1;
+    setScanPage(Number.isSafeInteger(requested) && requested > 0 ? requested : 1);
 
     fetch(`/api/documents/${params.id}`)
       .then(async (response) => {
@@ -61,6 +70,27 @@ export default function DocumentDetailPage() {
       cancelled = true;
     };
   }, [params.id]);
+
+  const handleRename = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const title = titleDraft?.trim();
+    if (!doc || !title || savingTitle) return;
+    setSavingTitle(true);
+    setTitleError(null);
+    try {
+      const updated = await requestSavedState<{ title: string }>(`/api/documents/${doc.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      setDoc((current) => current?.id === doc.id ? { ...current, title: updated.title } : current);
+      setTitleDraft(null);
+    } catch (error) {
+      setTitleError(error instanceof Error ? error.message : "The title could not be saved.");
+    } finally {
+      setSavingTitle(false);
+    }
+  };
 
   const handleDelete = async () => {
     if (!confirm("Move this document to Recently Deleted? The original file will be kept.")) return;
@@ -96,6 +126,8 @@ export default function DocumentDetailPage() {
 
   const tags = parseTags(doc.tags);
   const isAudio = doc.fileType.startsWith("audio/");
+  const scanUrl = "/api/documents/" + doc.id + "/file";
+  const supportedImage = /^image\/(jpeg|png|webp|heic)$/.test(doc.fileType);
 
   return (
     <div className="fg-archive fg-document-detail">
@@ -110,8 +142,35 @@ export default function DocumentDetailPage() {
           <ArrowLeft size={16} />
           Back to Archive
         </Link>
-        <span className="fg-archive-eyebrow">From the archive</span>
+        {doc.analysisState !== "pending" && titleDraft === null && (
+          <button type="button" onClick={() => setTitleDraft(doc.title)} className="fg-archive-text-link">
+            Rename document
+          </button>
+        )}
         </div>
+
+        {titleDraft !== null && (
+          <form onSubmit={handleRename} className="fg-archive-panel space-y-3">
+            <label htmlFor="document-title" className="block text-sm font-medium">Document title</label>
+            <input
+              id="document-title"
+              value={titleDraft}
+              onChange={(event) => setTitleDraft(event.target.value)}
+              disabled={savingTitle}
+              required
+              className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2"
+            />
+            {titleError && <p role="alert" className="text-sm text-red-700">{titleError}</p>}
+            <div className="flex flex-wrap gap-2">
+              <button type="submit" disabled={savingTitle || !titleDraft.trim()} className="rounded-lg bg-green-700 px-4 py-2 text-white disabled:opacity-50">
+                {savingTitle ? "Saving…" : "Save title"}
+              </button>
+              <button type="button" disabled={savingTitle} onClick={() => { setTitleDraft(null); setTitleError(null); }} className="rounded-lg border border-stone-300 px-4 py-2">
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
 
         {/* A story belongs to whoever told it. A fact is true regardless of who
             recorded it, so for everything else the uploader stays down in the
@@ -155,7 +214,14 @@ export default function DocumentDetailPage() {
               Your browser does not support audio playback.
             </audio>
           </div>
-        ) : doc.fileType.startsWith("image/") ? (
+        ) : doc.scan && doc.fileType === "application/pdf" ? (
+          <div className="fg-archive-panel space-y-2">
+            <a href={scanUrl + "#page=" + scanPage} target="_blank" rel="noopener noreferrer" className="fg-archive-text-link">
+              <FileText size={18} /> Open original PDF{scanPage > 1 ? " at page " + scanPage : ""}
+            </a>
+            <a href={scanUrl + "?download=1"} className="block text-sm text-green-800 underline">Download original</a>
+          </div>
+        ) : supportedImage || (!doc.scan && doc.fileType.startsWith("image/")) ? (
           <div className="fg-document-preview rounded-xl overflow-hidden border border-stone-200">
             <img src={`/api/documents/${doc.id}/file`} alt={doc.title} className="w-full" />
           </div>
@@ -170,6 +236,32 @@ export default function DocumentDetailPage() {
               <Download size={12} /> Tap to download
             </span>
           </a>
+        )}
+
+        {doc.scan && (doc.scan.pages.length > 0 || doc.scan.related.length > 1) && (
+          <details className="fg-archive-panel bg-stone-50 rounded-xl p-4">
+            <summary className="cursor-pointer font-medium">Pages{doc.scan.pages.some(page => page.needsReview) ? " · some need review" : ""}</summary>
+            {doc.scan.related.length > 1 && (
+              <ol className="mt-3 space-y-1 text-sm">
+                {doc.scan.related.map(page => (
+                  <li key={page.id}><Link href={"/documents/" + page.id} className="text-green-800 underline" aria-current={page.id === doc.id ? "page" : undefined}>{page.name}</Link></li>
+                ))}
+              </ol>
+            )}
+            {doc.scan.pages.length > 0 && (
+              <ul className="mt-3 max-h-60 space-y-1 overflow-auto text-sm">
+                {doc.scan.pages.map(page => (
+                  <li key={page.number}>
+                    {doc.fileType === "application/pdf" ? (
+                      <a href={scanUrl + "#page=" + page.number} className="text-green-800 underline" target="_blank" rel="noopener noreferrer">Page {page.number}</a>
+                    ) : <span>Page {page.number}</span>}
+                    {page.years.length > 0 && " · " + page.years.join(", ")}
+                    {page.needsReview && " · Needs review"}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </details>
         )}
 
         {isAudio && doc.aiExtractedText && (
@@ -220,7 +312,7 @@ export default function DocumentDetailPage() {
               <FileText size={18} className="text-stone-400" />
               <span className="text-sm text-stone-500">Protection</span>
               <span className="ml-auto text-sm text-amber-700">
-                {doc.fileType === "link" ? "External link" : "Local copy only"}
+                {doc.fileType === "link" ? "External link" : doc.scan ? "Original saved to Drive" : "Local copy only"}
               </span>
             </div>
         </div>

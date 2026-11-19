@@ -1,17 +1,19 @@
 import type { Prisma } from "@prisma/client";
-import { completedGeminiOutput, createGeminiInteraction, type GeminiInteractionParams, type GeminiInteraction } from "@/lib/gemini-generation";
+import type OpenAI from "openai";
+import { getOpenAIClient } from "@/lib/openai-client";
 import { MODELS } from "@/lib/ai-models";
 import { claimBuckyJob, completeBuckyJob, failBuckyJob, heartbeatBuckyWorker, yieldBuckyJob, type BuckyJobUsage } from "@/lib/bucky-jobs";
 import { applyJobResult, prepareJobSource } from "@/lib/bucky-job-handlers";
 import { BackgroundDocumentResultSchema, BackgroundReviewResultSchema, combineDocumentParts, type BackgroundSourceBundle } from "@/lib/bucky-background-contract";
 import { backgroundSourceImage } from "@/lib/bucky-source-image";
-import { BACKGROUND_API_MAX_OUTPUT_TOKENS, backgroundApiUsage, backgroundApiUpperBoundCents } from "@/lib/bucky-api-cost";
+import { checkpointArchivePage } from "@/lib/archive-scan-pages";
+import { BACKGROUND_API_MAX_OUTPUT_TOKENS, backgroundApiCostCents, backgroundApiUpperBoundCents } from "@/lib/bucky-api-cost";
 
 /** One bounded page/section per tick; the next tick resumes the same artifact. */
-type GenerateBackgroundResponse = (input: GeminiInteractionParams) => Promise<GeminiInteraction>;
+type GenerateBackgroundResponse = (input: OpenAI.Responses.ResponseCreateParamsNonStreaming) => Promise<Pick<OpenAI.Responses.Response, "status" | "usage" | "output_text">>;
 export async function runHostedBuckyPart(workerId: string, generate?: GenerateBackgroundResponse) {
-  if (!process.env.GOOGLE_AI_API_KEY && !generate) return { state: "unavailable" };
-  const claim = await claimBuckyJob(workerId, ["document_analysis", "archive_review"], null);
+  if (!process.env.OPENAI_API_KEY && !generate) return { state: "unavailable" };
+  const claim = await claimBuckyJob(workerId, ["document_analysis", "archive_review"], null, true);
   if (!claim) return { state: "idle" };
   const { job, leaseToken } = claim;
   const schema = job.kind === "document_analysis" ? BackgroundDocumentResultSchema : BackgroundReviewResultSchema;
@@ -22,7 +24,7 @@ export async function runHostedBuckyPart(workerId: string, generate?: GenerateBa
   let knownUsage = false;
   try {
     const metadata = JSON.parse((await prepareJobSource(job)).body) as BackgroundSourceBundle;
-    const next = metadata.parts.find((part) => !schema.safeParse(parts[part.id]).success);
+    const next = metadata.parts.find((part) => metadata.archiveScan ? !part.read : !schema.safeParse(parts[part.id]).success);
     if (next) {
       const bundle = JSON.parse((await prepareJobSource(job, next.id)).body) as BackgroundSourceBundle;
       const part = bundle.parts[0];
@@ -40,26 +42,36 @@ export async function runHostedBuckyPart(workerId: string, generate?: GenerateBa
       }
       await heartbeatBuckyWorker(workerId, { jobId: job.id, leaseToken });
       providerStarted = true;
-      const response = await (generate ?? ((input) => createGeminiInteraction(input, { timeout: 90_000, retries: 0 })))({ model: MODELS.pro, store: false,
-        system_instruction: instructions, input: [
-          { type: "text", text: prompt }, ...(image ? [{ type: "image" as const, data: image.split(",")[1], mime_type: "image/png", resolution: "high" as const }] : []),
-        ], generation_config: { max_output_tokens: BACKGROUND_API_MAX_OUTPUT_TOKENS, thinking_level: "low" },
-        response_format: { type: "text", mime_type: "application/json", schema: bundle.resultSchema },
+      const response = await (generate ?? ((input) => getOpenAIClient().responses.create(input, { timeout: 90_000, maxRetries: 0 })))({ model: MODELS.pro, store: false,
+        service_tier: "default", prompt_cache_options: { mode: "explicit" },
+        instructions, input: [{ role: "user", content: [
+          { type: "input_text", text: prompt }, ...(image ? [{ type: "input_image" as const, image_url: image, detail: "high" as const }] : []),
+        ] }], max_output_tokens: BACKGROUND_API_MAX_OUTPUT_TOKENS,
+        text: { format: { type: "json_schema", name: "bucky_background_result", strict: true, schema: bundle.resultSchema } },
       });
       if (response.usage) {
-        Object.assign(usage, backgroundApiUsage(response.usage));
+        usage.inputTokens = response.usage.input_tokens; usage.outputTokens = response.usage.output_tokens;
+        usage.costCents = backgroundApiCostCents(usage.inputTokens, usage.outputTokens, response.usage.input_tokens_details.cache_write_tokens ?? 0);
         knownUsage = true;
       }
       if (response.status !== "completed" || !response.usage) throw new Error("Incomplete background response");
-      const parsed = schema.parse(JSON.parse(completedGeminiOutput(response)));
-      parts[next.id] = parsed.kind === "document_analysis" && part.text !== undefined ? { ...parsed, extractedText: part.text } : parsed;
-      await heartbeatBuckyWorker(workerId, { jobId: job.id, leaseToken, checkpoint: { parts } as Prisma.InputJsonValue });
+      const parsed = schema.parse(JSON.parse(response.output_text));
+      const result = parsed.kind === "document_analysis" && part.text !== undefined ? { ...parsed, extractedText: part.text } : parsed;
+      const pageNumber = next.pageNumber;
+      if (metadata.archiveScan && pageNumber) {
+        await heartbeatBuckyWorker(workerId, { jobId: job.id, leaseToken },
+          (tx, lockedJob) => checkpointArchivePage(tx, lockedJob, { number: pageNumber, result }));
+        next.read = true;
+      } else {
+        parts[next.id] = result;
+        await heartbeatBuckyWorker(workerId, { jobId: job.id, leaseToken, checkpoint: { parts } as Prisma.InputJsonValue });
+      }
     }
-    if (metadata.parts.some((part) => !schema.safeParse(parts[part.id]).success)) {
+    if (metadata.parts.some((part) => metadata.archiveScan ? !part.read : !schema.safeParse(parts[part.id]).success)) {
       await yieldBuckyJob(workerId, job.id, leaseToken, { parts } as Prisma.InputJsonValue, usage);
       return { state: "continued", jobId: job.id };
     }
-    const result = job.kind === "document_analysis"
+    const result = metadata.archiveScan ? { kind: "archive_scan_complete" } : job.kind === "document_analysis"
       ? combineDocumentParts(metadata.parts.map((part) => BackgroundDocumentResultSchema.parse(parts[part.id])))
       : BackgroundReviewResultSchema.parse({ kind: "archive_review",
         summary: metadata.parts.map((part) => BackgroundReviewResultSchema.parse(parts[part.id]).summary).join("\n\n"),

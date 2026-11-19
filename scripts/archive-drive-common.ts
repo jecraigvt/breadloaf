@@ -5,7 +5,8 @@ import path from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { google } from "googleapis";
-import { MAX_ARCHIVE_BYTES, privateStagingDirectory, removeStagingDirectory, verifySnapshot } from "./archive-common";
+import { privateStagingDirectory, removeStagingDirectory } from "./archive-common";
+import { verifySnapshot } from "./archive-format";
 
 export const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 export const BACKUP_DRIVE_ACCOUNT = "breadloafhillsite@gmail.com";
@@ -27,6 +28,7 @@ export interface DriveBackupReceipt {
   verifiedAt: string;
   snapshotCreatedAt: string;
   originalCount: number;
+  externalOriginalCount?: number;
   restoreVerified: false;
 }
 export interface DriveBackupOptions {
@@ -122,7 +124,7 @@ export async function uploadVerifiedSnapshotToDrive(options: DriveBackupOptions)
   if (options.passphrase.length < 20) return failed("Use the same backup passphrase of at least 20 characters that created the encrypted snapshot.");
   if (!safeDriveId(options.folderId) || options.existingFileId && !safeDriveId(options.existingFileId)) return failed("Configure a valid, fixed Drive backup folder or file ID.");
   const source = await lstat(options.input);
-  if (!source.isFile() || source.isSymbolicLink() || source.size < 52 || source.size > MAX_ARCHIVE_BYTES + 1024 * 1024) return failed("Choose an ordinary encrypted snapshot within the 512 MB backup limit.");
+  if (!source.isFile() || source.isSymbolicLink() || source.size < 52 || !Number.isSafeInteger(source.size)) return failed("Choose an ordinary encrypted snapshot with a valid size.");
   const stage = await privateStagingDirectory();
   try {
     const input = path.join(stage, "snapshot.blhbackup");
@@ -228,6 +230,7 @@ export async function uploadVerifiedSnapshotToDrive(options: DriveBackupOptions)
     } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
     if (downloadedSize !== size || downloadedSha.digest("hex") !== encryptedSha256) return failed("Drive download checksum verification failed. No verified backup was recorded.");
     return { version: 1, provider: "google-drive", driveFileId: fileId, folderId: options.folderId, encryptedSha256, size,
-      verifiedAt: new Date().toISOString(), snapshotCreatedAt: manifest.createdAt, originalCount: manifest.files.filter(file => file.path.startsWith("originals/")).length, restoreVerified: false };
+      verifiedAt: new Date().toISOString(), snapshotCreatedAt: manifest.createdAt, originalCount: manifest.files.filter(file => file.path.startsWith("originals/")).length,
+      ...(manifest.externalOriginalCount ? { externalOriginalCount: manifest.externalOriginalCount } : {}), restoreVerified: false };
   } finally { await removeStagingDirectory(stage); }
 }

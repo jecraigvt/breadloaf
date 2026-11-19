@@ -4,12 +4,18 @@ import { sha256 } from "@/lib/archive-integrity";
 import { storeFileBuffer, STORED_FILE_SIZE_LIMIT } from "@/lib/file-storage";
 import { resolveSupportedFileType } from "@/lib/document-file-types";
 import { enqueueBuckyJob, BuckyJobError } from "@/lib/bucky-jobs";
+import { archiveDriveId, canReadArchiveScan } from "@/lib/archive-import-format";
+import { queueArchiveScan } from "@/lib/archive-imports";
 
 export async function queueExistingDocument(id: string, actor: ActorContext | null) {
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${id} FOR UPDATE`;
     const doc = await tx.document.findFirst({ where: { id, deletedAt: null, accessScope: "family" } });
     if (!doc) throw new BuckyJobError("Document is unavailable for background analysis", 404);
+    if (archiveDriveId(doc.filePath)) {
+      if (!canReadArchiveScan(doc.fileType)) throw new BuckyJobError("The original is saved. Bucky cannot read this scan format yet.", 422);
+      return queueArchiveScan(tx, doc, actor);
+    }
     return enqueueBuckyJob({ kind: "document_analysis", sourceDocumentId: doc.id,
       sourceVersion: doc.updatedAt.toISOString(),
       request: { title: doc.title, sourceDocumentIds: [doc.id], newUpload: doc.analysisState === "pending" },
@@ -33,17 +39,19 @@ export async function queueBackgroundUpload(file: File, actor: ActorContext | nu
   const fileType = validateBackgroundFile(file);
   const buffer = Buffer.from(await file.arrayBuffer());
   const checksum = sha256(buffer);
-  const stored = await storeFileBuffer({ buffer, fileName: file.name, contentType: fileType });
   return prisma.$transaction(async (tx) => {
     // Checksums lack a unique constraint in the legacy archive. Lock this checksum
     // so simultaneous background retries cannot create duplicate rows.
     await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtextextended(${checksum}, 0))`;
     let doc = await tx.document.findFirst({ where: { checksum, deletedAt: null, accessScope: "family" } });
-    if (!doc) doc = await tx.document.create({ data: {
-      title: file.name.slice(0, 300), fileName: stored.fileName, filePath: stored.filePath,
-      fileType, fileSize: stored.fileSize, checksum, analysisState: "pending",
-      analysisError: null, uploadedBy: actor?.displayName, accessScope: "family",
-    } });
+    if (!doc) {
+      const stored = await storeFileBuffer({ buffer, fileName: file.name, contentType: fileType });
+      doc = await tx.document.create({ data: {
+        title: file.name.slice(0, 300), fileName: stored.fileName, filePath: stored.filePath,
+        fileType, fileSize: stored.fileSize, checksum, analysisState: "pending",
+        analysisError: null, uploadedBy: actor?.displayName, accessScope: "family",
+      } });
+    }
     const job = await enqueueBuckyJob({ kind: "document_analysis", sourceDocumentId: doc.id,
       sourceVersion: doc.updatedAt.toISOString(),
       request: { title: doc.title, sourceDocumentIds: [doc.id], newUpload: doc.analysisState === "pending" },

@@ -5,6 +5,8 @@ import { requestAccessContext, assertDocumentAccess, accessPolicyResponse, acces
 import { filterScopedDerivedRows } from "@/lib/derived-source-access";
 import { safeLinkUrl } from "@/lib/safe-external-fetch";
 import { documentTextError, documentTextHeaders, retainedDocumentTextView } from "@/lib/document-text-view";
+import { archiveDriveId, ArchiveImportError } from "@/lib/archive-import-format";
+import { driveArchiveFileResponse } from "@/lib/archive-drive-file-response";
 
 // Stream a document's file from the uploads volume. Next.js only
 // guarantees serving public/ assets present at BUILD time, so runtime
@@ -30,8 +32,13 @@ export async function GET(
   }
 
   if (!(await filterScopedDerivedRows([{ filePath: doc.filePath }], accessibleDocumentScopes(access))).length) return NextResponse.json({ error: "This file requires verified permission or an unlocked vault" }, { status: 403, ...(textView ? { headers: documentTextHeaders } : {}) });
+  const download = request.nextUrl.searchParams.get("download") === "1";
+  if (archiveDriveId(doc.filePath)) {
+    if (textView) return documentTextError(415);
+    return await driveArchiveFileResponse(request, doc, download);
+  }
   if (textView) return retainedDocumentTextView(doc);
-  return retainedFileResponse(request, doc, request.nextUrl.searchParams.get("download") === "1");
+  return retainedFileResponse(request, doc, download);
  } catch (error) {
   const denied = accessPolicyResponse(error);
   if (denied) {
@@ -39,6 +46,7 @@ export async function GET(
     return denied;
   }
   if (textView) return documentTextError(500);
+  if (error instanceof ArchiveImportError) return NextResponse.json({ error: error.message }, { status: error.status });
   return NextResponse.json({ error: "Original file is unavailable" }, { status: 500 });
  }
 }

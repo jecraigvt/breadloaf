@@ -127,6 +127,9 @@ export default function FamilyPage() {
           Four brothers, their families, and everyone who has come along{" "}
           <em>since</em>.
         </div>
+        <Link href="/family/roles" className="fg-archive-text-link mt-2">
+          Corporation roles and responsibilities
+        </Link>
       </div>
 
       <div className="colophon">

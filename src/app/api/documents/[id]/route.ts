@@ -5,7 +5,7 @@ import { closeOpenArchiveQuestions } from "@/lib/archive-questions";
 import { getCurrentActor } from "@/lib/actor";
 import { indexDocument, removeFromIndex } from "@/lib/embeddings";
 import { dictationDisplaySummaries } from "@/lib/dictation-intelligence";
-import { requestAccessContext, assertDocumentAccess, isPrivilegedActor, AccessPolicyError, accessPolicyResponse } from "@/lib/access-policy";
+import { requestAccessContext, assertDocumentAccess, isPrivilegedActor, AccessPolicyError, accessPolicyResponse, accessibleDocumentScopes } from "@/lib/access-policy";
 
 export async function GET(
   request: NextRequest,
@@ -16,7 +16,9 @@ export async function GET(
   const { id } = await params;
   const document = await prisma.document.findUnique({
     where: { id },
-    include: { category: true },
+    include: { category: true, archiveImportFile: { select: {
+      importId: true, relativePath: true, groupPath: true, pageCount: true,
+    } } },
   });
 
   if (!document) {
@@ -25,7 +27,27 @@ export async function GET(
   assertDocumentAccess(document.accessScope, access);
 
   const summaries = await dictationDisplaySummaries(document.fileType.startsWith("audio/") ? [document.filePath] : []);
-  return NextResponse.json({ ...document, displaySummary: summaries.get(document.filePath) || null });
+  const { archiveImportFile, archivePageJobId, ...visible } = document;
+  const [pages, related] = await Promise.all([
+    archivePageJobId ? prisma.archivePage.findMany({
+      where: { documentId: id, jobId: archivePageJobId }, orderBy: { number: "asc" },
+      select: { number: true, years: true, needsReview: true },
+    }) : [],
+    archiveImportFile?.groupPath != null ? prisma.archiveImportFile.findMany({
+      where: {
+        importId: archiveImportFile.importId, groupPath: archiveImportFile.groupPath,
+        document: { is: { deletedAt: null, accessScope: { in: accessibleDocumentScopes(access) } } },
+      },
+      select: { relativePath: true, documentId: true }, orderBy: { position: "asc" }, take: 200,
+    }) : [],
+  ]);
+  return NextResponse.json({
+    ...visible, displaySummary: summaries.get(document.filePath) || null,
+    ...(archiveImportFile ? { scan: {
+      relativePath: archiveImportFile.relativePath, pageCount: archiveImportFile.pageCount,
+      pages, related: related.map(page => ({ id: page.documentId, name: page.relativePath.split("/").pop() })),
+    } } : {}),
+  });
  } catch (error) {
   const denied = accessPolicyResponse(error);
   if (denied) return denied;

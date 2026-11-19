@@ -17,6 +17,8 @@ import type { Prisma } from "@prisma/client";
 import { maintenanceInputSchema } from "@/lib/maintenance-contract";
 import { filterScopedDerivedRows } from "@/lib/derived-source-access";
 import { AccessPolicyError } from "@/lib/access-policy";
+import { validArchiveDriveId } from "@/lib/archive-import-format";
+import { findArchiveDocumentsByPage } from "@/lib/archive-scan-search";
 
 function documentPageResponse(documents: unknown[], total: number, offset: number) {
   const next = offset + documents.length;
@@ -32,7 +34,11 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
 
   if (searchParams.get("healthOnly") === "true") {
-    return NextResponse.json(await getArchiveHealth(scopes));
+    return NextResponse.json({
+      ...await getArchiveHealth(scopes),
+      canImportFolder: !!access.actor?.verified && !process.env.ARCHIVE_RECOVERED_ORIGINALS_DIR &&
+        validArchiveDriveId(process.env.ARCHIVE_IMPORT_DRIVE_FOLDER_ID || ""),
+    });
   }
 
   // Return categories with counts if requested
@@ -61,12 +67,14 @@ export async function GET(request: NextRequest) {
   };
 
   if (query) {
+    const matchingScans = await findArchiveDocumentsByPage(query, scopes, showDeleted);
     where.OR = [
       { title: { contains: query, mode: "insensitive" } },
       { aiSummary: { contains: query, mode: "insensitive" } },
       { aiExtractedText: { contains: query, mode: "insensitive" } },
       { tags: { contains: query, mode: "insensitive" } },
       { description: { contains: query, mode: "insensitive" } },
+      ...(matchingScans.length ? [{ id: { in: matchingScans } }] : []),
     ];
   }
 

@@ -8,6 +8,7 @@ import { queueBackgroundUpload, queueExistingDocument, validateBackgroundFile } 
 import { readWorkerBody, workerRouteError } from "@/lib/bucky-worker-auth";
 import { jobDocumentIds } from "@/lib/bucky-job-handlers";
 import { isPrivilegedActor } from "@/lib/access-policy";
+import { archiveScanJob } from "@/lib/archive-scan-pages";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -31,11 +32,22 @@ export async function GET(request: NextRequest) {
     // the family list. The archive owns full document data and access controls.
     const sourceIds = Array.from(new Set(jobs.flatMap(jobDocumentIds)));
     const accessible = new Set((await prisma.document.findMany({ where: { id: { in: sourceIds }, deletedAt: null, accessScope: "family" }, select: { id: true } })).map((doc) => doc.id));
-    const visibleJobs = jobs.filter((job) => jobDocumentIds(job).every((id) => accessible.has(id))).map(({ checkpoint: _checkpoint, result, ...job }) => {
+    const allowedJobs = jobs.filter((job) => jobDocumentIds(job).every((id) => accessible.has(id)));
+    const scans = allowedJobs.filter(archiveScanJob);
+    const [counts, originals] = scans.length ? await Promise.all([
+      prisma.archivePage.groupBy({ by: ["jobId"], where: { jobId: { in: scans.map(job => job.id) } }, _count: true }),
+      prisma.archiveImportFile.findMany({ where: { documentId: { in: scans.flatMap(job => job.sourceDocumentId ? [job.sourceDocumentId] : []) } },
+        select: { documentId: true, pageCount: true } }),
+    ]) : [[], []];
+    const pagesRead = new Map(counts.map(row => [row.jobId, row._count]));
+    const pageCounts = new Map(originals.map(row => [row.documentId, row.pageCount]));
+    const visibleJobs = allowedJobs.map(({ checkpoint: _checkpoint, result, ...job }) => {
+      const total = pageCounts.get(job.sourceDocumentId);
+      const progress = total ? { pagesRead: pagesRead.get(job.id) ?? 0, total } : undefined;
       const artifact = result && typeof result === "object" && !Array.isArray(result) ? result as Record<string, unknown> : null;
-      if (!artifact) return { ...job, result: null };
+      if (!artifact) return { ...job, result: null, progress };
       const { patch: _patch, extractedText: _text, ...visibleResult } = artifact;
-      return { ...job, result: visibleResult };
+      return { ...job, result: visibleResult, progress };
     });
     return NextResponse.json({ jobs: visibleJobs, workers,
       budget: { spentCents: storedBudget?.spentCents ?? 0, reservedCents: storedBudget?.reservedCents ?? 0,

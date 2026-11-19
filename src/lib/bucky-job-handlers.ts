@@ -9,6 +9,7 @@ import { resolveDocumentCategory } from "@/lib/document-categories";
 import { resolveDocumentTitle } from "@/lib/document-title";
 import { closeOpenArchiveQuestions } from "@/lib/archive-questions";
 import { BuckyJobError } from "@/lib/bucky-jobs";
+import { archiveScanJob, archiveScanParts, summarizeArchivePages } from "@/lib/archive-scan-pages";
 import { BackgroundResultSchema, backgroundResultJsonSchema, splitBackgroundText,
   type BackgroundSourceBundle, type BackgroundSourcePart } from "@/lib/bucky-background-contract";
 
@@ -80,7 +81,11 @@ export async function prepareJobSource(job: BuckyJob, sourceId?: string) {
       if (docs.length !== 1) throw new BuckyJobError("Document jobs require exactly one source", 400);
       if (job.sourceVersion && docs[0].updatedAt.toISOString() !== job.sourceVersion) throw new BuckyJobError("The document changed. Start a fresh analysis from the archive.", 409);
       bundle.categories = await prisma.category.findMany({ select: { name: true, description: true }, orderBy: { name: "asc" } });
-      bundle.parts = await documentParts(docs[0], sourceId);
+      if (archiveScanJob(job)) {
+        bundle.archiveScan = true;
+        bundle.instructions += " This is one page of a family scan. Transcribe legible wording, names and dates. Mark unreadable text and reduce confidence when the reading is uncertain.";
+        bundle.parts = (await archiveScanParts(job, docs[0], sourceId)).parts;
+      } else bundle.parts = await documentParts(docs[0], sourceId);
     } else {
       // Archive reviews are recommendations grounded in current archive records.
       // Each source is separate so long archives are never silently clipped.
@@ -100,21 +105,26 @@ export async function prepareJobSource(job: BuckyJob, sourceId?: string) {
 
 /** Runs inside the queue's fenced completion transaction. No external calls here. */
 export async function applyJobResult(tx: Prisma.TransactionClient, job: BuckyJob, input: Prisma.InputJsonValue): Promise<{ status: "succeeded" | "needs_review"; result: Prisma.InputJsonValue }> {
-  const result = BackgroundResultSchema.parse(input);
-  if (result.kind !== job.kind) throw new BuckyJobError("Result kind does not match the job", 400);
-  if (result.kind === "site_improvement") return { status: "needs_review", result };
-  if (result.kind === "archive_review") {
+  const scan = archiveScanJob(job);
+  if (scan && (input as { kind?: string })?.kind !== "archive_scan_complete") {
+    throw new BuckyJobError("Use the page checkpoint protocol to complete a scan.", 400);
+  }
+  const submitted = scan ? null : BackgroundResultSchema.parse(input);
+  if (submitted && submitted.kind !== job.kind) throw new BuckyJobError("Result kind does not match the job", 400);
+  if (submitted?.kind === "site_improvement") return { status: "needs_review", result: submitted };
+  if (submitted?.kind === "archive_review") {
     const ids = jobDocumentIds(job);
-    if (result.findings.some((finding) => finding.sourceId && !ids.includes(finding.sourceId))) throw new BuckyJobError("Review cites an unattached source", 400);
-    return { status: "needs_review", result };
+    if (submitted.findings.some((finding) => finding.sourceId && !ids.includes(finding.sourceId))) throw new BuckyJobError("Review cites an unattached source", 400);
+    return { status: "needs_review", result: submitted };
   }
   const id = job.sourceDocumentId;
   if (!id) throw new BuckyJobError("Missing source document", 400);
   await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${id} FOR UPDATE`;
   const doc = await tx.document.findUnique({ where: { id } });
   if (!doc || doc.deletedAt || doc.accessScope !== "family" || doc.updatedAt.toISOString() !== job.sourceVersion) {
-    return { status: "needs_review", result: { ...result, reviewReason: "The source changed during processing. Review this result before applying it." } };
+    return { status: "needs_review", result: { ...submitted, reviewReason: "The source changed during processing. Review this result before applying it." } };
   }
+  const result = scan ? await summarizeArchivePages(tx, job, doc) : submitted!;
   const category = doc.categoryId ? null : await resolveDocumentCategory({ suggestedCategory: result.suggestedCategory, confidence: result.confidence }, tx);
   const newUpload = jobRequest(job).newUpload === true && doc.analysisState === "pending";
   // Reanalysis may add a summary, but a retained dictation is primary evidence.
@@ -124,6 +134,7 @@ export async function applyJobResult(tx: Prisma.TransactionClient, job: BuckyJob
   }
   const updated = await tx.document.update({ where: { id }, data: {
     aiSummary: result.summary, aiExtractedText: result.extractedText, analysisState: "ok", analysisError: null,
+    ...(scan ? { archivePageJobId: job.id } : {}),
     ...(newUpload ? { title: resolveDocumentTitle({ suggestedTitle: result.title, fileName: doc.fileName, summary: result.summary, extractedText: result.extractedText }), tags: result.tags.join(", ") } : {}),
     ...(category?.categoryId ? { categoryId: category.categoryId } : {}),
   } });
@@ -131,6 +142,7 @@ export async function applyJobResult(tx: Prisma.TransactionClient, job: BuckyJob
   const snapshot = (document: Document, questionSnapshots: unknown) => JSON.parse(JSON.stringify({
     documentId: document.id, title: document.title, categoryId: document.categoryId, tags: document.tags,
     aiSummary: document.aiSummary, aiExtractedText: document.aiExtractedText, analysisState: document.analysisState,
+    ...(scan ? { archivePageJobId: document.archivePageJobId } : {}),
     analysisError: document.analysisError, updatedAt: document.updatedAt, questions: questionSnapshots,
   })) as Prisma.InputJsonValue;
   await tx.buckyLedgerEntry.create({ data: {
@@ -143,7 +155,7 @@ export async function applyJobResult(tx: Prisma.TransactionClient, job: BuckyJob
   } });
   // This durable marker is an outbox. An interrupted embedding update is retried
   // by the fallback scheduler; indexDocument is idempotent.
-  return { status: category?.needsReview ? "needs_review" : "succeeded", result: { ...result, documentId: id, indexPending: true } };
+  return { status: category?.needsReview || (scan && result.confidence < 0.75) ? "needs_review" : "succeeded", result: { ...result, documentId: id, indexPending: true } };
 }
 
 export async function flushBuckyJobEffects(limit = 2) {
