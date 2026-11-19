@@ -7,11 +7,9 @@ import { FileDropzone } from "@/components/upload/file-dropzone";
 import {
   Loader2,
   CheckCircle2,
-  Tag,
   FolderOpen,
   FileText,
   X,
-  Wrench,
   Link2,
   Mic,
   Video,
@@ -22,7 +20,7 @@ import Link from "next/link";
 import { resolveSupportedFileType } from "@/lib/document-file-types";
 import "../fieldguide-archive.css";
 
-type UploadStep = "select" | "preview" | "uploading" | "categorizing" | "review" | "done" | "link" | "batch" | "background-saving" | "background-done";
+type UploadStep = "select" | "preview" | "uploading" | "done" | "link" | "batch" | "background-saving" | "background-done";
 
 interface BatchItem {
   file: File;
@@ -74,8 +72,6 @@ export default function UploadPage() {
       ? localStorage.getItem("breadloaf-username") || ""
       : ""
   );
-  const [result, setResult] = useState<CategorizationResult | null>(null);
-  const [editTitle, setEditTitle] = useState("");
   const [savedDocId, setSavedDocId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [backgroundSavedCount, setBackgroundSavedCount] = useState(0);
@@ -181,63 +177,27 @@ export default function UploadPage() {
     if (!file) return;
     setError(null);
 
-    // Save username
     if (uploadedBy) {
       localStorage.setItem("breadloaf-username", uploadedBy);
     }
 
     try {
-      // Step 1: Upload file
       setStep("uploading");
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("uploadedBy", uploadedBy);
+      formData.append("archive", "true");
 
-      const uploadRes = await fetch("/api/upload", {
+      const response = await fetch("/api/upload", {
         method: "POST",
         body: formData,
       });
 
-      if (!uploadRes.ok) {
-        throw new Error(await uploadRes.text());
+      const data = await response.json().catch(() => null);
+      if (!response.ok || typeof data?.id !== "string") {
+        throw new Error(typeof data?.error === "string" ? data.error : "The archive could not confirm that the file was saved.");
       }
-
-      const uploadData = await uploadRes.json();
-
-      // Step 2: Categorize with AI
-      setStep("categorizing");
-      const catRes = await fetch("/api/categorize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filePath: uploadData.filePath,
-          fileType: uploadData.fileType,
-          fileName: uploadData.fileName,
-        }),
-      });
-
-      if (catRes.ok) {
-        const catData = await catRes.json();
-        setResult(catData);
-        setEditTitle(catData.title);
-      } else {
-        // Categorization failed, continue with manual info
-        setResult({
-          suggestedCategory: "",
-          title: file.name,
-          summary: null,
-          tags: [],
-          confidence: 0,
-          needsReview: true,
-          analysisState: "provider_error",
-          analysisError: `Categorization request failed (${catRes.status}).`,
-        });
-        setEditTitle(file.name);
-      }
-
-      // Store upload data for final save
-      setFile(Object.assign(file, { uploadData }));
-      setStep("review");
+      setSavedDocId(data.id);
+      setStep("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
       setStep("preview");
@@ -275,7 +235,9 @@ export default function UploadPage() {
         throw new Error("We could not confirm the files were saved. Check Bucky’s tasks before trying again.");
       }
       setBackgroundSavedCount(data.jobs.length);
-      setBackgroundJobId(data.jobs.length === 1 ? data.jobs[0].id : null);
+      const singleJob = data.jobs.length === 1 ? data.jobs[0] : null;
+      setBackgroundJobId(singleJob?.id ?? null);
+      setSavedDocId(singleJob?.sourceDocumentId ?? null);
       setStep("background-done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "We could not confirm the files were saved. Check Bucky’s tasks before trying again.");
@@ -372,56 +334,9 @@ export default function UploadPage() {
     setBatchRunning(false);
   };
 
-  const handleSave = async () => {
-    if (!file || !result) return;
-    setError(null);
-
-    try {
-      const uploadData = (file as File & { uploadData: Record<string, string> }).uploadData;
-
-      const res = await fetch("/api/documents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: editTitle || result.title,
-          description: result.summary,
-          fileName: uploadData.fileName,
-          filePath: uploadData.filePath,
-          fileType: uploadData.fileType,
-          fileSize: uploadData.fileSize,
-          checksum: uploadData.checksum,
-          categorySlug: result.resolvedCategorySlug ?? result.suggestedCategory,
-          tags: result.tags,
-          aiSummary: result.summary,
-          aiExtractedText: result.extractedText ?? null,
-          analysisState: result.analysisState,
-          analysisError: result.analysisError,
-          uploadedBy,
-          maintenanceCost: result.maintenanceCost,
-          maintenanceDate: result.maintenanceDate,
-          maintenanceVendor: result.maintenanceVendor,
-          intakeType: result.intakeType,
-          historicalPhotoCandidateIds: result.historicalPhotoCandidateIds,
-          historicalPhotoEra: result.historicalPhotoEra,
-          historicalPhotoSetting: result.historicalPhotoSetting,
-        }),
-      });
-
-      if (!res.ok) throw new Error(await res.text());
-
-      const doc = await res.json();
-      setSavedDocId(doc.id);
-      setStep("done");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
-    }
-  };
-
   const reset = () => {
     setFile(null);
     setPreview(null);
-    setResult(null);
-    setEditTitle("");
     setSavedDocId(null);
     setError(null);
     setBatchItems([]);
@@ -437,6 +352,8 @@ export default function UploadPage() {
     setLinkPageText("");
     setStep("select");
   };
+
+  const canReadInBackground = !!file && !backgroundUploadIssue([file]);
 
   return (
     <div className="fg-archive fg-upload">
@@ -457,7 +374,7 @@ export default function UploadPage() {
         <ol className="fg-upload-progress" aria-label="Upload progress">
           {[
             { label: "Choose", active: step === "select" || step === "link" || step === "preview" || (step === "batch" && !batchStarted) },
-            { label: "Process", active: step === "uploading" || step === "categorizing" || step === "review" || step === "background-saving" || (step === "batch" && batchRunning) },
+            { label: "Process", active: step === "uploading" || step === "background-saving" || (step === "batch" && batchRunning) },
             { label: "Archive", active: step === "done" || step === "background-done" || (step === "batch" && batchStarted && !batchRunning) },
           ].map((item, index) => (
             <li key={item.label} aria-current={item.active ? "step" : undefined}>
@@ -757,18 +674,18 @@ export default function UploadPage() {
                 Cancel
               </button>
               <button
-                onClick={handleUpload}
+                onClick={() => canReadInBackground ? void handleBackgroundUpload([file]) : void handleUpload()}
                 className="flex-1 py-3 rounded-xl bg-green-700 text-white font-medium hover:bg-green-800"
               >
-                Upload & Analyze
+                Upload to Archive
               </button>
             </div>
-            {!backgroundUploadIssue([file]) && (
+            {canReadInBackground && (
               <>
-                <button onClick={() => void handleBackgroundUpload([file])} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-green-700 px-3 py-3 font-medium text-green-800 hover:bg-green-50">
-                  <Clock3 size={18} aria-hidden="true" /> Analyze in background
+                <p className="text-sm text-stone-500">Bucky reads the file in the background after it is saved.</p>
+                <button onClick={() => void handleUpload()} className="flex min-h-11 w-full items-center justify-center rounded-xl border-2 border-green-700 px-3 py-3 font-medium text-green-800 hover:bg-green-50">
+                  Upload &amp; Analyze Now
                 </button>
-                <p className="text-sm text-stone-500">Save the original now and let Bucky analyze it later. You can leave once the upload finishes.</p>
               </>
             )}
           </div>
@@ -785,123 +702,20 @@ export default function UploadPage() {
         {step === "background-done" && (
           <div className="space-y-4 py-8 text-center" role="status">
             <CheckCircle2 size={56} className="mx-auto text-green-700" aria-hidden="true" />
-            <h2 className="text-xl font-semibold text-stone-800">{backgroundSavedCount === 1 ? "Original saved" : `${backgroundSavedCount} originals saved`}</h2>
+            <h2 className="text-xl font-semibold text-stone-800">{backgroundSavedCount === 1 ? "Archived!" : `${backgroundSavedCount} originals archived`}</h2>
             <p className="text-sm text-stone-600">Analysis is pending. You can leave now and check Bucky’s tasks for progress or choose Process now if you need it sooner.</p>
-            <Link href={`/bucky/jobs${backgroundJobId ? `#job-${encodeURIComponent(backgroundJobId)}` : ""}`} className="block min-h-11 rounded-xl bg-green-700 px-4 py-3 font-medium text-white hover:bg-green-800">View Bucky’s tasks</Link>
+            {savedDocId && (
+              <Link href={`/documents/${savedDocId}`} className="block min-h-11 rounded-xl bg-green-700 px-4 py-3 font-medium text-white hover:bg-green-800">View Document</Link>
+            )}
+            <Link href={`/bucky/jobs${backgroundJobId ? `#job-${encodeURIComponent(backgroundJobId)}` : ""}`} className="fg-archive-text-link">View Bucky’s tasks</Link>
             <button onClick={reset} className="min-h-11 w-full rounded-xl border-2 border-stone-300 px-4 py-3 font-medium text-stone-700 hover:bg-stone-50">Add more files</button>
           </div>
         )}
 
-        {(step === "uploading" || step === "categorizing") && (
-          <div className="text-center py-12">
-            <Loader2 size={48} className="mx-auto text-green-700 animate-spin mb-4" />
-            <p className="text-stone-600 font-medium">
-              {step === "uploading" ? "Uploading document..." : "AI is analyzing your document..."}
-            </p>
-            <p className="text-stone-400 text-sm mt-1">
-              {step === "categorizing" && "Categorizing, extracting text, and generating summary"}
-            </p>
-          </div>
-        )}
-
-        {step === "review" && result && (
-          <div className="space-y-4">
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-              <h3 className="font-semibold text-green-800 flex items-center gap-2">
-                <CheckCircle2 size={18} />
-                AI Analysis Complete
-              </h3>
-              <p className="text-green-700 text-sm mt-1">
-                Confidence: {Math.round(result.confidence * 100)}%
-              </p>
-            </div>
-
-            <div>
-              <label htmlFor="archive-document-title" className="block text-sm font-medium text-stone-700 mb-1">
-                Document Title
-              </label>
-              <input
-                id="archive-document-title"
-                type="text"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              />
-            </div>
-
-            <div className="flex items-center gap-2 text-sm flex-wrap">
-              <FolderOpen size={16} className="text-stone-500" />
-              <span className="text-stone-500">Category:</span>
-              {result.needsReview ? (
-                <span className="bg-amber-100 text-amber-800 px-3 py-1 rounded-full font-medium">
-                  Needs review — file it from the Documents page
-                </span>
-              ) : (
-                <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full font-medium">
-                  {result.resolvedCategoryName || result.suggestedCategory}
-                </span>
-              )}
-              {result.categoryCreated && (
-                <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs font-medium">
-                  new category
-                </span>
-              )}
-            </div>
-
-            {result.summary && (
-              <div className="bg-stone-50 rounded-xl p-4">
-                <p className="text-sm text-stone-600">{result.summary}</p>
-              </div>
-            )}
-
-            {result.tags.length > 0 && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <Tag size={14} className="text-stone-400" />
-                {result.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="bg-stone-100 text-stone-600 px-2 py-1 rounded-full text-xs"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {(result.maintenanceCost || result.maintenanceVendor) && (
-              <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
-                <div className="flex items-center gap-2 text-orange-800 text-sm font-medium">
-                  <Wrench size={16} />
-                  Maintenance record will be auto-created
-                </div>
-                <div className="text-orange-700 text-xs mt-1 space-y-0.5">
-                  {result.maintenanceVendor && (
-                    <p>Vendor: {result.maintenanceVendor}</p>
-                  )}
-                  {result.maintenanceCost && (
-                    <p>Cost: ${result.maintenanceCost.toFixed(2)}</p>
-                  )}
-                  {result.maintenanceDate && (
-                    <p>Date: {new Date(result.maintenanceDate).toLocaleDateString()}</p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="flex gap-3">
-              <button
-                onClick={reset}
-                className="flex-1 py-3 rounded-xl border-2 border-stone-300 text-stone-600 font-medium hover:bg-stone-50"
-              >
-                Discard
-              </button>
-              <button
-                onClick={handleSave}
-                className="flex-1 py-3 rounded-xl bg-green-700 text-white font-medium hover:bg-green-800"
-              >
-                Save to Archive
-              </button>
-            </div>
+        {step === "uploading" && (
+          <div className="text-center py-12" role="status">
+            <Loader2 size={48} className="mx-auto text-green-700 animate-spin mb-4" aria-hidden="true" />
+            <p className="text-stone-600 font-medium">Uploading and analyzing your file…</p>
           </div>
         )}
 
@@ -910,7 +724,7 @@ export default function UploadPage() {
             <CheckCircle2 size={64} className="mx-auto text-green-600 mb-4" />
             <h2 className="text-xl font-bold text-stone-800">Archived!</h2>
             <p className="text-stone-500 mt-1">
-              Document saved and categorized successfully.
+              Saved to the family archive.
             </p>
             <div className="flex gap-3 mt-6">
               <button
@@ -936,7 +750,7 @@ export default function UploadPage() {
             <h2>Filing a <em>scanned record</em></h2>
             <ol className="fg-archive-steps">
               <li><span>01</span><div><h3>Group the pages</h3><p>Save each record as one PDF in page order, or choose a clear image for a single page. Include the date, if known, and subject in the filename.</p></div></li>
-              <li><span>02</span><div><h3>Save the scan</h3><p>Choose your file, then select <strong>Analyze in background</strong>. Keep this page open until it confirms the original was saved. Analysis can finish later.</p></div></li>
+              <li><span>02</span><div><h3>Save the scan</h3><p>Choose your file, then select <strong>Upload to Archive</strong>. Keep this page open until it confirms the original was saved. Analysis can finish later.</p></div></li>
               <li><span>03</span><div><h3>Check the original</h3><p>Find the record in the archive and open the file. Check that every page is present, upright and readable. Keep your own copy of the scan.</p></div></li>
             </ol>
             <Link href="/documents" className="fg-archive-text-link">Browse the archive <FolderOpen size={16} aria-hidden="true" /></Link>

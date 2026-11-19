@@ -39,17 +39,19 @@ export async function queueBackgroundUpload(file: File, actor: ActorContext | nu
   const fileType = validateBackgroundFile(file);
   const buffer = Buffer.from(await file.arrayBuffer());
   const checksum = sha256(buffer);
-  const stored = await storeFileBuffer({ buffer, fileName: file.name, contentType: fileType });
   return prisma.$transaction(async (tx) => {
     // Checksums lack a unique constraint in the legacy archive. Lock this checksum
     // so simultaneous background retries cannot create duplicate rows.
     await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtextextended(${checksum}, 0))`;
     let doc = await tx.document.findFirst({ where: { checksum, deletedAt: null, accessScope: "family" } });
-    if (!doc) doc = await tx.document.create({ data: {
-      title: file.name.slice(0, 300), fileName: stored.fileName, filePath: stored.filePath,
-      fileType, fileSize: stored.fileSize, checksum, analysisState: "pending",
-      analysisError: null, uploadedBy: actor?.displayName, accessScope: "family",
-    } });
+    if (!doc) {
+      const stored = await storeFileBuffer({ buffer, fileName: file.name, contentType: fileType });
+      doc = await tx.document.create({ data: {
+        title: file.name.slice(0, 300), fileName: stored.fileName, filePath: stored.filePath,
+        fileType, fileSize: stored.fileSize, checksum, analysisState: "pending",
+        analysisError: null, uploadedBy: actor?.displayName, accessScope: "family",
+      } });
+    }
     const job = await enqueueBuckyJob({ kind: "document_analysis", sourceDocumentId: doc.id,
       sourceVersion: doc.updatedAt.toISOString(),
       request: { title: doc.title, sourceDocumentIds: [doc.id], newUpload: doc.analysisState === "pending" },

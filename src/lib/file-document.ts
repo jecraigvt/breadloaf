@@ -49,6 +49,27 @@ export interface FileDocumentBufferOptions {
   transcript?: string;
 }
 
+async function existingFiledDocument(
+  doc: Prisma.DocumentGetPayload<{ include: { category: true } }>,
+  type: string,
+): Promise<FiledDocument> {
+  if (type.startsWith("audio/") && doc.aiExtractedText && doc.accessScope === "family") {
+    await tryAnalyzeRetainedDictation({ filePath: doc.filePath, transcript: doc.aiExtractedText, title: doc.title });
+  }
+  return {
+    id: doc.id,
+    title: doc.title,
+    category: doc.category?.name ?? null,
+    categoryCreated: false,
+    needsReview: doc.categoryId === null,
+    summary: doc.aiSummary,
+    extractedText: doc.aiExtractedText,
+    analysisState: doc.analysisState as AnalysisState,
+    analysisError: doc.analysisError,
+    alreadyExisted: true,
+  };
+}
+
 export async function fileDocumentFromBuffer(
   opts: FileDocumentBufferOptions
 ): Promise<FiledDocument> {
@@ -69,27 +90,12 @@ export async function fileDocumentFromBuffer(
   // the exact-copy case the Tidy Up librarian used to clean up after the fact
   // (e.g. the same receipt both emailed in and attached in chat).
   const checksum = sha256(buffer);
-  const existingCopy = await prisma.document.findFirst({
+  const existingCopyQuery = {
     where: { checksum, deletedAt: null, accessScope: "family" },
     include: { category: true },
-  });
-  if (existingCopy) {
-    if (type.startsWith("audio/") && existingCopy.aiExtractedText && existingCopy.accessScope === "family") {
-      await tryAnalyzeRetainedDictation({ filePath: existingCopy.filePath, transcript: existingCopy.aiExtractedText, title: existingCopy.title });
-    }
-    return {
-      id: existingCopy.id,
-      title: existingCopy.title,
-      category: existingCopy.category?.name ?? null,
-      categoryCreated: false,
-      needsReview: existingCopy.categoryId === null,
-      summary: existingCopy.aiSummary,
-      extractedText: existingCopy.aiExtractedText,
-      analysisState: existingCopy.analysisState as AnalysisState,
-      analysisError: existingCopy.analysisError,
-      alreadyExisted: true,
-    };
-  }
+  } satisfies Prisma.DocumentFindFirstArgs;
+  const existingCopy = await prisma.document.findFirst(existingCopyQuery);
+  if (existingCopy) return existingFiledDocument(existingCopy, type);
 
   // Save to the uploads volume first — never lose a family file. Audio may have
   // been retained even earlier, before its transcription and routing calls.
@@ -138,32 +144,38 @@ export async function fileDocumentFromBuffer(
         needsReview: true,
       };
 
-  const doc = await prisma.document.create({
-    data: {
-      title: resolveDocumentTitle({
-        suggestedTitle: result?.title,
-        fileName,
-        summary: result?.summary,
-        extractedText: result?.extractedText,
-        fileType: type,
-        createdAt: new Date(),
-      }),
-      description: result?.summary || null,
+  const documentData = {
+    title: resolveDocumentTitle({
+      suggestedTitle: result?.title,
       fileName,
-      filePath: storedFile.filePath,
+      summary: result?.summary,
+      extractedText: result?.extractedText,
       fileType: type,
-      fileSize: buffer.length,
-      categoryId: resolution.categoryId,
-      tags: result?.tags?.length ? JSON.stringify(result.tags) : null,
-      aiSummary: result?.summary || null,
-      aiExtractedText: result?.extractedText || opts.transcript || null,
-      analysisState: analysis.state,
-      analysisError: analysis.error,
-      uploadedBy: uploadedBy || undefined,
-      checksum,
-    },
-    include: { category: true },
+      createdAt: new Date(),
+    }),
+    description: result?.summary || null,
+    fileName,
+    filePath: storedFile.filePath,
+    fileType: type,
+    fileSize: buffer.length,
+    categoryId: resolution.categoryId,
+    tags: result?.tags?.length ? JSON.stringify(result.tags) : null,
+    aiSummary: result?.summary || null,
+    aiExtractedText: result?.extractedText || opts.transcript || null,
+    analysisState: analysis.state,
+    analysisError: analysis.error,
+    uploadedBy: uploadedBy || undefined,
+    checksum,
+  } satisfies Prisma.DocumentUncheckedCreateInput;
+  const { doc, alreadyExisted } = await prisma.$transaction(async (tx) => {
+    // The background uploader takes this same lock before filing identical bytes.
+    await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtextextended(${checksum}, 0))`;
+    const existing = await tx.document.findFirst(existingCopyQuery);
+    if (existing) return { doc: existing, alreadyExisted: true };
+    const created = await tx.document.create({ data: documentData, include: { category: true } });
+    return { doc: created, alreadyExisted: false };
   });
+  if (alreadyExisted) return existingFiledDocument(doc, type);
 
   // Cross-link: auto-create a maintenance record for maintenance/receipt docs
   const categoryName = doc.category?.name?.toLowerCase() || "";
