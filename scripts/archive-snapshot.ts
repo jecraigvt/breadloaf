@@ -1,7 +1,8 @@
-import { copyFile, mkdir, realpath, stat } from "node:fs/promises";
+import { copyFile, mkdir, realpath, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { Prisma, PrismaClient } from "@prisma/client";
-import { encryptSnapshot, fileDigest, independentOutput, MAX_ARCHIVE_BYTES, originalsInventory, postgresEnvironment, privateStagingDirectory, removeStagingDirectory, runProgram, safeArchivePath, verifySnapshot, type SnapshotManifest } from "./archive-common";
+import { fileDigest, independentOutput, originalsInventory, postgresEnvironment, privateStagingDirectory, removeStagingDirectory, runProgram, safeArchivePath, type SnapshotManifest } from "./archive-common";
+import { encryptSnapshot, verifySnapshot } from "./archive-format";
 
 export async function createArchiveSnapshot(options: { output: string; originals?: string; databaseUrl: string; passphrase: string; signal?: AbortSignal }): Promise<SnapshotManifest> {
   if (options.passphrase.length < 20) throw new Error("Use a backup passphrase of at least 20 characters.");
@@ -42,7 +43,6 @@ export async function createArchiveSnapshot(options: { output: string; originals
         for (const source of sources) if (source && typeof source === "object" && "filePath" in source && typeof source.filePath === "string") references.add(originalPath(source.filePath));
       }
       const inventory = await originalsInventory(originals);
-      if (inventory.reduce((sum, file) => sum + file.size, 0) > MAX_ARCHIVE_BYTES) throw new Error("Originals exceed the 512 MB tooling limit.");
       const byPath = new Map(inventory.map(file => [file.path.slice(10), file]));
       if (Array.from(references).some(reference => !byPath.has(reference))) throw new Error("Referenced originals are missing. Repair archive integrity before creating a recovery snapshot.");
       for (const document of documents) if (document.checksum && byPath.get(originalPath(document.filePath))?.sha256 !== document.checksum) throw new Error("A retained original does not match its stored checksum.");
@@ -62,8 +62,13 @@ export async function createArchiveSnapshot(options: { output: string; originals
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 30 * 60 * 1000, maxWait: 10000 });
     options.signal?.throwIfAborted();
     await encryptSnapshot(stage, output, manifest, options.passphrase, options.signal);
-    await verifySnapshot(output, options.passphrase);
-    options.signal?.throwIfAborted();
+    try {
+      await verifySnapshot(output, options.passphrase, { signal: options.signal });
+    } catch (error) {
+      // encryptSnapshot created this path exclusively. A failed check must not leave a recovery candidate.
+      await rm(output, { force: true });
+      throw error;
+    }
     return manifest;
   } finally { await db.$disconnect(); await removeStagingDirectory(stage); }
 }

@@ -1,14 +1,9 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
-import { appendFile, chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { chmod, mkdir, mkdtemp, readdir, realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { pipeline } from "node:stream/promises";
-import JSZip from "jszip";
-
-const MAGIC = Buffer.from("BLHBACK1");
-export const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024;
 export interface SnapshotFile { path: string; size: number; sha256: string; }
 export interface SnapshotManifest { version: 1; createdAt: string; files: SnapshotFile[]; references: string[]; }
 export function option(name: string): string | undefined { const index = process.argv.indexOf(name); return index >= 0 ? process.argv[index + 1] : undefined; }
@@ -91,62 +86,6 @@ export async function originalsInventory(root: string, prefix = ""): Promise<Sna
     if (files.length > 10000) throw new Error("Archive exceeds the 10,000-file tooling limit.");
   }
   return files;
-}
-export async function encryptSnapshot(stage: string, output: string, manifest: SnapshotManifest, phrase: string, signal?: AbortSignal): Promise<void> {
-  if (manifest.files.reduce((sum, file) => sum + file.size, 0) > MAX_ARCHIVE_BYTES) throw new Error("Snapshot exceeds the 512 MB tooling limit; use a streaming backup service for larger archives.");
-  const zip = new JSZip();
-  zip.file("manifest.json", JSON.stringify(manifest));
-  for (const file of manifest.files) zip.file(file.path, createReadStream(path.join(stage, file.path)));
-  const salt = randomBytes(16), iv = randomBytes(12), key = scryptSync(phrase, salt, 32);
-  const header = Buffer.concat([MAGIC, salt, iv]);
-  const cipher = createCipheriv("aes-256-gcm", key, iv); cipher.setAAD(header);
-  await writeFile(output, header, { flag: "wx", mode: 0o600 });
-  try {
-    await pipeline(zip.generateNodeStream({ type: "nodebuffer", streamFiles: true, compression: "DEFLATE" }), cipher, createWriteStream(output, { flags: "a", mode: 0o600 }), { signal });
-    await appendFile(output, cipher.getAuthTag());
-  } catch (error) { await rm(output, { force: true }); throw error; }
-  finally { key.fill(0); }
-}
-export async function verifySnapshot(input: string, phrase: string): Promise<{ zip: JSZip; manifest: SnapshotManifest }> {
-  if ((await stat(input)).size > MAX_ARCHIVE_BYTES + 1024 * 1024) throw new Error("Encrypted snapshot exceeds the 512 MB tooling limit.");
-  const bytes = await readFile(input);
-  if (bytes.length < 52 || !bytes.subarray(0, 8).equals(MAGIC)) throw new Error("Unsupported archive backup format.");
-  const key = scryptSync(phrase, bytes.subarray(8, 24), 32);
-  let payload: Buffer;
-  try {
-    const decipher = createDecipheriv("aes-256-gcm", key, bytes.subarray(24, 36));
-    decipher.setAAD(bytes.subarray(0, 36)); decipher.setAuthTag(bytes.subarray(bytes.length - 16));
-    payload = Buffer.concat([decipher.update(bytes.subarray(36, bytes.length - 16)), decipher.final()]);
-  } catch { throw new Error("Backup authentication failed: wrong passphrase or damaged backup."); }
-  finally { key.fill(0); }
-  // AEAD authenticates the entire bundle. Validate declared sizes before
-  // decompressing entries; CRC verification here would eagerly inflate all.
-  const zip = await JSZip.loadAsync(payload);
-  for (const entry of Object.values(zip.files)) {
-    const name = entry.dir ? entry.name.replace(/\/$/, "") : entry.name;
-    const original = (entry as JSZip.JSZipObject & { unsafeOriginalName?: string }).unsafeOriginalName;
-    if (!safeArchivePath(name) || original && !safeArchivePath(original) || (Number(entry.unixPermissions) & 0o170000) === 0o120000) throw new Error("Unsafe backup entry.");
-  }
-  const metadata = zip.file("manifest.json");
-  if (!metadata) throw new Error("Backup manifest is missing.");
-  const zipSize = (entry: JSZip.JSZipObject) => (entry as JSZip.JSZipObject & { _data?: { uncompressedSize?: number } })._data?.uncompressedSize;
-  if ((zipSize(metadata) ?? Infinity) > 4 * 1024 * 1024) throw new Error("Backup manifest exceeds its limit.");
-  const manifest = JSON.parse(await metadata.async("string")) as SnapshotManifest;
-  if (manifest.version !== 1 || !Array.isArray(manifest.files) || !Array.isArray(manifest.references) || manifest.files.length > 10001) throw new Error("Invalid backup manifest.");
-  let total = 0;
-  const names = new Set<string>();
-  for (const file of manifest.files) {
-    if (!safeArchivePath(file.path) || file.path !== "database.dump" && !file.path.startsWith("originals/") || names.has(file.path) || !Number.isSafeInteger(file.size) || file.size < 0 || !/^[a-f0-9]{64}$/.test(file.sha256)) throw new Error("Invalid backup file record.");
-    total += file.size; if (total > MAX_ARCHIVE_BYTES) throw new Error("Backup exceeds the extraction limit.");
-    names.add(file.path);
-    const entry = zip.file(file.path); if (!entry) throw new Error("Backup is incomplete.");
-    if (zipSize(entry) !== file.size) throw new Error("Backup entry size does not match the manifest.");
-    const content = await entry.async("nodebuffer");
-    if (content.length !== file.size || createHash("sha256").update(content).digest("hex") !== file.sha256) throw new Error("Backup file integrity failed.");
-  }
-  if (!names.has("database.dump") || manifest.references.some(reference => !names.has(`originals/${reference}`))) throw new Error("Backup is missing a database or referenced original.");
-  if (Object.values(zip.files).some(entry => !entry.dir && entry.name !== "manifest.json" && !names.has(entry.name))) throw new Error("Backup contains unmanifested files.");
-  return { zip, manifest };
 }
 export async function independentOutput(output: string, originals: string): Promise<string> {
   const destination = path.resolve(output);
