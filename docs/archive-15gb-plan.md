@@ -28,7 +28,7 @@ The current uploader accepts up to 100 MB per file. The background uploader acce
 
 ## Preserve and recover the collection
 
-The existing job packages the database and local uploads as a single encrypted ZIP. Creation streams the data, but verification reads the encrypted file and decrypts the ZIP into memory before checking the contents. The **512 MB** cap bounds that work on the website host. The upload to Drive is already resumable. Increasing the cap would leave the verification and restore memory problem in place. [Snapshot verification](../scripts/archive-common.ts#L110), [Archive recovery](archive-recovery.md)
+The updated weekly backup streams the database and local uploads during creation, verification, and restore. It uses private temporary disk to authenticate the archive and check each file's checksum. It can still read backups written by the previous version. [Archive recovery](archive-recovery.md)
 
 Keep the weekly backup for the database and local uploads. The Drive scan originals live in the shared Scan Archive folder. Viewer access opens those same originals and ends if the owner permanently deletes them. [Google Drive deletion and shared access](https://support.google.com/drive/answer/2375102?hl=en)
 

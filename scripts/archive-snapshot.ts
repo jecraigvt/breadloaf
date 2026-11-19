@@ -1,7 +1,8 @@
-import { copyFile, mkdir, realpath, stat } from "node:fs/promises";
+import { copyFile, mkdir, realpath, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { Prisma, PrismaClient } from "@prisma/client";
-import { encryptSnapshot, fileDigest, independentOutput, MAX_ARCHIVE_BYTES, postgresEnvironment, privateStagingDirectory, removeStagingDirectory, runProgram, verifySnapshot, type SnapshotManifest } from "./archive-common";
+import { fileDigest, independentOutput, postgresEnvironment, privateStagingDirectory, removeStagingDirectory, runProgram, type SnapshotManifest } from "./archive-common";
+import { encryptSnapshot, verifySnapshot } from "./archive-format";
 import { archiveSourceInventory } from "./archive-source-inventory";
 
 export async function createArchiveSnapshot(options: { output: string; originals?: string; databaseUrl: string; passphrase: string; signal?: AbortSignal }): Promise<SnapshotManifest> {
@@ -16,7 +17,6 @@ export async function createArchiveSnapshot(options: { output: string; originals
       await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY");
       const [snapshot] = await tx.$queryRaw<Array<{ snapshot: string }>>`SELECT pg_export_snapshot() AS snapshot`;
       const { inventory, references, external } = await archiveSourceInventory(tx, originals);
-      if (inventory.reduce((sum, file) => sum + file.size, 0) > MAX_ARCHIVE_BYTES) throw new Error("Originals exceed the 512 MB tooling limit.");
       await mkdir(path.join(stage, "originals"));
       for (const file of inventory) {
         options.signal?.throwIfAborted();
@@ -34,8 +34,13 @@ export async function createArchiveSnapshot(options: { output: string; originals
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 30 * 60 * 1000, maxWait: 10000 });
     options.signal?.throwIfAborted();
     await encryptSnapshot(stage, output, manifest, options.passphrase, options.signal);
-    await verifySnapshot(output, options.passphrase);
-    options.signal?.throwIfAborted();
+    try {
+      await verifySnapshot(output, options.passphrase, { signal: options.signal });
+    } catch (error) {
+      // The writer created this output exclusively. Keep only verified snapshots.
+      await rm(output, { force: true });
+      throw error;
+    }
     return manifest;
   } finally { await db.$disconnect(); await removeStagingDirectory(stage); }
 }
