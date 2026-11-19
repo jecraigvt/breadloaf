@@ -1,0 +1,81 @@
+name: Large archive restore drill
+on:
+  pull_request:
+    paths:
+      - 'scripts/archive-*.ts'
+      - 'src/lib/archive-backup-format.test.ts'
+      - '.github/workflows/archive-restore-drill.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  restore:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: fixture
+          POSTGRES_DB: archive_source_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:fixture@127.0.0.1:5432/archive_source_test
+      ARCHIVE_RESTORE_DATABASE_URL: postgresql://postgres:fixture@127.0.0.1:5432/archive_restore_test
+      ARCHIVE_BACKUP_PASSPHRASE: isolated-ci-archive-fixture-only
+      PG_DUMP_PATH: /usr/lib/postgresql/16/bin/pg_dump
+      PG_RESTORE_PATH: /usr/lib/postgresql/16/bin/pg_restore
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare disposable PostgreSQL databases
+        run: |
+          if ! test -x "$PG_DUMP_PATH"; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client-16
+          fi
+          psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -c 'CREATE EXTENSION vector'
+          psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -c 'CREATE DATABASE archive_restore_test'
+          npx prisma db push
+      - name: Snapshot and restore incompressible data through the operator commands
+        run: |
+          set -euo pipefail
+          root=$(mktemp -d "$RUNNER_TEMP/archive-drill-XXXXXX")
+          mkdir "$root/originals"
+          dd if=/dev/urandom of="$root/originals/fixture.bin" bs=1M count=513 status=none
+          digest=$(sha256sum "$root/originals/fixture.bin" | cut -d' ' -f1)
+          psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -v sha="$digest" <<'SQL'
+          INSERT INTO "Document" ("id","title","fileName","filePath","fileType","fileSize","checksum","updatedAt")
+          VALUES
+            ('drill','Synthetic local original','fixture.bin','/uploads/fixture.bin','application/octet-stream',537919488,:'sha',now()),
+            ('drive-drill','Synthetic Drive scan','letter.pdf','drive:syntheticOriginal123','application/pdf',120,repeat('a',64),now());
+          INSERT INTO "ArchiveImport" ("id","memberId","folderKey","folderName","groupImages","fileCount","sizeBytes")
+          VALUES ('drill-import','synthetic-member',repeat('b',64),'Synthetic scans',false,1,120);
+          INSERT INTO "ArchiveImportFile" ("id","importId","relativePath","position","fileType","sizeBytes","sha256","driveId","driveFolder","documentId")
+          VALUES ('drill-file','drill-import','letter.pdf',0,'application/pdf',120,repeat('a',64),'syntheticOriginal123','syntheticFolder123','drive-drill');
+          SQL
+          /usr/bin/time -f '%M' -o "$root/backup.rss" node --import tsx scripts/archive-backup.ts \
+            --originals "$root/originals" --output "$root/snapshot.blhbackup"
+          size=$(stat -c '%s' "$root/snapshot.blhbackup")
+          test "$size" -gt $((512 * 1024 * 1024))
+          /usr/bin/time -f '%M' -o "$root/restore.rss" node --import tsx scripts/archive-restore.ts \
+            --input "$root/snapshot.blhbackup" --apply --target-originals "$root/restored" | tee "$root/restore.log"
+          grep -Fq 'Scans stored in Drive are recorded in the catalog (1 total).' "$root/restore.log"
+          restored_sha=$(psql -v ON_ERROR_STOP=1 "$ARCHIVE_RESTORE_DATABASE_URL" -Atc "SELECT checksum FROM \"Document\" WHERE id = 'drill'")
+          test "$restored_sha" = "$digest"
+          restored_drive=$(psql -v ON_ERROR_STOP=1 "$ARCHIVE_RESTORE_DATABASE_URL" -Atc 'SELECT "driveId" FROM "ArchiveImportFile"')
+          test "$restored_drive" = "syntheticOriginal123"
+          cmp "$root/originals/fixture.bin" "$root/restored/fixture.bin"
+          test "$(find "$root/restored" -type f | wc -l)" -eq 1
+          echo "Encrypted bytes: $size. Restored document checksum and all original bytes match."
+          echo "Peak RSS (KiB): backup $(cat "$root/backup.rss"), restore $(cat "$root/restore.rss")."
+          test "$(cat "$root/backup.rss")" -lt $((512 * 1024))
+          test "$(cat "$root/restore.rss")" -lt $((512 * 1024))

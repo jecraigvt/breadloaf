@@ -67,7 +67,7 @@ async function currentAttempt(tx: Tx, workerId: string, jobId: string, token: st
   return { job, attempt };
 }
 
-export async function claimBuckyJob(workerId: string, capabilities: string[], quotaRemaining: number | null) {
+export async function claimBuckyJob(workerId: string, capabilities: string[], quotaRemaining: number | null, archiveScanPages = false) {
   return prisma.$transaction(async (tx) => {
     const worker = await lockWorker(tx, workerId);
     const now = new Date();
@@ -87,6 +87,7 @@ export async function claimBuckyJob(workerId: string, capabilities: string[], qu
       SELECT j."id" FROM "BuckyJob" j
       WHERE j."status" IN ('queued', 'running') AND j."nextAttemptAt" <= ${now}
         AND j."kind" IN (${Prisma.join(supported)}) ${hostedFilter}
+        AND (${archiveScanPages} OR COALESCE(j."request"->>'archiveScan', '') <> 'true')
         AND NOT EXISTS (SELECT 1 FROM "BuckyJobAttempt" a WHERE a."jobId" = j."id"
           AND a."status" = 'running' AND a."leaseExpiresAt" > ${now})
       ORDER BY j."priority" DESC, j."nextAttemptAt" ASC, j."createdAt" ASC FOR UPDATE OF j SKIP LOCKED LIMIT 1
@@ -134,7 +135,7 @@ export async function claimBuckyJob(workerId: string, capabilities: string[], qu
 
 export async function heartbeatBuckyWorker(workerId: string, input: {
   jobId?: string; leaseToken?: string; quotaRemaining?: number | null; checkpoint?: Prisma.InputJsonValue;
-}) {
+}, applyCheckpoint?: (tx: Prisma.TransactionClient, job: BuckyJob) => Promise<void>) {
   return prisma.$transaction(async (tx) => {
     const worker = await lockWorker(tx, workerId);
     await tx.buckyWorker.update({ where: { id: workerId }, data: { lastSeenAt: new Date(), quotaRemaining: input.quotaRemaining } });
@@ -143,6 +144,7 @@ export async function heartbeatBuckyWorker(workerId: string, input: {
     const leaseExpiresAt = new Date(Date.now() + LEASE_DURATION_MS);
     await tx.buckyJobAttempt.update({ where: { id: attempt.id }, data: { leaseExpiresAt } });
     if (input.checkpoint !== undefined) await tx.buckyJob.update({ where: { id: job.id }, data: { checkpoint: input.checkpoint } });
+    if (applyCheckpoint) await applyCheckpoint(tx, job);
     return { leaseExpiresAt, paused: worker.paused };
   });
 }

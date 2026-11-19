@@ -82,6 +82,7 @@ const backgroundQuestionSchema = z.object({
 const backgroundSnapshotSchema = z.object({
   documentId: z.string().min(1), title: z.string(), categoryId: z.string().nullable(), tags: z.string().nullable(),
   aiSummary: z.string().nullable(), aiExtractedText: z.string().nullable(), analysisState: z.string(), analysisError: z.string().nullable(),
+  archivePageJobId: z.string().nullable().optional(),
   updatedAt: z.string().datetime(), questions: z.array(backgroundQuestionSchema),
 });
 

@@ -14,6 +14,7 @@ export interface BackgroundJob {
   request?: { title?: string; instructions?: string } | null;
   result?: Record<string, unknown> | null;
   lastError?: string | null;
+  progress?: { pagesRead: number; total: number };
 }
 
 export type BackgroundJobAction = "expedite" | "cancel" | "retry";
@@ -115,6 +116,7 @@ export function BackgroundJobCard({
         <div className="min-w-0 flex-1">
           <h2 className="font-semibold text-stone-800 break-words">{title}</h2>
           <p className="text-sm text-stone-600">{published ? "Published" : statusLabels[job.status]}</p>
+          {job.progress && <p className="text-sm text-stone-600">{job.progress.pagesRead} of {job.progress.total} pages read</p>}
           <p className="mt-1 text-xs text-stone-500">
             {kindLabels[job.kind]} · Requested {new Date(job.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
           </p>

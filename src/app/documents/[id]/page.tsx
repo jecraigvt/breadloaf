@@ -29,9 +29,12 @@ export default function DocumentDetailPage() {
   const [doc, setDoc] = useState<DocumentWithCategory | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [scanPage, setScanPage] = useState(1);
 
   useEffect(() => {
     let cancelled = false;
+    const requested = Number(new URLSearchParams(window.location.search).get("page")) || 1;
+    setScanPage(Number.isSafeInteger(requested) && requested > 0 ? requested : 1);
 
     fetch(`/api/documents/${params.id}`)
       .then(async (response) => {
@@ -96,6 +99,8 @@ export default function DocumentDetailPage() {
 
   const tags = parseTags(doc.tags);
   const isAudio = doc.fileType.startsWith("audio/");
+  const scanUrl = "/api/documents/" + doc.id + "/file";
+  const supportedImage = /^image\/(jpeg|png|webp|heic)$/.test(doc.fileType);
 
   return (
     <div className="fg-archive fg-document-detail">
@@ -155,7 +160,14 @@ export default function DocumentDetailPage() {
               Your browser does not support audio playback.
             </audio>
           </div>
-        ) : doc.fileType.startsWith("image/") ? (
+        ) : doc.scan && doc.fileType === "application/pdf" ? (
+          <div className="fg-archive-panel space-y-2">
+            <a href={scanUrl + "#page=" + scanPage} target="_blank" rel="noopener noreferrer" className="fg-archive-text-link">
+              <FileText size={18} /> Open original PDF{scanPage > 1 ? " at page " + scanPage : ""}
+            </a>
+            <a href={scanUrl + "?download=1"} className="block text-sm text-green-800 underline">Download original</a>
+          </div>
+        ) : supportedImage || (!doc.scan && doc.fileType.startsWith("image/")) ? (
           <div className="fg-document-preview rounded-xl overflow-hidden border border-stone-200">
             <img src={`/api/documents/${doc.id}/file`} alt={doc.title} className="w-full" />
           </div>
@@ -170,6 +182,32 @@ export default function DocumentDetailPage() {
               <Download size={12} /> Tap to download
             </span>
           </a>
+        )}
+
+        {doc.scan && (doc.scan.pages.length > 0 || doc.scan.related.length > 1) && (
+          <details className="fg-archive-panel bg-stone-50 rounded-xl p-4">
+            <summary className="cursor-pointer font-medium">Pages{doc.scan.pages.some(page => page.needsReview) ? " · some need review" : ""}</summary>
+            {doc.scan.related.length > 1 && (
+              <ol className="mt-3 space-y-1 text-sm">
+                {doc.scan.related.map(page => (
+                  <li key={page.id}><Link href={"/documents/" + page.id} className="text-green-800 underline" aria-current={page.id === doc.id ? "page" : undefined}>{page.name}</Link></li>
+                ))}
+              </ol>
+            )}
+            {doc.scan.pages.length > 0 && (
+              <ul className="mt-3 max-h-60 space-y-1 overflow-auto text-sm">
+                {doc.scan.pages.map(page => (
+                  <li key={page.number}>
+                    {doc.fileType === "application/pdf" ? (
+                      <a href={scanUrl + "#page=" + page.number} className="text-green-800 underline" target="_blank" rel="noopener noreferrer">Page {page.number}</a>
+                    ) : <span>Page {page.number}</span>}
+                    {page.years.length > 0 && " · " + page.years.join(", ")}
+                    {page.needsReview && " · Needs review"}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </details>
         )}
 
         {isAudio && doc.aiExtractedText && (
@@ -220,7 +258,7 @@ export default function DocumentDetailPage() {
               <FileText size={18} className="text-stone-400" />
               <span className="text-sm text-stone-500">Protection</span>
               <span className="ml-auto text-sm text-amber-700">
-                {doc.fileType === "link" ? "External link" : "Local copy only"}
+                {doc.fileType === "link" ? "External link" : doc.scan ? "Original saved to Drive" : "Local copy only"}
               </span>
             </div>
         </div>
