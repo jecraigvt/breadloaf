@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { BackgroundDocumentResultSchema, backgroundResultJsonSchema, combineDocumentParts, splitBackgroundText } from "./bucky-background-contract";
+import { BackgroundDocumentResultSchema, backgroundResultJsonSchema, backgroundTranscriptionInstruction, combineDocumentParts, splitBackgroundText } from "./bucky-background-contract";
 import { backgroundSourceImage } from "./bucky-source-image";
 import { backgroundApiUpperBoundCents, backgroundApiCostCents } from "./bucky-api-cost";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
@@ -21,6 +21,11 @@ test("long Unicode source text survives chunking and aggregation", () => {
 test("strict output schema requires nullable source references", () => {
   const schema = backgroundResultJsonSchema("archive_review") as { properties: { findings: { items: { required: string[] } } } };
   assert.ok(schema.properties.findings.items.required.includes("sourceId"));
+});
+
+test("image sources require a transcript for searching names and dates", () => {
+  assert.match(backgroundTranscriptionInstruction({}), /every legible line in the attached image in extractedText/);
+  assert.match(backgroundTranscriptionInstruction({ text: "June 4, 1972" }), /text is already transcribed/);
 });
 
 test("paid cost bounds count bytes and bounded image capacity", () => {
