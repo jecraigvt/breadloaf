@@ -7,7 +7,8 @@ import { createAuthToken, getAuthCookieName } from "./auth";
 import { GET } from "../app/api/documents/route";
 
 test("actual archive handler searches without case sensitivity and pages beyond 100 with scoped counts", async () => {
-  const old = { findMany: prisma.document.findMany, count: prisma.document.count, category: prisma.category.findUnique };
+  const old = { findMany: prisma.document.findMany, count: prisma.document.count, category: prisma.category.findUnique,
+    queryRaw: prisma.$queryRaw };
   const env = { FAMILY_PINS: process.env.FAMILY_PINS, FAMILY_EMAIL_SIGN_IN_ENABLED: process.env.FAMILY_EMAIL_SIGN_IN_ENABLED };
   try {
     process.env.FAMILY_PINS = "Synthetic:9231";
@@ -34,6 +35,7 @@ test("actual archive handler searches without case sensitivity and pages beyond 
     };
     (prisma.document as unknown as { count: unknown }).count = async (args: { where: Prisma.DocumentWhereInput }) => { queries++; return eligible(args.where).length; };
     (prisma.category as unknown as { findUnique: unknown }).findUnique = async () => null;
+    (prisma as unknown as { $queryRaw: unknown }).$queryRaw = async () => [];
     const ids = new Set<string>();
     for (const offset of [0, 50, 100]) {
       const response = await GET(new NextRequest(`https://breadloafhill.com/api/documents?q=rOoF&offset=${offset}`, { headers }));
@@ -56,6 +58,7 @@ test("actual archive handler searches without case sensitivity and pages beyond 
     }
   } finally {
     prisma.document.findMany = old.findMany; prisma.document.count = old.count; prisma.category.findUnique = old.category;
+    prisma.$queryRaw = old.queryRaw;
     for (const [name, value] of Object.entries(env)) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
   }
 });

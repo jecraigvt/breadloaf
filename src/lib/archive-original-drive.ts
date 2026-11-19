@@ -55,7 +55,7 @@ function driveError(response: Response, message: string): never {
 }
 
 /** The property user owns these objects. URLs and OAuth credentials stay out of
- * the archive catalog. Only the one-file resumable URL goes to a curator. */
+ * the archive catalog. The signed-in uploader receives a per-file resumable URL. */
 export class ArchiveOriginalDrive {
   private token?: { value: string; expiresAt: number };
   private refresh?: Promise<string>;

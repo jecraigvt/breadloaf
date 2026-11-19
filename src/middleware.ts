@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthCookieName, getFamilyFromCalendarFeedToken } from "@/lib/auth";
 import { getDoorFamily } from "@/lib/actor";
-import { canonicalSiteUrl, emailSignInEnabled, REMEMBERED_TOKEN_PREFIX } from "@/lib/sign-in-policy";
+import { familyAuthConfigured, publicSiteOrigin, REMEMBERED_TOKEN_PREFIX, siteWriteOriginError } from "@/lib/sign-in-policy";
 import { rememberFamilyDevice } from "@/lib/auth-cookies";
 
 const workerRoute = /^\/api\/bucky\/worker\/(claim|heartbeat|complete|fail|source|yield|run-api|artifact)$/;
-function publicSiteOrigin(request: NextRequest): string {
-  return !process.env.APP_URL && process.env.NODE_ENV !== "production" ? request.nextUrl.origin : canonicalSiteUrl();
-}
 function publicPath(path: string) {
   return ["/login", "/login/confirm", "/login/request-access", "/emergency", "/guide", "/weather", "/manifest.json", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png", "/favicon.ico", "/smoothproof", "/smoothproof/index.html"].includes(path) ||
     /^\/smoothproof-assets\/(style\.css|new-york-sour\.webp|wine-float\.webp)$/.test(path) ||
@@ -20,20 +17,14 @@ export async function middleware(request: NextRequest) {
   if (workerRoute.test(pathname) || pathname === "/api/operations/run" || pathname === "/api/archive/backup") return NextResponse.next();
 
   if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
-    const origin = request.headers.get("origin");
-    // Next's internal origin may be localhost behind Railway's reverse proxy.
-    // Validate against the configured public site, never a forwarded caller host.
-    let siteOrigin: string;
-    try { siteOrigin = publicSiteOrigin(request); }
-    catch { return NextResponse.json({ error: "Site address is not configured correctly." }, { status: 503 }); }
-    if (request.headers.get("sec-fetch-site") === "cross-site" || (origin && origin !== siteOrigin)) {
-      return NextResponse.json({ error: "Open Breadloaf Hill before making this change." }, { status: 403 });
-    }
+    const failure = siteWriteOriginError(request);
+    if (failure) return NextResponse.json({ error: failure.error }, { status: failure.status });
   }
   if (publicPath(pathname)) return NextResponse.next();
 
-  const local = process.env.NODE_ENV !== "production" && !process.env.FAMILY_PINS && !emailSignInEnabled();
-  if (!local && !process.env.FAMILY_PINS && !emailSignInEnabled()) {
+  const configured = familyAuthConfigured();
+  const local = process.env.NODE_ENV !== "production" && !configured;
+  if (!local && !configured) {
     return pathname.startsWith("/api/")
       ? NextResponse.json({ error: "Site authentication is not configured" }, { status: 503 })
       : new NextResponse("Family access is temporarily unavailable.", { status: 503 });
@@ -64,4 +55,8 @@ export async function middleware(request: NextRequest) {
   return response;
 }
 
-export const config = { runtime: "nodejs", matcher: ["/((?!_next/static|favicon.ico).*)"] };
+export const config = {
+  runtime: "nodejs",
+  // The chunk handler authenticates requests before streaming, without middleware's body buffering.
+  matcher: ["/((?!_next/static|favicon.ico|api/archive/imports/[^/]+/[^/]+/?$).*)"],
+};

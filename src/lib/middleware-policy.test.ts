@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { NextRequest } from "next/server";
-import { middleware } from "../middleware";
+import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
+import { POST as readChunk, PUT as sendChunk } from "../app/api/archive/imports/[id]/[fileId]/route";
+import { config, middleware } from "../middleware";
 
 const fixtureEnvironment: Record<string, string> = {
   APP_URL: "https://breadloaf.example.test", NODE_ENV: "production",
@@ -40,6 +42,25 @@ test("email sign-in accepts the canonical browser origin while foreign origins a
   assert.equal((await middleware(request("https://breadloaf.example.test"))).headers.get("x-middleware-next"), "1");
   assert.equal((await middleware(request("https://another.example.test"))).status, 403);
   assert.equal((await middleware(request("https://breadloaf.example.test", "cross-site"))).status, 403);
+});
+
+test("archive chunks stream through a handler that checks origin and family access", async () => {
+  const path = "/api/archive/imports/batch/file";
+  assert.equal(unstable_doesMiddlewareMatch({ config, url: path }), false);
+  assert.equal(unstable_doesMiddlewareMatch({ config, url: path + "/" }), false);
+  assert.equal(unstable_doesMiddlewareMatch({ config, url: path + "/other" }), true);
+  assert.equal(unstable_doesMiddlewareMatch({ config, url: "/api/archive/imports/batch" }), true);
+  assert.equal(unstable_doesMiddlewareMatch({ config, url: "/api/archive/imports" }), true);
+
+  const context = { params: Promise.resolve({ id: "batch", fileId: "file" }) };
+  for (const [method, handler] of [["POST", readChunk], ["PUT", sendChunk]] as const) {
+    const request = (origin: string, site = "same-origin") => new NextRequest("http://localhost:3000" + path, {
+      method, headers: { origin, "sec-fetch-site": site },
+    });
+    assert.equal((await handler(request("https://breadloaf.example.test"), context)).status, 401);
+    assert.equal((await handler(request("https://another.example.test"), context)).status, 403);
+    assert.equal((await handler(request("https://breadloaf.example.test", "cross-site"), context)).status, 403);
+  }
 });
 
 test("emergency contacts, guide, and weather remain reachable without remembered family access", async () => {
