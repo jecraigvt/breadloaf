@@ -47,7 +47,7 @@
     "lucide-react": "^0.577.0",
     "mailparser": "^3.9.38",
     "mammoth": "^1.12.0",
-    "next": "^15.5.27",
+    "next": "^15.5.28",
     "nodemailer": "^10.1.0",
     "openai": "^7.4.0",
     "pdf-lib": "^1.17.1",
@@ -65,7 +65,7 @@
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "yauzl": "3.4.0",
     "yazl": "3.3.1",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "overrides": {
     "postcss": "$postcss",
