@@ -2,9 +2,9 @@
 
 November 18, 2026
 
-See [Import and recover family scan folders](archive-folder-import.md) for setup, permissions, and the recovery drill.
+See [Import and recover family scan folders](archive-folder-import.md) for setup, permissions, and optional recovery tooling.
 
-Use the scans the family already has. The site should accept a folder of scans in one import, preserve the original files, and let Bucky answer questions with links to the documents and pages it read. Size the system to hold at least 15 GiB of originals, about 16.1 GB, plus room for the catalog, new scans, and recovery copies.
+Use the scans the family already has. The site should accept a folder of scans in one import, preserve the original files, and let Bucky answer questions with links to the documents and pages it read. Size the system to hold at least 15 GiB of originals, about 16.1 GB, plus room for the catalog and new scans.
 
 ## Where the files should live
 
@@ -14,7 +14,7 @@ Use the scans the family already has. The site should accept a folder of scans i
 
 **Lower cost online option.** If the originals need more space than the free property Drive can spare, use a private **Cloudflare R2 Standard** bucket and keep the site's small encrypted backups in the shared Drive folder. Storing one 15 GB copy all month costs about **$0.08 per month for storage** with the 10 GB-month allowance available. Requests above the included usage, a second copy, and AI processing are separate costs. The site still needs an importer and can serve the files through its existing signed-in archive. [R2 pricing](https://developers.cloudflare.com/r2/pricing/)
 
-Jeremy's personal account has verified Viewer access to **Breadloaf Hill Backups**, including files added there by the weekly job. It also owns a private, downloadable copy of the November 15 backup in **Breadloaf Hill Recovery Copies**. That is a one-time copy. Share the new scan archive folder with the same personal account as Viewer when it is created. Ownership of the scans and original backup folder stays with the property account. [Google Drive folder permissions](https://support.google.com/drive/answer/7166529?hl=en)
+Jeremy's personal account has verified Viewer access to **Breadloaf Hill Scan Archive** and **Breadloaf Hill Backups**. The rollout uses the shared Scan Archive folder for new scans, with ownership staying under the property account. The private November 15 backup in **Breadloaf Hill Recovery Copies** is a one-time copy of the existing site backup. [Google Drive folder permissions](https://support.google.com/drive/answer/7166529?hl=en)
 
 ## Import and read a whole collection
 
@@ -30,12 +30,12 @@ The current uploader accepts up to 100 MB per file. The background uploader acce
 
 The existing job packages the database and local uploads as a single encrypted ZIP. Creation streams the data, but verification reads the encrypted file and decrypts the ZIP into memory before checking the contents. The **512 MB** cap bounds that work on the website host. The upload to Drive is already resumable. Increasing the cap would leave the verification and restore memory problem in place. [Snapshot verification](../scripts/archive-common.ts#L110), [Archive recovery](archive-recovery.md)
 
-Copy newly added or changed originals to an independent destination and verify their checksums. Preserve the previous recovery version if a source file is replaced or deleted. Keep a streaming encrypted backup of the database and a portable catalog that maps folder paths and documents to verified originals. Verify each catalog backup against the same set of original versions. Keep the present weekly backup running until the replacement passes a restore.
+Keep the weekly backup for the database and local uploads. The Drive scan originals live in the shared Scan Archive folder. Viewer access opens those same originals and ends if the owner permanently deletes them. [Google Drive deletion and shared access](https://support.google.com/drive/answer/2375102?hl=en)
 
-Keep an encrypted copy outside the primary account and storage service. With Drive as primary, a separately controlled R2 bucket is one option. An off-site drive owned by the family works with either primary storage choice. Give a family custodian access to the recovery key outside the property account and document how to export and restore the collection.
+If the family later chooses to keep a separate recovery copy, the collection command can save an encrypted database backup, a portable catalog, and verified originals to independently controlled storage. [Optional recovery setup](archive-folder-import.md#optional-independent-recovery-copy)
 
 ## Test and rollout
 
 1. Pilot typed letters, difficult handwriting, a large scanned PDF, and any uncommon image formats in the collection. Ask Bucky to find a letter by year and verify that the result opens the original for a signed-in family member. Check exact downloads, page links, and the list of pages needing review. Use the sample to estimate reading time and cost.
 2. Test an import of at least 15 GiB with representative file counts, including a single scanned PDF over 512 MB. Measure peak website memory during upload and peak worker memory during reading. Interrupt that file's transfer and a Bucky job, then verify both can resume without losing or duplicating originals. Verify that a regular family reader can open an allowed file and that an unsigned visitor cannot.
-3. Restore the catalog and originals into an isolated environment with the property account unavailable. Compare file counts and checksums, open original scans, and run sample searches. Confirm that a missing backup, a failed copy, or low quota is visible to the caretaker. Repeat the recovery drill periodically. Begin the full family import once the chosen storage has capacity and the recovery drill passes.
+3. Verify Jeremy can open the pilot scans from his personal Google account. Begin the full family import once the pilot passes and the property Drive has space for the measured collection.

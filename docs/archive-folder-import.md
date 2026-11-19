@@ -4,13 +4,13 @@ The folder importer uses the property Google Drive for originals and PostgreSQL 
 
 ## Set up Drive
 
-Use the property account’s existing per-file Drive OAuth client from [Archive Drive](archive-drive.md). Create or find the dedicated **Breadloaf Hill Scan Archive** folder using the same credentials. A viewer can be added explicitly.
+Use the property account’s existing per-file Drive OAuth client from [Archive Drive](archive-drive.md). The dedicated **Breadloaf Hill Scan Archive** folder is shared with Jeremy’s personal Google account as a Viewer. To find the folder or grant Viewer access during setup, use the same credentials.
 
 ~~~sh
 npm run archive:import:drive -- --viewer YOUR_PERSONAL_GOOGLE_ADDRESS
 ~~~
 
-Keep the folder private. A Viewer on this whole folder can reach all originals in Drive, so use it for materials meant for the family archive and its recovery custodian. The script reports the folder ID. Set it on the web service as `ARCHIVE_IMPORT_DRIVE_FOLDER_ID` after the deployment and recovery pilot are ready. The existing `ARCHIVE_DRIVE_FOLDER_ID` continues to identify the separate weekly backup folder. Until the new folder ID is configured, the archive does not offer folder imports. The importer uses the existing `ARCHIVE_DRIVE_CLIENT_ID`, `ARCHIVE_DRIVE_CLIENT_SECRET`, and `ARCHIVE_DRIVE_REFRESH_TOKEN`.
+Keep the folder private. A Viewer on this whole folder can reach all originals in Drive, so use it for materials meant for the family archive. The script reports the folder ID. Set it on the web service as `ARCHIVE_IMPORT_DRIVE_FOLDER_ID` when starting the family pilot. The existing `ARCHIVE_DRIVE_FOLDER_ID` identifies the weekly backup folder. Folder imports become available when the new folder ID is configured. The importer uses the existing `ARCHIVE_DRIVE_CLIENT_ID`, `ARCHIVE_DRIVE_CLIENT_SECRET`, and `ARCHIVE_DRIVE_REFRESH_TOKEN`.
 
 Measure the folder before import. Keep the property Drive on its free plan for the under-10-GB collection discussed in the [archive plan](archive-15gb-plan.md), subject to available space. The importer accepts up to 15 GiB and 25,000 scans in a batch and checks that Drive has room for the batch and ongoing backups. Larger uploads require an appropriate storage allowance. Cloudflare R2 remains a separate storage option if needed.
 
@@ -22,9 +22,9 @@ Each verified scan queues a Bucky job. The worker stages the original on private
 
 Keep enough temporary disk for the largest original plus working space. PDFs and supported image files with up to 10,000 pages can enter page analysis. An unsupported original can still be downloaded. Bucky flags uncertain pages and the task list reports progress. File access always uses the signed-in person’s Breadloaf permissions.
 
-## Keep an independent recovery copy
+## Optional independent recovery copy
 
-The scheduled weekly Drive job retains the site’s database and existing uploads. Its receipt reports Drive scan originals separately because their bytes live outside that snapshot. Use the collection backup to preserve both sets of originals and the database together.
+The scheduled weekly Drive job retains the site’s database and existing uploads. Its receipt reports Drive scan originals separately because their bytes live outside that snapshot. If the family chooses to keep a separate copy of the scans, the collection backup preserves both sets of originals and the database together.
 
 Run the collection command from a recovery host or maintenance environment that can reach the live database, the mounted legacy originals, and the property Drive API. Mount a separately controlled disk or backup destination outside the source checkout and originals directory. The command writes authenticated encrypted objects to that independent directory. It reuses unchanged bytes after checking their integrity and writes a new catalog for each successful snapshot. Keep older catalogs and the repository’s key header with the encrypted objects. Store the passphrase independently of the property Google account.
 
@@ -37,8 +37,6 @@ npm run archive:collection -- restore --repository /mnt/recovery/breadloaf --cat
 The third command requires `ARCHIVE_RESTORE_DATABASE_URL` to point to a new empty loopback PostgreSQL database with `test` in its name and UTC connections. Use PostgreSQL tools compatible with the source server and install pgvector on the recovery server. Omit `--apply-db` to export files and the portable JSON catalog without applying a database. The recovery target must be a new directory with a parent that already exists. Keep this decrypted output private.
 
 For a site restore drill, mount the extracted `originals` directory as `public/uploads`. Point `ARCHIVE_RECOVERED_ORIGINALS_DIR` to the extracted `drive` directory and leave production integrations off. The site streams those verified originals locally without using Google. Open and download a scan, compare bytes with the catalog, and ask Bucky to find the scan and link to its page. Record the test date and latest verified catalog outside the property account.
-
-Run the independent copy after the pilot and after imports on the chosen recovery host. Schedule it there once the storage and recovery drill are proven. The web service’s existing weekly backup remains in place.
 
 ## Pilot checks
 
