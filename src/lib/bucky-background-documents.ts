@@ -4,12 +4,18 @@ import { sha256 } from "@/lib/archive-integrity";
 import { storeFileBuffer, STORED_FILE_SIZE_LIMIT } from "@/lib/file-storage";
 import { resolveSupportedFileType } from "@/lib/document-file-types";
 import { enqueueBuckyJob, BuckyJobError } from "@/lib/bucky-jobs";
+import { archiveDriveId, canReadArchiveScan } from "@/lib/archive-import-format";
+import { queueArchiveScan } from "@/lib/archive-imports";
 
 export async function queueExistingDocument(id: string, actor: ActorContext | null) {
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${id} FOR UPDATE`;
     const doc = await tx.document.findFirst({ where: { id, deletedAt: null, accessScope: "family" } });
     if (!doc) throw new BuckyJobError("Document is unavailable for background analysis", 404);
+    if (archiveDriveId(doc.filePath)) {
+      if (!canReadArchiveScan(doc.fileType)) throw new BuckyJobError("The original is saved. Bucky cannot read this scan format yet.", 422);
+      return queueArchiveScan(tx, doc, actor);
+    }
     return enqueueBuckyJob({ kind: "document_analysis", sourceDocumentId: doc.id,
       sourceVersion: doc.updatedAt.toISOString(),
       request: { title: doc.title, sourceDocumentIds: [doc.id], newUpload: doc.analysisState === "pending" },

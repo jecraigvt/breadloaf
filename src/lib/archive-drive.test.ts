@@ -5,7 +5,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { createServer } from "node:http";
-import { encryptSnapshot, type SnapshotManifest } from "../../scripts/archive-common";
+import { encryptSnapshot } from "../../scripts/archive-format";
+import type { SnapshotManifest } from "../../scripts/archive-common";
 import { BACKUP_DRIVE_ACCOUNT, requestDriveResponse, uploadVerifiedSnapshotToDrive, type DriveTransport } from "../../scripts/archive-drive-common";
 
 const folderId = "syntheticFolder12345", fileId = "syntheticSnapshot12345";
@@ -16,7 +17,7 @@ before(async () => {
   fixture = await mkdtemp(path.join(tmpdir(), "breadloaf-drive-test-"));
   const stage = path.join(fixture, "source"); await mkdir(path.join(stage, "originals"), { recursive: true });
   const files = { "database.dump": Buffer.from("synthetic PostgreSQL dump"), "originals/random.bin": randomBytes(4 * 1024 * 1024 + 1234) };
-  const manifest: SnapshotManifest = { version: 1, createdAt: "2026-10-13T19:00:00.000Z", references: ["random.bin"], files: [] };
+  const manifest: SnapshotManifest = { version: 1, createdAt: "2026-10-13T19:00:00.000Z", references: ["random.bin"], files: [], externalOriginalCount: 2 };
   for (const [name, bytes] of Object.entries(files)) { await writeFile(path.join(stage, name), bytes); manifest.files.push({ path: name, size: bytes.length, sha256: checksum("sha256", bytes) }); }
   snapshot = path.join(fixture, "snapshot.blhbackup"); await encryptSnapshot(stage, snapshot, manifest, phrase); encrypted = await readFile(snapshot);
 });
@@ -68,6 +69,7 @@ test("resumable upload survives a lost response and claims success only after do
   assert.equal(fake.received.subarray(0, 8).toString(), "BLHBACK1");
   assert.equal(receipt.encryptedSha256, checksum("sha256", encrypted)); assert.equal(receipt.size, encrypted.length);
   assert.equal(receipt.restoreVerified, false); assert.equal(receipt.originalCount, 1);
+  assert.equal(receipt.externalOriginalCount, 2);
   assert.ok(fake.calls.at(-1)?.url.includes("alt=media"));
   assert.equal(fake.calls.filter(call => call.method === "POST").length, 1);
 });

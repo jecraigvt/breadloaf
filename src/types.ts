@@ -8,4 +8,12 @@ export type RoomWithStays = Prisma.RoomGetPayload<{
 
 export type DocumentWithCategory = Prisma.DocumentGetPayload<{
   include: { category: true };
-}> & { displaySummary?: string | null };
+}> & {
+  displaySummary?: string | null;
+  scan?: {
+    relativePath: string;
+    pageCount: number | null;
+    pages: { number: number; years: number[]; needsReview: boolean }[];
+    related: { id: string; name: string }[];
+  };
+};

@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: ["pdfjs-dist", "@napi-rs/canvas", "@prisma/client"],
+  serverExternalPackages: ["pdfjs-dist", "@napi-rs/canvas", "@prisma/client", "sharp"],
   images: { localPatterns: [{ pathname: "/photos/**" }, { pathname: "/icon-*.png" }, { pathname: "/apple-touch-icon.png" }] },
   async redirects() {
     // Keep old www bookmarks on the same origin as sign-in links and forms.
@@ -14,7 +14,9 @@ const nextConfig = {
       { key: "X-Content-Type-Options", value: "nosniff" }, { key: "X-Frame-Options", value: "DENY" },
       { key: "Referrer-Policy", value: "same-origin" }, { key: "Content-Security-Policy", value: policy },
       ...(process.env.NODE_ENV === "production" ? [{ key: "Strict-Transport-Security", value: "max-age=31536000" }] : []),
-    ] }, { source: "/login/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] }];
+    ] }, { source: "/documents/import", headers: [{
+      key: "Content-Security-Policy", value: policy.replace("connect-src 'self'", "connect-src 'self' https://www.googleapis.com"),
+    }] }, { source: "/login/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }, { key: "Cache-Control", value: "no-store" }] }];
   },
 };
 

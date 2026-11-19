@@ -6,13 +6,14 @@ import { claimBuckyJob, completeBuckyJob, failBuckyJob, heartbeatBuckyWorker, yi
 import { applyJobResult, prepareJobSource } from "@/lib/bucky-job-handlers";
 import { BackgroundDocumentResultSchema, BackgroundReviewResultSchema, combineDocumentParts, type BackgroundSourceBundle } from "@/lib/bucky-background-contract";
 import { backgroundSourceImage } from "@/lib/bucky-source-image";
+import { checkpointArchivePage } from "@/lib/archive-scan-pages";
 import { BACKGROUND_API_MAX_OUTPUT_TOKENS, backgroundApiCostCents, backgroundApiUpperBoundCents } from "@/lib/bucky-api-cost";
 
 /** One bounded page/section per tick; the next tick resumes the same artifact. */
 type GenerateBackgroundResponse = (input: OpenAI.Responses.ResponseCreateParamsNonStreaming) => Promise<Pick<OpenAI.Responses.Response, "status" | "usage" | "output_text">>;
 export async function runHostedBuckyPart(workerId: string, generate?: GenerateBackgroundResponse) {
   if (!process.env.OPENAI_API_KEY && !generate) return { state: "unavailable" };
-  const claim = await claimBuckyJob(workerId, ["document_analysis", "archive_review"], null);
+  const claim = await claimBuckyJob(workerId, ["document_analysis", "archive_review"], null, true);
   if (!claim) return { state: "idle" };
   const { job, leaseToken } = claim;
   const schema = job.kind === "document_analysis" ? BackgroundDocumentResultSchema : BackgroundReviewResultSchema;
@@ -23,7 +24,7 @@ export async function runHostedBuckyPart(workerId: string, generate?: GenerateBa
   let knownUsage = false;
   try {
     const metadata = JSON.parse((await prepareJobSource(job)).body) as BackgroundSourceBundle;
-    const next = metadata.parts.find((part) => !schema.safeParse(parts[part.id]).success);
+    const next = metadata.parts.find((part) => metadata.archiveScan ? !part.read : !schema.safeParse(parts[part.id]).success);
     if (next) {
       const bundle = JSON.parse((await prepareJobSource(job, next.id)).body) as BackgroundSourceBundle;
       const part = bundle.parts[0];
@@ -55,14 +56,22 @@ export async function runHostedBuckyPart(workerId: string, generate?: GenerateBa
       }
       if (response.status !== "completed" || !response.usage) throw new Error("Incomplete background response");
       const parsed = schema.parse(JSON.parse(response.output_text));
-      parts[next.id] = parsed.kind === "document_analysis" && part.text !== undefined ? { ...parsed, extractedText: part.text } : parsed;
-      await heartbeatBuckyWorker(workerId, { jobId: job.id, leaseToken, checkpoint: { parts } as Prisma.InputJsonValue });
+      const result = parsed.kind === "document_analysis" && part.text !== undefined ? { ...parsed, extractedText: part.text } : parsed;
+      const pageNumber = next.pageNumber;
+      if (metadata.archiveScan && pageNumber) {
+        await heartbeatBuckyWorker(workerId, { jobId: job.id, leaseToken },
+          (tx, lockedJob) => checkpointArchivePage(tx, lockedJob, { number: pageNumber, result }));
+        next.read = true;
+      } else {
+        parts[next.id] = result;
+        await heartbeatBuckyWorker(workerId, { jobId: job.id, leaseToken, checkpoint: { parts } as Prisma.InputJsonValue });
+      }
     }
-    if (metadata.parts.some((part) => !schema.safeParse(parts[part.id]).success)) {
+    if (metadata.parts.some((part) => metadata.archiveScan ? !part.read : !schema.safeParse(parts[part.id]).success)) {
       await yieldBuckyJob(workerId, job.id, leaseToken, { parts } as Prisma.InputJsonValue, usage);
       return { state: "continued", jobId: job.id };
     }
-    const result = job.kind === "document_analysis"
+    const result = metadata.archiveScan ? { kind: "archive_scan_complete" } : job.kind === "document_analysis"
       ? combineDocumentParts(metadata.parts.map((part) => BackgroundDocumentResultSchema.parse(parts[part.id])))
       : BackgroundReviewResultSchema.parse({ kind: "archive_review",
         summary: metadata.parts.map((part) => BackgroundReviewResultSchema.parse(parts[part.id]).summary).join("\n\n"),

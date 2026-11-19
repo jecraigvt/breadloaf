@@ -18,12 +18,12 @@ FROM postgres:18.6-trixie AS runtime
 # The app uses this image's pg_dump/pg_restore; it never starts a PostgreSQL
 # server. Keep existing Railway startup migration/seed semantics via npm start.
 ENTRYPOINT []
-RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 ca-certificates poppler-utils util-linux && rm -rf /var/lib/apt/lists/*
 COPY --from=node-runtime /usr/local/ /usr/local/
 WORKDIR /app
 COPY --from=build /app /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 TZ=UTC PORT=3000
 ENV PG_DUMP_PATH=/usr/lib/postgresql/18/bin/pg_dump PG_RESTORE_PATH=/usr/lib/postgresql/18/bin/pg_restore
-RUN node --version && "$PG_DUMP_PATH" --version && "$PG_RESTORE_PATH" --version && node -e "require('@prisma/client'); require('@napi-rs/canvas')"
+RUN node --version && "$PG_DUMP_PATH" --version && "$PG_RESTORE_PATH" --version && pdfinfo -v && node -e "require('@prisma/client'); require('@napi-rs/canvas'); require('sharp')"
 EXPOSE 3000
 CMD ["npm", "start"]
