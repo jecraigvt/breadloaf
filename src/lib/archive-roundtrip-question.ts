@@ -1,6 +1,7 @@
+import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { MODELS } from "@/lib/ai-models";
-import { generateGeminiStructured } from "@/lib/gemini-generation";
+import { getOpenAIClient, withRetry } from "@/lib/openai-client";
 import { distinctiveTitleWords, leakedTitleWords } from "@/lib/archive-verification";
 
 const MAX_CONTENT_CHARS = 7000;
@@ -50,12 +51,14 @@ ${lastProblem ? `- The prior attempt was rejected because ${lastProblem}. Choose
 
 Archive content:
 ${content.slice(0, MAX_CONTENT_CHARS)}`;
-    const response = await generateGeminiStructured({
-      model: MODELS.flash,
-      input: prompt,
-      schema: QuestionSchema,
-    });
-    const question = response.question.trim();
+    const response = await withRetry(() =>
+      getOpenAIClient().responses.parse({
+        model: MODELS.flash,
+        input: prompt,
+        text: { format: zodTextFormat(QuestionSchema, "archive_round_trip_question") },
+      })
+    );
+    const question = response.output_parsed?.question.trim();
     if (!question) {
       lastProblem = "it returned no question";
       continue;
