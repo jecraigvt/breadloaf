@@ -1,13 +1,14 @@
 import "dotenv/config";
-import { readFile } from "fs/promises";
 import path from "path";
 import { prisma } from "../src/lib/prisma";
-import { sha256 } from "../src/lib/archive-integrity";
+import { fileDigest } from "./archive-common";
+import { verifyDriveOriginal } from "./verify-drive-original";
 
 async function main() {
   const documents = await prisma.document.findMany({
     where: { fileType: { not: "link" } },
-    select: { id: true, title: true, filePath: true, checksum: true },
+    select: { id: true, title: true, filePath: true, fileSize: true, fileType: true, checksum: true,
+      archiveImportFile: { select: { driveId: true, driveFolder: true, sizeBytes: true, fileType: true, sha256: true } } },
     orderBy: { createdAt: "asc" },
   });
 
@@ -16,8 +17,19 @@ async function main() {
   let backfilled = 0;
   let missing = 0;
   let mismatched = 0;
+  let unverifiedDrive = 0;
 
   for (const document of documents) {
+    if (document.filePath.startsWith("drive:") || document.archiveImportFile) {
+      try {
+        await verifyDriveOriginal(document);
+        verified += 1;
+      } catch (error) {
+        console.error(`UNVERIFIED DRIVE ORIGINAL: ${document.title}`, error instanceof Error ? error.message : "");
+        unverifiedDrive += 1;
+      }
+      continue;
+    }
     const relativePath = document.filePath.replace(/^[/\\]*uploads[/\\]/, "");
     const fullPath = path.resolve(uploadRoot, relativePath);
     if (!fullPath.startsWith(`${uploadRoot}${path.sep}`)) {
@@ -27,7 +39,7 @@ async function main() {
     }
 
     try {
-      const checksum = sha256(await readFile(fullPath));
+      const checksum = await fileDigest(fullPath);
       if (!document.checksum) {
         await prisma.document.update({ where: { id: document.id }, data: { checksum } });
         console.log(`FINGERPRINTED: ${document.title}`);
@@ -45,9 +57,9 @@ async function main() {
   }
 
   console.log(
-    `Archive check complete: ${verified} verified, ${backfilled} fingerprinted, ${missing} missing, ${mismatched} mismatched.`
+    `Archive check complete: ${verified} verified, ${backfilled} fingerprinted, ${missing} missing, ${mismatched} mismatched, ${unverifiedDrive} unverified Drive originals.`
   );
-  if (missing > 0 || mismatched > 0) process.exitCode = 1;
+  if (missing > 0 || mismatched > 0 || unverifiedDrive > 0) process.exitCode = 1;
 }
 
 main()

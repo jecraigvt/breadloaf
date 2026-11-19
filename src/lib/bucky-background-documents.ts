@@ -1,3 +1,4 @@
+import type { Document, Prisma } from "@prisma/client";
 import type { ActorContext } from "@/lib/actor";
 import { prisma } from "@/lib/prisma";
 import { sha256 } from "@/lib/archive-integrity";
@@ -7,20 +8,24 @@ import { enqueueBuckyJob, BuckyJobError } from "@/lib/bucky-jobs";
 import { archiveDriveId, canReadArchiveScan } from "@/lib/archive-import-format";
 import { queueArchiveScan } from "@/lib/archive-imports";
 
+function queueDocument(tx: Prisma.TransactionClient, doc: Document, actor: ActorContext | null) {
+  if (archiveDriveId(doc.filePath)) {
+    if (!canReadArchiveScan(doc.fileType)) throw new BuckyJobError("The original is saved. Bucky cannot read this scan format yet.", 422);
+    return queueArchiveScan(tx, doc, actor);
+  }
+  return enqueueBuckyJob({ kind: "document_analysis", sourceDocumentId: doc.id,
+    sourceVersion: doc.updatedAt.toISOString(),
+    request: { title: doc.title, sourceDocumentIds: [doc.id], newUpload: doc.analysisState === "pending" },
+    initiatedById: actor?.memberId, initiatedByName: actor?.displayName,
+    dedupeKey: `analysis:${doc.id}:${doc.updatedAt.toISOString()}` }, tx);
+}
+
 export async function queueExistingDocument(id: string, actor: ActorContext | null) {
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${id} FOR UPDATE`;
     const doc = await tx.document.findFirst({ where: { id, deletedAt: null, accessScope: "family" } });
     if (!doc) throw new BuckyJobError("Document is unavailable for background analysis", 404);
-    if (archiveDriveId(doc.filePath)) {
-      if (!canReadArchiveScan(doc.fileType)) throw new BuckyJobError("The original is saved. Bucky cannot read this scan format yet.", 422);
-      return queueArchiveScan(tx, doc, actor);
-    }
-    return enqueueBuckyJob({ kind: "document_analysis", sourceDocumentId: doc.id,
-      sourceVersion: doc.updatedAt.toISOString(),
-      request: { title: doc.title, sourceDocumentIds: [doc.id], newUpload: doc.analysisState === "pending" },
-      initiatedById: actor?.memberId, initiatedByName: actor?.displayName,
-      dedupeKey: `analysis:${doc.id}:${doc.updatedAt.toISOString()}` }, tx);
+    return queueDocument(tx, doc, actor);
   });
 }
 
@@ -52,11 +57,6 @@ export async function queueBackgroundUpload(file: File, actor: ActorContext | nu
         analysisError: null, uploadedBy: actor?.displayName, accessScope: "family",
       } });
     }
-    const job = await enqueueBuckyJob({ kind: "document_analysis", sourceDocumentId: doc.id,
-      sourceVersion: doc.updatedAt.toISOString(),
-      request: { title: doc.title, sourceDocumentIds: [doc.id], newUpload: doc.analysisState === "pending" },
-      initiatedById: actor?.memberId, initiatedByName: actor?.displayName,
-      dedupeKey: `analysis:${doc.id}:${doc.updatedAt.toISOString()}` }, tx);
-    return job;
+    return queueDocument(tx, doc, actor);
   });
 }
